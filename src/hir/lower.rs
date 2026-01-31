@@ -10,9 +10,7 @@ use crate::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
         HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Interface, InterfaceMethod, LocalId,
         LoopSource, MethodMeta, ModuleId, ModuleInfo, StmtId, Struct, StructField, TypeId,
-        Variable,
-        interner::Symbol,
-        resolve::{PendingImport, ResolutionStatus},
+        Variable, interner::Symbol,
     },
     lexer::token::TokenKind,
     span::Span,
@@ -26,7 +24,7 @@ const BUILTIN_TYPES: [&str; 15] = [
 #[derive(Debug, Default)]
 pub struct LoweringContext {
     pub krate: HirCrate,
-    current_module: Option<ModuleId>,
+    pub current_module: Option<ModuleId>,
     current_struct: Option<DefId>,
     /// The current owner for generating HirIds
     current_owner: Option<DefId>,
@@ -180,70 +178,6 @@ impl LoweringContext {
                     ItemKind::Impl { .. } => {} // Processed in lowering pass 3
                     ItemKind::Import(_) => {}   // Processed in lowering pass 2
                 }
-            }
-        }
-    }
-
-    fn resolve_all_imports(&mut self, asts: &[Ast]) {
-        // PASS 2: Resolve imports (iteratively until fixpoint)
-        let mut pending: ThinVec<PendingImport> = ThinVec::new();
-        for (mid, ast) in asts.iter().enumerate() {
-            for item in ast.items.iter() {
-                if let ItemKind::Import(im) = &item.kind {
-                    pending.push(PendingImport {
-                        module_idx: mid,
-                        import_item: im,
-                        visibility: item.visibility,
-                    });
-                }
-            }
-        }
-
-        // attempt to resolve until no further progress
-        let mut progress = true;
-        while progress && !pending.is_empty() {
-            progress = false;
-
-            // iterate with index so we can remove resolved entries in-place
-            let mut i = 0usize;
-            while i < pending.len() {
-                let pi = &pending[i];
-                // try resolve; if resolved we remove from pending and set progress = true
-                match self.try_resolve_import(pi.module_idx, pi.import_item, pi.visibility) {
-                    ResolutionStatus::Resolved => {
-                        pending.swap_remove(i);
-                        progress = true;
-                        continue;
-                    }
-                    ResolutionStatus::Failed => {
-                        pending.swap_remove(i);
-                        progress = true;
-                        continue;
-                    }
-                    ResolutionStatus::Pending => {
-                        // cannot resolve yet: keep item for next pass
-                        i += 1;
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // anything left unresolved -> emit diagnostics
-        if !pending.is_empty() {
-            for pi in pending {
-                let segments: ThinVec<String> = pi
-                    .import_item
-                    .prefix
-                    .segments
-                    .iter()
-                    .map(|ident| ident.value.to_string())
-                    .collect();
-                let path = segments.join("::");
-                self.krate.diagnostics.push(format!(
-                    "Could not resolve import `{}` in module `{}`",
-                    path, self.krate.modules[pi.module_idx].name
-                ));
             }
         }
     }
@@ -888,22 +822,6 @@ impl LoweringContext {
             }
             _ => todo!("Lowering of {:?} not implemented", ty.kind),
         }
-    }
-
-    fn lookup_in_current_module(&self, sym: Symbol) -> Option<DefId> {
-        let modid = self.current_module?;
-        let module = &self.krate.modules[modid.0 as usize];
-
-        // Check local items before imports
-        if let Some(export_entry) = module.exports.get(&sym) {
-            return Some(export_entry.def);
-        }
-
-        if let Some(defid) = module.imports.get(&sym) {
-            return Some(*defid);
-        }
-
-        None
     }
 
     fn lower_body(&mut self, body: ThinVec<Stmt>) -> ThinVec<StmtId> {
