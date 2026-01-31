@@ -1,15 +1,14 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{Mutability, Visibility};
-use crate::hashmap::FxHashMap;
-
 use crate::{
-    ast::{Ast, Literal},
+    ast::{Ast, Literal, Mutability, Visibility},
+    hashmap::FxHashMap,
     hir::{
         interner::{Interner, Symbol},
         lower::LoweringContext,
     },
     lexer::token::TokenKind,
+    span::Span,
 };
 
 mod interner;
@@ -23,6 +22,12 @@ pub fn lower_ast(asts: ThinVec<Ast>) -> HirCrate {
         crate::error!(diag.clone());
     }
     ctx.krate
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HirId {
+    pub owner: DefId,
+    pub local_id: LocalId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,13 +90,35 @@ impl From<u32> for BodyId {
 #[derive(Debug, Default)]
 pub struct HirCrate {
     pub modules: ThinVec<ModuleInfo>,
-    pub defs: ThinVec<Def>,
+    pub items: ThinVec<HirItem>,
     pub exprs: ThinVec<HirExpr>,
     pub types: ThinVec<HirType>,
     pub stmts: ThinVec<HirStmt>,
     pub bodies: ThinVec<Body>,
     pub interner: Interner,
     pub diagnostics: ThinVec<String>,
+}
+
+impl HirCrate {
+    pub fn item(&self, id: DefId) -> &HirItem {
+        &self.items[id.0 as usize]
+    }
+
+    pub fn expr(&self, id: ExprId) -> &HirExpr {
+        &self.exprs[id.0 as usize]
+    }
+
+    pub fn stmt(&self, id: StmtId) -> &HirStmt {
+        &self.stmts[id.0 as usize]
+    }
+
+    pub fn body(&self, id: BodyId) -> &Body {
+        &self.bodies[id.0 as usize]
+    }
+
+    pub fn ty(&self, id: TypeId) -> &HirType {
+        &self.types[id.0 as usize]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +139,20 @@ pub struct ExportEntry {
 }
 
 #[derive(Debug, Clone)]
-pub enum Def {
+pub struct HirItem {
+    pub defid: DefId,
+    pub kind: HirItemKind,
+    pub span: Span,
+}
+
+impl HirItem {
+    pub fn module(&self) -> ModuleId {
+        self.kind.module()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum HirItemKind {
     Placeholder(DefId, ModuleId),
     Function(Function),
     Struct(Struct),
@@ -120,14 +160,14 @@ pub enum Def {
     Variable(Variable),
 }
 
-impl Def {
+impl HirItemKind {
     pub fn module(&self) -> ModuleId {
         match self {
-            Def::Placeholder(_, m) => *m,
-            Def::Function(f) => f.module,
-            Def::Struct(s) => s.module,
-            Def::Interface(i) => i.module,
-            Def::Variable(v) => v.module,
+            HirItemKind::Placeholder(_, m) => *m,
+            HirItemKind::Function(f) => f.module,
+            HirItemKind::Struct(s) => s.module,
+            HirItemKind::Interface(i) => i.module,
+            HirItemKind::Variable(v) => v.module,
         }
     }
 }
@@ -204,7 +244,14 @@ pub struct MethodMeta {
 }
 
 #[derive(Debug, Clone)]
-pub enum HirExpr {
+pub struct HirExpr {
+    pub hir_id: HirId,
+    pub kind: HirExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum HirExprKind {
     Error,
     Literal(Literal),
     Local(LocalId),
@@ -236,10 +283,10 @@ pub enum HirExpr {
     },
     If {
         cond: ExprId,
-        /// Will always point to a [HirExpr::Block].
+        /// Will always point to a [HirExprKind::Block].
         /// NOTE: Using an [ExprId] instead of a [Body] is intentional
         then_branch: ExprId,
-        /// Will point to a [HirExpr::Block] or [HirExpr::If].
+        /// Will point to a [HirExprKind::Block] or [HirExprKind::If].
         else_branch: Option<ExprId>,
     },
     Loop {
@@ -255,7 +302,14 @@ pub enum HirExpr {
 }
 
 #[derive(Debug, Clone)]
-pub enum HirStmt {
+pub struct HirStmt {
+    pub hir_id: HirId,
+    pub kind: HirStmtKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum HirStmtKind {
     /// Expression without a trailing semicolon
     Expr(ExprId),
     /// Expression with a trailing semicolon
