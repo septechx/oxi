@@ -36,3 +36,6 @@ jobs:
 
       - name: Run lint
         run: just lint
+
+      - name: Check formatting
+        run: cargo fmt -- --check

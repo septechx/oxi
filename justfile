@@ -1,13 +1,11 @@
-LLVM_SYS_211_PREFIX := "$(llvm-config --bindir)"
-
-build:
-    cargo build --release
+build MODE="release":
+    cargo build {{ if MODE == "release" { "--release" } else { "" } }}
 
 run *ARGS:
     env OXI_ROOT="$(pwd)" cargo run -- {{ARGS}}
 
-test:
-    env OXI_ROOT="$(pwd)" cargo test
+test FILTER="":
+    env OXI_ROOT="$(pwd)" cargo test {{FILTER}}
 
 check:
     cargo check
@@ -15,9 +13,9 @@ check:
 clean:
     cargo clean
 
-install: build
-    sudo install -D -m755 target/release/oxic /usr/bin/oxic
-    sudo rsync -a --delete lib/oxi/ /usr/lib/oxi
+install PREFIX="/usr": (build "release")
+    sudo install -D -m755 target/release/oxic {{PREFIX}}/bin/oxic
+    sudo rsync -a --delete lib/oxi/ {{PREFIX}}/lib/oxi
 
 lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
