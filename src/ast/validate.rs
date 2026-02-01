@@ -16,6 +16,7 @@ struct AstValidator {
     module_id: ModuleId,
     in_function: bool,
     is_top_level: bool,
+    in_interface: bool,
 }
 
 impl AstValidator {
@@ -68,7 +69,7 @@ impl AstValidator {
                 )
                 .expect("failed to emit error");
             }
-        } else if f.body.is_none() {
+        } else if f.body.is_none() && !self.in_interface {
             error_at!(
                 f.name.span,
                 self.module_id,
@@ -138,11 +139,14 @@ impl Visitor for AstValidator {
                 );
 
                 let old_top_level = self.is_top_level;
+                let old_in_interface = self.in_interface;
                 self.is_top_level = false;
+                self.in_interface = true;
                 for item in items.iter() {
                     self.validate_assoc_item(item);
                 }
                 self.is_top_level = old_top_level;
+                self.in_interface = old_in_interface;
 
                 VisitAction::SkipChildren
             }
@@ -239,6 +243,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
         module_id,
         in_function: false,
         is_top_level: true,
+        in_interface: false,
     };
 
     let mut top_level_names = Vec::new();
