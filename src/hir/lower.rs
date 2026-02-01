@@ -131,7 +131,7 @@ impl LoweringContext {
                         for item in items.iter() {
                             let AssocItemKind::Fn(fn_decl) = &item.kind;
                             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
-                            let method_defid = self.alloc_item_placeholder(fn_decl.name.span);
+                            let method_defid = self.alloc_item_placeholder(item.span);
                             method_map.insert(
                                 method_sym,
                                 MethodMeta {
@@ -355,8 +355,9 @@ impl LoweringContext {
             methods: ThinVec::with_capacity(sitems.len()),
             module: modid,
         };
-        self.krate.items[defid.0 as usize].kind = HirItemKind::Struct(st);
-        self.krate.items[defid.0 as usize].span = span;
+        let item = &mut self.krate.items[defid.0 as usize];
+        item.kind = HirItemKind::Struct(st);
+        item.span = span;
 
         let prev_struct = self.current_struct;
         self.current_struct = Some(defid);
@@ -475,7 +476,7 @@ impl LoweringContext {
         for item in items.into_iter() {
             let AssocItemKind::Fn(fn_decl) = item.kind;
             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
-            let method_defid = self.alloc_item_placeholder(fn_decl.name.span);
+            let method_defid = self.alloc_item_placeholder(item.span);
 
             self.lower_fn_impl(fn_decl, method_defid, Some(self_defid), item.is_static);
 
@@ -556,7 +557,7 @@ impl LoweringContext {
                             member,
                             operator,
                         },
-                    span: callee_span,
+                    ..
                 } if operator.kind == TokenKind::Dot => {
                     let base_id = self.lower_expr(*base);
                     let method_sym = self.krate.interner.intern(&member.value);
