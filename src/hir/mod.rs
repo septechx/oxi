@@ -51,6 +51,9 @@ pub struct ModuleId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BodyId(pub u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ImplItemId(pub u32);
+
 impl From<u32> for DefId {
     fn from(v: u32) -> Self {
         DefId(v)
@@ -86,11 +89,17 @@ impl From<u32> for BodyId {
         BodyId(v)
     }
 }
+impl From<u32> for ImplItemId {
+    fn from(v: u32) -> Self {
+        ImplItemId(v)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct HirCrate {
     pub modules: ThinVec<ModuleInfo>,
     pub items: ThinVec<HirItem>,
+    pub impl_items: ThinVec<ImplItem>,
     pub exprs: ThinVec<HirExpr>,
     pub types: ThinVec<HirType>,
     pub stmts: ThinVec<HirStmt>,
@@ -149,6 +158,16 @@ impl HirCrate {
         );
         &self.types[id.0 as usize]
     }
+
+    pub fn impl_item(&self, id: ImplItemId) -> &ImplItem {
+        debug_assert!(
+            (id.0 as usize) < self.impl_items.len(),
+            "ImplItemId({}) out of bounds (len={})",
+            id.0,
+            self.impl_items.len()
+        );
+        &self.impl_items[id.0 as usize]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -157,9 +176,13 @@ pub struct ModuleInfo {
     pub exports: FxHashMap<Symbol, ExportEntry>,
     pub items: ThinVec<DefId>,
     pub imports: FxHashMap<Symbol, DefId>,
+    /// Maps struct DefId -> method name -> metadata
     pub struct_methods: FxHashMap<DefId, FxHashMap<Symbol, MethodMeta>>,
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, Visibility>>,
+    /// Maps struct DefId -> impl block DefIds
     pub struct_impls: FxHashMap<DefId, ThinVec<DefId>>,
+    /// Maps interface DefId -> impl block DefIds
+    pub interface_impls: FxHashMap<DefId, ThinVec<DefId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +211,7 @@ pub enum HirItemKind {
     Struct(Struct),
     Interface(Interface),
     Variable(Variable),
+    Impl(Impl),
 }
 
 impl HirItemKind {
@@ -198,6 +222,7 @@ impl HirItemKind {
             HirItemKind::Struct(s) => s.module,
             HirItemKind::Interface(i) => i.module,
             HirItemKind::Variable(v) => v.module,
+            HirItemKind::Impl(imp) => imp.module,
         }
     }
 }
@@ -240,7 +265,14 @@ pub struct StructField {
 pub struct Struct {
     pub name: Symbol,
     pub fields: ThinVec<StructField>,
-    pub methods: ThinVec<(Symbol, DefId)>,
+    pub module: ModuleId,
+}
+
+#[derive(Debug, Clone)]
+pub struct Impl {
+    pub self_ty: TypeId,
+    pub of_interface: DefId,
+    pub items: ThinVec<ImplItemId>,
     pub module: ModuleId,
 }
 
@@ -271,6 +303,18 @@ pub struct MethodMeta {
     pub def: DefId,
     pub is_static: bool,
     pub visibility: Visibility,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplItem {
+    pub defid: DefId,
+    pub kind: ImplItemKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ImplItemKind {
+    Fn(Function),
 }
 
 #[derive(Debug, Clone)]

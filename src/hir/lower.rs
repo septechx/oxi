@@ -8,9 +8,9 @@ use crate::{
     hashmap::FxHashMap,
     hir::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
-        HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Interface, InterfaceMethod, LocalId,
-        LoopSource, MethodMeta, ModuleId, ModuleInfo, StmtId, Struct, StructField, TypeId,
-        Variable, interner::Symbol,
+        HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Impl, ImplItem, ImplItemId,
+        ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,
+        ModuleInfo, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
     },
     lexer::token::TokenKind,
     span::Span,
@@ -84,6 +84,7 @@ impl LoweringContext {
                 struct_methods: FxHashMap::default(),
                 struct_fields: FxHashMap::default(),
                 struct_impls: FxHashMap::default(),
+                interface_impls: FxHashMap::default(),
             };
             self.krate.modules.push(modinfo);
         }
@@ -352,7 +353,6 @@ impl LoweringContext {
         let st = Struct {
             name: sym,
             fields,
-            methods: ThinVec::with_capacity(sitems.len()),
             module: modid,
         };
         let item = &mut self.krate.items[defid.0 as usize];
@@ -377,12 +377,6 @@ impl LoweringContext {
                 let method_defid = meta.def;
 
                 method_fns.push((fn_decl, method_defid, defid, item.is_static));
-
-                if let HirItemKind::Struct(st) = &mut self.krate.items[defid.0 as usize].kind {
-                    st.methods.push((method_sym, method_defid));
-                } else {
-                    panic!("struct defid must refer to Struct");
-                }
             }
         }
 
@@ -391,6 +385,17 @@ impl LoweringContext {
         }
 
         self.current_struct = prev_struct;
+    }
+
+    fn alloc_impl_item(&mut self, kind: ImplItemKind, span: Span) -> ImplItemId {
+        let id = ImplItemId(self.krate.impl_items.len() as u32);
+        self.krate.impl_items.push(ImplItem {
+            defid: DefId(self.next_def),
+            kind,
+            span,
+        });
+        self.next_def += 1;
+        id
     }
 
     fn lower_interface_decl(&mut self, iname: Ident, iitems: ThinVec<AssocItem>, span: Span) {
@@ -441,7 +446,7 @@ impl LoweringContext {
             }
         };
 
-        let self_defid = match self_ty.kind {
+        let self_defid = match &self_ty.kind {
             TypeKind::Symbol(s) => {
                 let sym = self.krate.interner.intern(&s.name.value);
                 match self.lookup_in_current_module(sym) {
@@ -462,7 +467,7 @@ impl LoweringContext {
             }
         };
 
-        let struct_modid = self.krate.items[self_defid.0 as usize].kind.module();
+        let modid = self.current_module.expect("current module set");
         match &self.krate.items[self_defid.0 as usize].kind {
             HirItemKind::Struct(_) => {}
             _ => {
@@ -473,18 +478,52 @@ impl LoweringContext {
             }
         }
 
+        let impl_defid = self.alloc_item_placeholder(self_ty.span);
+        let self_ty_id = self.lower_type(self_ty);
+
+        let mut impl_item_ids = ThinVec::with_capacity(items.len());
+
         for item in items.into_iter() {
             let AssocItemKind::Fn(fn_decl) = item.kind;
             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
-            let method_defid = self.alloc_item_placeholder(item.span);
 
-            self.lower_fn_impl(fn_decl, method_defid, Some(self_defid), item.is_static);
+            let param_names: ThinVec<Symbol> = fn_decl
+                .parameters
+                .iter()
+                .map(|(pname, _)| self.krate.interner.intern(&pname.value))
+                .collect();
 
-            let method_map = &mut self.krate.modules[struct_modid.0 as usize]
+            let params = fn_decl
+                .parameters
+                .into_iter()
+                .map(|(pname, pty)| {
+                    (
+                        self.krate.interner.intern(&pname.value),
+                        self.lower_type(pty),
+                    )
+                })
+                .collect();
+
+            let ret = self.lower_type(fn_decl.return_type);
+
+            let func = Function {
+                name: method_sym,
+                params,
+                ret,
+                body: None,
+                module: modid,
+                associated: Some(self_defid),
+                static_method: item.is_static,
+            };
+
+            let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func), item.span);
+            impl_item_ids.push(impl_item_id);
+
+            let method_defid = self.krate.impl_items[impl_item_id.0 as usize].defid;
+            let method_map = &mut self.krate.modules[modid.0 as usize]
                 .struct_methods
                 .entry(self_defid)
                 .or_default();
-
             method_map.insert(
                 method_sym,
                 MethodMeta {
@@ -493,13 +532,54 @@ impl LoweringContext {
                     visibility: item.visibility,
                 },
             );
+
+            if let Some(body) = fn_decl.body {
+                self.with_owner(method_defid, |ctx| {
+                    ctx.local_stack.push(FxHashMap::default());
+
+                    for pname in param_names {
+                        let local = ctx.alloc_local();
+                        ctx.local_stack
+                            .last_mut()
+                            .expect("local stack exists")
+                            .insert(pname, local);
+                    }
+
+                    let stmt_ids: ThinVec<StmtId> = body
+                        .stmts
+                        .into_iter()
+                        .map(|stmt| ctx.lower_stmt(stmt))
+                        .collect();
+
+                    let body_id = ctx.alloc_body(Body { stmts: stmt_ids });
+                    let ImplItemKind::Fn(func) =
+                        &mut ctx.krate.impl_items[impl_item_id.0 as usize].kind;
+                    func.body = Some(body_id);
+                    ctx.local_stack.pop();
+                });
+            }
         }
 
-        self.krate.modules[struct_modid.0 as usize]
+        let impl_item = Impl {
+            self_ty: self_ty_id,
+            of_interface: interface_def,
+            items: impl_item_ids,
+            module: modid,
+        };
+
+        self.krate.items[impl_defid.0 as usize].kind = HirItemKind::Impl(impl_item);
+
+        self.krate.modules[modid.0 as usize]
             .struct_impls
             .entry(self_defid)
             .or_default()
-            .push(interface_def);
+            .push(impl_defid);
+
+        self.krate.modules[modid.0 as usize]
+            .interface_impls
+            .entry(interface_def)
+            .or_default()
+            .push(impl_defid);
     }
 
     fn lower_static_item(&mut self, sname: Ident, sty: Type, svalue: Expr, span: Span) {
