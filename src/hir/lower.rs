@@ -211,11 +211,12 @@ impl LoweringContext {
     }
 
     fn alloc_item_placeholder(&mut self, span: Span) -> DefId {
+        let modid = self.current_module.expect("current module set");
         let defid = DefId(self.next_def);
         self.next_def += 1;
         self.krate.items.push(HirItem {
             defid,
-            kind: HirItemKind::Placeholder,
+            kind: HirItemKind::Placeholder(modid),
             span,
         });
         defid

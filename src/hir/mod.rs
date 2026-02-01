@@ -183,7 +183,7 @@ impl HirItem {
 
 #[derive(Debug, Clone)]
 pub enum HirItemKind {
-    Placeholder,
+    Placeholder(ModuleId),
     Function(Function),
     Struct(Struct),
     Interface(Interface),
@@ -193,7 +193,7 @@ pub enum HirItemKind {
 impl HirItemKind {
     pub fn module(&self) -> ModuleId {
         match self {
-            HirItemKind::Placeholder => panic!("cannot get module of Placeholder item"),
+            HirItemKind::Placeholder(modid) => *modid,
             HirItemKind::Function(f) => f.module,
             HirItemKind::Struct(s) => s.module,
             HirItemKind::Interface(i) => i.module,
