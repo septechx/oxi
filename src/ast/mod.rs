@@ -99,6 +99,7 @@ pub struct AssocItem {
     pub kind: AssocItemKind,
     pub visibility: Visibility,
     pub is_static: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]

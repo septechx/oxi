@@ -123,9 +123,8 @@ pub fn parse_struct_decl_item(
         };
 
         if parser.current_token().kind == TokenKind::Fn {
-            if let ItemKind::Fn(fn_decl) =
-                parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?.kind
-            {
+            let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
+            if let ItemKind::Fn(fn_decl) = stmt.kind {
                 if fn_decl.body.is_none() {
                     error_at!(
                         fn_decl.name.span,
@@ -138,6 +137,7 @@ pub fn parse_struct_decl_item(
                         is_extern: false,
                         ..fn_decl
                     }),
+                    span: stmt.span,
                     is_static,
                     visibility,
                 })
@@ -241,14 +241,13 @@ pub fn parse_interface_decl_item(
             break;
         }
 
-        if parser.current_token().kind == TokenKind::Fn
-            && let ItemKind::Fn(fn_decl) =
-                parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?.kind
-        {
+        let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
+        if let ItemKind::Fn(fn_decl) = stmt.kind {
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
                 is_static: false,
+                span: stmt.span,
             });
         } else if parser.current_token().kind == TokenKind::Comma {
             parser.advance();
@@ -392,10 +391,8 @@ pub fn parse_impl_item(
             break;
         }
 
-        if parser.current_token().kind == TokenKind::Fn
-            && let ItemKind::Fn(fn_decl) =
-                parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?.kind
-        {
+        let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
+        if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_none() {
                 error_at!(
                     fn_decl.name.span,
@@ -407,9 +404,8 @@ pub fn parse_impl_item(
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Public,
                 is_static: false,
+                span: stmt.span,
             });
-        } else {
-            unexpected_token(parser.current_token());
         }
     }
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
