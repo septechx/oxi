@@ -92,12 +92,11 @@ impl LoweringContext {
     fn collect_definitions(&mut self, asts: &[Ast]) {
         // PASS 1: Collect top-level definitions
         for (mid, ast) in asts.iter().enumerate() {
-            let modid = ModuleId(mid as u32);
             for item in ast.items.iter() {
                 match &item.kind {
                     ItemKind::Fn(f) => {
                         let sym = self.krate.interner.intern(&f.name.value);
-                        let defid = self.alloc_item_placeholder(modid, item.span);
+                        let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
                             sym,
                             ExportEntry {
@@ -113,7 +112,7 @@ impl LoweringContext {
                         items,
                     } => {
                         let sym = self.krate.interner.intern(&name.value);
-                        let defid = self.alloc_item_placeholder(modid, item.span);
+                        let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
                             sym,
                             ExportEntry {
@@ -127,8 +126,7 @@ impl LoweringContext {
                         for item in items.iter() {
                             let AssocItemKind::Fn(fn_decl) = &item.kind;
                             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
-                            let method_defid =
-                                self.alloc_item_placeholder(modid, fn_decl.name.span);
+                            let method_defid = self.alloc_item_placeholder(fn_decl.name.span);
                             method_map.insert(
                                 method_sym,
                                 MethodMeta {
@@ -153,7 +151,7 @@ impl LoweringContext {
                     }
                     ItemKind::Interface { name, .. } => {
                         let sym = self.krate.interner.intern(&name.value);
-                        let defid = self.alloc_item_placeholder(modid, item.span);
+                        let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
                             sym,
                             ExportEntry {
@@ -165,7 +163,7 @@ impl LoweringContext {
                     }
                     ItemKind::Static { name, .. } => {
                         let sym = self.krate.interner.intern(&name.value);
-                        let defid = self.alloc_item_placeholder(modid, item.span);
+                        let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
                             sym,
                             ExportEntry {
@@ -189,7 +187,7 @@ impl LoweringContext {
             for item in ast.items {
                 let span = item.span;
                 match item.kind {
-                    ItemKind::Fn(f) => self.lower_fn_decl(f, span),
+                    ItemKind::Fn(f) => self.lower_fn_decl(f),
                     ItemKind::Struct {
                         name,
                         fields,
@@ -212,12 +210,12 @@ impl LoweringContext {
         }
     }
 
-    fn alloc_item_placeholder(&mut self, modid: ModuleId, span: Span) -> DefId {
+    fn alloc_item_placeholder(&mut self, span: Span) -> DefId {
         let defid = DefId(self.next_def);
         self.next_def += 1;
         self.krate.items.push(HirItem {
             defid,
-            kind: HirItemKind::Placeholder(defid, modid),
+            kind: HirItemKind::Placeholder,
             span,
         });
         defid
@@ -286,18 +284,15 @@ impl LoweringContext {
             static_method: is_static,
         };
 
+        let param_names: ThinVec<Symbol> = func.params.iter().map(|(name, _)| *name).collect();
+
         // Store the function in the item with the owner set to itself
         self.with_owner(defid, |ctx| {
             ctx.krate.items[defid.0 as usize].kind = HirItemKind::Function(func);
 
             if let Some(body) = f.body {
                 ctx.local_stack.push(FxHashMap::default());
-                let param_names: ThinVec<_> = match &ctx.krate.items[defid.0 as usize].kind {
-                    HirItemKind::Function(func) => {
-                        func.params.iter().map(|(pname, _)| *pname).collect()
-                    }
-                    _ => panic!("expected function"),
-                };
+
                 for pname in param_names {
                     let local = ctx.alloc_local();
                     ctx.local_stack
@@ -321,7 +316,7 @@ impl LoweringContext {
         });
     }
 
-    fn lower_fn_decl(&mut self, f: Fn, _span: Span) {
+    fn lower_fn_decl(&mut self, f: Fn) {
         let sym = self.krate.interner.intern(&f.name.value);
         let defid = self.lookup_in_current_module(sym).expect("def must exist");
         self.lower_fn_impl(f, defid, None, false);
@@ -473,10 +468,7 @@ impl LoweringContext {
         for item in items.into_iter() {
             let AssocItemKind::Fn(fn_decl) = item.kind;
             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
-            let method_defid = self.alloc_item_placeholder(
-                self.current_module.expect("current module set"),
-                fn_decl.name.span,
-            );
+            let method_defid = self.alloc_item_placeholder(fn_decl.name.span);
 
             self.lower_fn_impl(fn_decl, method_defid, Some(self_defid), item.is_static);
 
@@ -682,7 +674,18 @@ impl LoweringContext {
                 let cond = self.lower_expr(*condition);
 
                 let then_stmts = self.lower_body(then_branch.stmts);
-                let then_block = self.alloc_expr(HirExprKind::Block { stmts: then_stmts }, span);
+                let then_span = if then_stmts.is_empty() {
+                    span
+                } else {
+                    let first = self.krate.stmt(then_stmts[0]).span;
+                    let last = self
+                        .krate
+                        .stmt(*then_stmts.last().expect("non-empty then_stmts"))
+                        .span;
+                    Span::new(first.start(), last.end())
+                };
+                let then_block =
+                    self.alloc_expr(HirExprKind::Block { stmts: then_stmts }, then_span);
 
                 let else_block = else_branch.map(|e| self.lower_expr(*e));
 
@@ -699,7 +702,18 @@ impl LoweringContext {
                 let cond = self.lower_expr(*condition);
 
                 let then_stmts = self.lower_body(body.stmts);
-                let then_block = self.alloc_expr(HirExprKind::Block { stmts: then_stmts }, span);
+                let body_span = if then_stmts.is_empty() {
+                    span
+                } else {
+                    let first = self.krate.stmt(then_stmts[0]).span;
+                    let last = self
+                        .krate
+                        .stmt(*then_stmts.last().expect("non-empty body stmts"))
+                        .span;
+                    Span::new(first.start(), last.end())
+                };
+                let then_block =
+                    self.alloc_expr(HirExprKind::Block { stmts: then_stmts }, body_span);
 
                 let break_expr = self.alloc_expr(HirExprKind::Break { value: None }, span);
                 let break_stmt = self.alloc_stmt(HirStmtKind::Semi(break_expr), span);
@@ -788,7 +802,7 @@ impl LoweringContext {
                 let var = HirStmtKind::Let {
                     name: name_sym,
                     ty: ty_id,
-                    init: init_expr.unwrap_or_else(|| self.alloc_expr(HirExprKind::Error, span)),
+                    init: init_expr,
                     local,
                 };
                 self.alloc_stmt(var, span)

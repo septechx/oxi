@@ -13,7 +13,7 @@ check:
 clean:
     cargo clean
 
-install PREFIX="/usr": build
+install PREFIX="/usr": (build "release")
     sudo install -D -m755 target/release/oxic {{PREFIX}}/bin/oxic
     sudo rsync -a --delete lib/oxi/ {{PREFIX}}/lib/oxi
 

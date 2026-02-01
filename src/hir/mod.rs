@@ -101,22 +101,52 @@ pub struct HirCrate {
 
 impl HirCrate {
     pub fn item(&self, id: DefId) -> &HirItem {
+        debug_assert!(
+            (id.0 as usize) < self.items.len(),
+            "DefId({}) out of bounds (len={})",
+            id.0,
+            self.items.len()
+        );
         &self.items[id.0 as usize]
     }
 
     pub fn expr(&self, id: ExprId) -> &HirExpr {
+        debug_assert!(
+            (id.0 as usize) < self.exprs.len(),
+            "ExprId({}) out of bounds (len={})",
+            id.0,
+            self.exprs.len()
+        );
         &self.exprs[id.0 as usize]
     }
 
     pub fn stmt(&self, id: StmtId) -> &HirStmt {
+        debug_assert!(
+            (id.0 as usize) < self.stmts.len(),
+            "StmtId({}) out of bounds (len={})",
+            id.0,
+            self.stmts.len()
+        );
         &self.stmts[id.0 as usize]
     }
 
     pub fn body(&self, id: BodyId) -> &Body {
+        debug_assert!(
+            (id.0 as usize) < self.bodies.len(),
+            "BodyId({}) out of bounds (len={})",
+            id.0,
+            self.bodies.len()
+        );
         &self.bodies[id.0 as usize]
     }
 
     pub fn ty(&self, id: TypeId) -> &HirType {
+        debug_assert!(
+            (id.0 as usize) < self.types.len(),
+            "TypeId({}) out of bounds (len={})",
+            id.0,
+            self.types.len()
+        );
         &self.types[id.0 as usize]
     }
 }
@@ -153,7 +183,7 @@ impl HirItem {
 
 #[derive(Debug, Clone)]
 pub enum HirItemKind {
-    Placeholder(DefId, ModuleId),
+    Placeholder,
     Function(Function),
     Struct(Struct),
     Interface(Interface),
@@ -163,7 +193,7 @@ pub enum HirItemKind {
 impl HirItemKind {
     pub fn module(&self) -> ModuleId {
         match self {
-            HirItemKind::Placeholder(_, m) => *m,
+            HirItemKind::Placeholder => panic!("cannot get module of Placeholder item"),
             HirItemKind::Function(f) => f.module,
             HirItemKind::Struct(s) => s.module,
             HirItemKind::Interface(i) => i.module,
@@ -273,6 +303,10 @@ pub enum HirExprKind {
         def: DefId,
         fields: ThinVec<(Symbol, ExprId)>,
     },
+    /// Block expression containing a sequence of statements.
+    /// NOTE: Statements are stored inline as [ThinVec] instead of using [BodyId]
+    /// because blocks are simple expression values that don't need to be referenced
+    /// independently.
     Block {
         stmts: ThinVec<StmtId>,
     },
@@ -317,7 +351,7 @@ pub enum HirStmtKind {
     Let {
         name: Symbol,
         ty: Option<TypeId>,
-        init: ExprId,
+        init: Option<ExprId>,
         local: LocalId,
     },
 }

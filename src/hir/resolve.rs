@@ -194,7 +194,7 @@ impl LoweringContext {
                         .krate
                         .modules
                         .iter()
-                        .position(|m| m.name == module_name.to_string());
+                        .position(|m| m.name.as_str() == module_name.as_ref());
                     if let Some(tmid) = target_idx_opt {
                         let sym = self.krate.interner.intern(symbol_name);
                         let maybe_export = self.krate.modules[tmid]
@@ -210,11 +210,7 @@ impl LoweringContext {
                                 return ResolutionStatus::Failed;
                             }
 
-                            let local_name = match rename_opt {
-                                Some(ident) => self.krate.interner.intern(&ident.value),
-                                None => self.krate.interner.intern(symbol_name),
-                            };
-                            self.krate.modules[mid].imports.insert(local_name, def);
+                            self.krate.modules[mid].imports.insert(local_sym, def);
 
                             if vis == Visibility::Public {
                                 self.krate.modules[mid].exports.insert(
