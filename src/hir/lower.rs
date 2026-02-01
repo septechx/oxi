@@ -389,12 +389,15 @@ impl LoweringContext {
 
     fn alloc_impl_item(&mut self, kind: ImplItemKind, span: Span) -> ImplItemId {
         let id = ImplItemId(self.krate.impl_items.len() as u32);
-        self.krate.impl_items.push(ImplItem {
-            defid: DefId(self.next_def),
-            kind,
+        let modid = self.current_module.expect("current module set");
+        let defid = DefId(self.next_def);
+        self.krate.impl_items.push(ImplItem { defid, kind, span });
+        self.next_def += 1;
+        self.krate.items.push(HirItem {
+            defid,
+            kind: HirItemKind::Placeholder(modid),
             span,
         });
-        self.next_def += 1;
         id
     }
 
@@ -445,6 +448,16 @@ impl LoweringContext {
                 return;
             }
         };
+
+        match &self.krate.items[interface_def.0 as usize].kind {
+            HirItemKind::Interface(_) => {}
+            _ => {
+                self.krate
+                    .diagnostics
+                    .push(format!("`{}` is not an interface", iface.value));
+                return;
+            }
+        }
 
         let self_defid = match &self_ty.kind {
             TypeKind::Symbol(s) => {
@@ -516,10 +529,11 @@ impl LoweringContext {
                 static_method: item.is_static,
             };
 
-            let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func), item.span);
+            let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func.clone()), item.span);
             impl_item_ids.push(impl_item_id);
 
             let method_defid = self.krate.impl_items[impl_item_id.0 as usize].defid;
+            self.krate.items[method_defid.0 as usize].kind = HirItemKind::Function(func);
             let method_map = &mut self.krate.modules[modid.0 as usize]
                 .struct_methods
                 .entry(self_defid)
