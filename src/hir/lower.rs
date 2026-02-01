@@ -36,6 +36,7 @@ pub struct LoweringContext {
     next_type: u32,
     next_stmt: u32,
     next_body: u32,
+    next_hir_id: u32,
 }
 
 impl LoweringContext {
@@ -51,10 +52,10 @@ impl LoweringContext {
         }
     }
 
-    /// Allocate a new local id within the current owner
+    /// Allocate a new local id for HIR elements (expressions/statements) within the current owner
     fn alloc_hir_id(&mut self) -> HirId {
-        let local_id = LocalId(self.next_local_id);
-        self.next_local_id += 1;
+        let local_id = LocalId(self.next_hir_id);
+        self.next_hir_id += 1;
         self.hir_id(local_id)
     }
 
@@ -62,11 +63,14 @@ impl LoweringContext {
     fn with_owner<T>(&mut self, owner: DefId, f: impl FnOnce(&mut Self) -> T) -> T {
         let old_owner = self.current_owner;
         let old_local_id = self.next_local_id;
+        let old_hir_id = self.next_hir_id;
         self.current_owner = Some(owner);
         self.next_local_id = 0;
+        self.next_hir_id = 0;
         let result = f(self);
         self.current_owner = old_owner;
         self.next_local_id = old_local_id;
+        self.next_hir_id = old_hir_id;
         result
     }
 
@@ -92,6 +96,7 @@ impl LoweringContext {
     fn collect_definitions(&mut self, asts: &[Ast]) {
         // PASS 1: Collect top-level definitions
         for (mid, ast) in asts.iter().enumerate() {
+            self.current_module = Some(ModuleId(mid as u32));
             for item in ast.items.iter() {
                 match &item.kind {
                     ItemKind::Fn(f) => {
@@ -237,6 +242,7 @@ impl LoweringContext {
         id
     }
 
+    /// Allocate a new local id for variables in scopes
     fn alloc_local(&mut self) -> LocalId {
         let id = LocalId(self.next_local_id);
         self.next_local_id += 1;
@@ -520,6 +526,7 @@ impl LoweringContext {
     }
 
     fn lower_expr(&mut self, expr: Expr) -> ExprId {
+        debug_assert!(self.current_owner.is_some());
         let span = expr.span;
         match expr.kind {
             ExprKind::Literal(l) => self.alloc_expr(HirExprKind::Literal(l), span),
@@ -770,6 +777,7 @@ impl LoweringContext {
     }
 
     fn lower_stmt(&mut self, stmt: Stmt) -> StmtId {
+        debug_assert!(self.current_owner.is_some());
         let span = stmt.span;
         match stmt.kind {
             StmtKind::Expr(expr) => {
