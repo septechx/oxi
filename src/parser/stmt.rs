@@ -243,16 +243,22 @@ pub fn parse_interface_decl_item(
 
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
+            if fn_decl.body.is_some() {
+                error_at!(
+                    stmt.span,
+                    parser.current_token().module_id,
+                    "Expected interface method to not have a body"
+                )?;
+            }
+
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
                 is_static: false,
                 span: stmt.span,
             });
-        } else if parser.current_token().kind == TokenKind::Comma {
-            parser.advance();
-        } else {
-            unexpected_token(parser.current_token());
+
+            parser.expect(TokenKind::Comma)?;
         }
     }
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
