@@ -6,7 +6,7 @@ pub type Symbol = u32;
 pub struct Interner {
     /// Used for checking if a symbol is already interned
     map: FxHashMap<String, Symbol>,
-    /// Used for retreaving the symbol value
+    /// Used for retrieving the symbol value
     vec: Vec<String>,
 }
 

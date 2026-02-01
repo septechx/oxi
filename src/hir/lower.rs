@@ -569,6 +569,11 @@ impl LoweringContext {
                     let ImplItemKind::Fn(func) =
                         &mut ctx.krate.impl_items[impl_item_id.0 as usize].kind;
                     func.body = Some(body_id);
+                    if let HirItemKind::Function(item_func) =
+                        &mut ctx.krate.items[method_defid.0 as usize].kind
+                    {
+                        item_func.body = Some(body_id);
+                    }
                     ctx.local_stack.pop();
                 });
             }
