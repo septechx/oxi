@@ -496,6 +496,8 @@ impl LoweringContext {
 
         let mut impl_item_ids = ThinVec::with_capacity(items.len());
 
+        let prev_struct = self.current_struct;
+        self.current_struct = Some(self_defid);
         for item in items.into_iter() {
             let AssocItemKind::Fn(fn_decl) = item.kind;
             let method_sym = self.krate.interner.intern(&fn_decl.name.value);
@@ -578,6 +580,7 @@ impl LoweringContext {
                 });
             }
         }
+        self.current_struct = prev_struct;
 
         let impl_item = Impl {
             self_ty: self_ty_id,
