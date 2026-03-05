@@ -1,13 +1,11 @@
 pub mod display;
-pub mod types;
 pub mod validate;
 pub mod visit;
 
 use anyhow::bail;
-use thin_vec::ThinVec;
+use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
-    ast::{display::DisplayContext, types::*},
     lexer::token::{Token, TokenKind},
     span::Span,
 };
@@ -20,7 +18,7 @@ pub struct Ast {
 
 impl Ast {
     pub fn display(&self, color: bool) -> Result<String, std::fmt::Error> {
-        let ctx = DisplayContext::new(color);
+        let ctx = display::DisplayContext::new(color);
         let mut output = String::new();
         for (i, item) in self.items.iter().enumerate() {
             if i > 0 {
@@ -67,7 +65,7 @@ pub enum ItemKind {
     },
     Impl {
         self_ty: Type,
-        interface: Ident,
+        interface: Path,
         items: ThinVec<AssocItem>,
     },
     Fn(Fn),
@@ -125,7 +123,7 @@ pub struct Expr {
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Literal(Literal),
-    Symbol(Ident),
+    Symbol(Path),
     Binary {
         left: Box<Expr>,
         operator: Token,
@@ -145,7 +143,7 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     StructInstantiation {
-        name: Ident,
+        path: Path,
         fields: ThinVec<(Ident, Expr)>,
     },
     ArrayLiteral {
@@ -201,12 +199,15 @@ pub struct Type {
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    Symbol(SymbolType),
-    Pointer(PointerType),
-    Slice(SliceType),
-    FixedArray(FixedArrayType),
-    Function(FunctionType),
-    Tuple(TupleType),
+    Symbol(Path),
+    Pointer(Box<Type>, Mutability),
+    Slice(Box<Type>),
+    FixedArray(Box<Type>, usize),
+    Function {
+        params: ThinVec<Type>,
+        ret: Box<Type>,
+    },
+    Tuple(ThinVec<Type>),
     Infer,
     Never,
 }
@@ -254,6 +255,19 @@ pub struct Path {
     pub segments: ThinVec<Ident>,
 }
 
+impl Path {
+    pub fn from_ident(id: Ident) -> Self {
+        Path {
+            span: id.span,
+            segments: thin_vec![id],
+        }
+    }
+
+    pub fn last_ident(&self) -> Option<&Ident> {
+        self.segments.last()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     pub name: Ident,
@@ -294,13 +308,7 @@ impl ImportTree {
     pub fn ident(&self) -> Option<Ident> {
         match &self.kind {
             ImportTreeKind::Simple(Some(rename)) => Some(rename.clone()),
-            ImportTreeKind::Simple(None) => Some(
-                self.prefix
-                    .segments
-                    .last()
-                    .expect("empty prefix in a simple import")
-                    .clone(),
-            ),
+            ImportTreeKind::Simple(None) => self.prefix.segments.last().cloned(),
             _ => None,
         }
     }
