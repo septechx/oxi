@@ -4,7 +4,7 @@ use colored::Colorize;
 
 use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
-    ItemKind, Literal, Mutability, Stmt, StmtKind, Type, TypeKind, Visibility,
+    ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -81,6 +81,16 @@ fn punct_with_color(s: &str, color: bool) -> String {
         s.white().to_string()
     } else {
         s.to_string()
+    }
+}
+
+fn format_path(path: &Path, color: bool) -> String {
+    let segments: Vec<String> = path.segments.iter().map(|s| s.value.to_string()).collect();
+    let path_str = segments.join("::");
+    if color {
+        path_str.magenta().to_string()
+    } else {
+        path_str
     }
 }
 
@@ -256,7 +266,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "Impl".with_color(ctx.color),
                 write_type(self_ty, ctx),
                 punct_with_color(":", ctx.color),
-                interface.value
+                format_path(interface, ctx.color)
             )?;
             if items.is_empty() {
                 write!(out, ": (empty)")?;
@@ -528,7 +538,7 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 "{} {}{}{}",
                 "Symbol".with_color(ctx.color),
                 punct_with_color("\"", ctx.color),
-                s.value,
+                format_path(s, false),
                 punct_with_color("\"", ctx.color)
             )?;
         }
@@ -695,9 +705,9 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             write!(out, "{}", expr_ctx.indent_str())?;
             write_expr(out, value, &expr_ctx)?;
         }
-        ExprKind::StructInstantiation { name, fields } => {
+        ExprKind::StructInstantiation { path, fields } => {
             write!(out, "{}", "StructInstantiation".with_color(ctx.color),)?;
-            write!(out, " \"{}\"", name.value)?;
+            write!(out, " \"{}\"", format_path(path, false))?;
             if fields.is_empty() {
                 write!(out, ": (empty)")?;
             } else {
@@ -816,30 +826,30 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
 
 fn write_type(ty: &Type, ctx: &DisplayContext) -> String {
     match &ty.kind {
-        TypeKind::Symbol(s) => type_with_color(&s.name.value, ctx.color),
-        TypeKind::Pointer(p) => {
-            let inner = write_type(p.underlying.as_ref(), ctx);
-            if p.mutability == Mutability::Mutable {
+        TypeKind::Symbol(s) => format_path(s, ctx.color),
+        TypeKind::Pointer(ty, mutability) => {
+            let inner = write_type(ty.as_ref(), ctx);
+            if *mutability == Mutability::Mutable {
                 format!("&mut {}", inner)
             } else {
                 format!("&{}", inner)
             }
         }
-        TypeKind::Slice(s) => {
-            let inner = write_type(s.underlying.as_ref(), ctx);
+        TypeKind::Slice(ty) => {
+            let inner = write_type(ty.as_ref(), ctx);
             format!("[]{}", inner)
         }
-        TypeKind::FixedArray(f) => {
-            let inner = write_type(f.underlying.as_ref(), ctx);
-            format!("[{}]{}", f.length, inner)
+        TypeKind::FixedArray(ty, length) => {
+            let inner = write_type(ty.as_ref(), ctx);
+            format!("[{}]{}", length, inner)
         }
-        TypeKind::Function(ft) => {
-            let params: Vec<String> = ft.parameters.iter().map(|p| write_type(p, ctx)).collect();
-            let ret = write_type(ft.return_type.as_ref(), ctx);
+        TypeKind::Function { params, ret } => {
+            let params: Vec<String> = params.iter().map(|p| write_type(p, ctx)).collect();
+            let ret = write_type(ret.as_ref(), ctx);
             format!("({}) -> {}", params.join(", "), ret)
         }
-        TypeKind::Tuple(t) => {
-            let elems: Vec<String> = t.elements.iter().map(|e| write_type(e, ctx)).collect();
+        TypeKind::Tuple(elements) => {
+            let elems: Vec<String> = elements.iter().map(|e| write_type(e, ctx)).collect();
             format!("({})", elems.join(", "))
         }
         TypeKind::Infer => type_with_color("_", ctx.color),
@@ -852,13 +862,7 @@ fn write_import_tree(
     tree: &ImportTree,
     ctx: &DisplayContext,
 ) -> std::fmt::Result {
-    let path: Vec<String> = tree
-        .prefix
-        .segments
-        .iter()
-        .map(|s| s.value.to_string())
-        .collect();
-    let path_str = path.join("::");
+    let path_str = format_path(&tree.prefix, false);
     match &tree.kind {
         ImportTreeKind::Simple(rename) => {
             if let Some(r) = rename {

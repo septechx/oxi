@@ -386,7 +386,7 @@ pub fn parse_impl_item(
     no_modifiers!(&parser, &modifiers);
 
     let start_span = parser.expect(TokenKind::Impl)?.span;
-    let interface = parser.expect_identifier()?;
+    let interface = parse_path(parser)?;
     parser.expect(TokenKind::Colon)?;
     let self_ty = parse_type(parser, BindingPower::DefaultBp)?;
 

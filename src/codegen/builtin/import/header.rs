@@ -4,7 +4,7 @@ use inkwell::{builder::Builder, context::Context, module::Module};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, Fn, Ident, Item, ItemKind, Type, TypeKind, Visibility, types::SymbolType},
+    ast::{Ast, Fn, Ident, Item, ItemKind, Path, Type, TypeKind, Visibility},
     codegen::{
         builtin::import::create_module,
         compiler::{self, CompilationContext},
@@ -135,12 +135,10 @@ fn parse_type(ty: &str, span: Span) -> Type {
     let ty = map_c_type(ty);
 
     Type {
-        kind: TypeKind::Symbol(SymbolType {
-            name: Ident {
-                value: ty.into(),
-                span,
-            },
-        }),
+        kind: TypeKind::Symbol(Path::from_ident(Ident {
+            value: ty.into(),
+            span,
+        })),
         span,
     }
 }

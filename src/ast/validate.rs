@@ -175,7 +175,7 @@ impl Visitor for AstValidator {
 
     fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
         match &expr.kind {
-            ExprKind::StructInstantiation { name: _, fields } => {
+            ExprKind::StructInstantiation { path: _, fields } => {
                 let mut seen = FxHashMap::default();
                 for (ident, val) in fields.iter() {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {

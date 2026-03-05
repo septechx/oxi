@@ -266,6 +266,18 @@ impl Path {
     pub fn last_ident(&self) -> Option<&Ident> {
         self.segments.last()
     }
+
+    pub fn to_string(&self) -> String {
+        self.segments
+            .iter()
+            .map(|s| s.value.as_ref())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    pub fn is_single(&self) -> bool {
+        self.segments.len() == 1
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

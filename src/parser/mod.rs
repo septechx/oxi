@@ -69,6 +69,10 @@ impl Parser {
         current
     }
 
+    pub fn backtrack(&mut self, amount: usize) {
+        self.pos -= amount;
+    }
+
     pub fn has_tokens(&self) -> bool {
         self.pos < self.tokens.len()
     }

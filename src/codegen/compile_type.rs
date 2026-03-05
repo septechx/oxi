@@ -46,24 +46,35 @@ pub fn compile_type<'ctx>(
     compilation_context: &mut CompilationContext<'ctx>,
 ) -> Result<BasicTypeEnum<'ctx>> {
     Ok(match &ty.kind {
-        TypeKind::Symbol(sym) => match sym.name.value.as_ref() {
-            "u8" | "i8" => context.i8_type().as_basic_type_enum(),
-            "u16" | "i16" => context.i16_type().as_basic_type_enum(),
-            "u32" | "i32" => context.i32_type().as_basic_type_enum(),
-            "u64" | "i64" => context.i64_type().as_basic_type_enum(),
-            "u128" | "i128" => context.i128_type().as_basic_type_enum(),
-            "f16" => context.f16_type().as_basic_type_enum(),
-            "f32" => context.f32_type().as_basic_type_enum(),
-            "f64" => context.f64_type().as_basic_type_enum(),
-            "f128" => context.f128_type().as_basic_type_enum(),
-            "bool" => context.bool_type().as_basic_type_enum(),
-            "usize" | "isize" => compile_arch_size_type(context).as_basic_type_enum(),
-            tyname => unimplemented!("{tyname}"),
-        },
+        TypeKind::Symbol(sym) => {
+            let sym_str = sym.to_string();
+            match sym_str.as_str() {
+                "u8" | "i8" => context.i8_type().as_basic_type_enum(),
+                "u16" | "i16" => context.i16_type().as_basic_type_enum(),
+                "u32" | "i32" => context.i32_type().as_basic_type_enum(),
+                "u64" | "i64" => context.i64_type().as_basic_type_enum(),
+                "u128" | "i128" => context.i128_type().as_basic_type_enum(),
+                "f16" => context.f16_type().as_basic_type_enum(),
+                "f32" => context.f32_type().as_basic_type_enum(),
+                "f64" => context.f64_type().as_basic_type_enum(),
+                "f128" => context.f128_type().as_basic_type_enum(),
+                "bool" => context.bool_type().as_basic_type_enum(),
+                "usize" | "isize" => compile_arch_size_type(context).as_basic_type_enum(),
+                tyname => {
+                    if let Some(struct_def) =
+                        compilation_context.type_context.struct_defs.get(tyname)
+                    {
+                        struct_def.llvm_type.as_basic_type_enum()
+                    } else {
+                        unimplemented!("{tyname}")
+                    }
+                }
+            }
+        }
         TypeKind::Slice(_) => get_builtin(context, compilation_context, Builtin::Slice)?
             .llvm_type
             .as_basic_type_enum(),
-        TypeKind::Function(_) | TypeKind::Pointer(_) => context
+        TypeKind::Function { .. } | TypeKind::Pointer(..) => context
             .ptr_type(AddressSpace::default())
             .as_basic_type_enum(),
         ty => unimplemented!("{ty:#?}"),
@@ -77,7 +88,7 @@ pub fn compile_function_type<'ctx>(
     compilation_context: &mut CompilationContext<'ctx>,
 ) -> Result<FunctionType<'ctx>> {
     let return_llvm_type: Option<BasicTypeEnum> = match &return_type.kind {
-        TypeKind::Symbol(sym) if sym.name.value.as_ref() == "void" => None,
+        TypeKind::Symbol(sym) if sym.to_string() == "void" => None,
         _ => Some(compile_type(context, return_type, compilation_context)?),
     };
 

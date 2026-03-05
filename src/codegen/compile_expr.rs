@@ -9,7 +9,7 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{Expr, ExprKind, Literal, Type, TypeKind, types::SliceType},
+    ast::{Expr, ExprKind, Literal, Type, TypeKind},
     codegen::{
         arch::compile_arch_size_type,
         builtin::{Builtin, get_builtin},
@@ -77,13 +77,14 @@ pub fn compile_expression_to_value<'a, 'ctx>(
         },
         // Returns a pointer
         ExprKind::Symbol(sym) => {
+            let sym_str = sym.to_string();
             let entry = compilation_context
                 .symbol_table
-                .get(sym.value.as_ref())
+                .get(sym_str.as_str())
                 .cloned()
-                .ok_or_else(|| anyhow!("Undefined variable `{}`", sym.value))?;
+                .ok_or_else(|| anyhow!("Undefined variable `{}`", sym_str))?;
 
-            if let Some(fn_entry) = compilation_context.function_table.get(sym.value.as_ref()) {
+            if let Some(fn_entry) = compilation_context.function_table.get(sym_str.as_str()) {
                 entry.value.with_fn_type(fn_entry.function.get_type())
             } else {
                 entry.value
@@ -156,11 +157,19 @@ pub fn compile_expression_to_value<'a, 'ctx>(
             }
         }
         ExprKind::FunctionCall { callee, parameters } => {
-            if let ExprKind::Symbol(sym) = &callee.kind
-                && let Some(builtin) = sym.value.strip_prefix("@")
-                && let Some(builtin) = Builtin::from_str(builtin)
-            {
-                return builtin.handle_call(context, module, builder, expr, compilation_context);
+            if let ExprKind::Symbol(sym) = &callee.kind {
+                let sym_str = sym.to_string();
+                if let Some(builtin) = sym_str.strip_prefix("@") {
+                    if let Some(builtin) = Builtin::from_str(builtin) {
+                        return builtin.handle_call(
+                            context,
+                            module,
+                            builder,
+                            expr,
+                            compilation_context,
+                        );
+                    }
+                }
             }
 
             let callee_val =
@@ -279,13 +288,14 @@ pub fn compile_expression_to_value<'a, 'ctx>(
                 bail!("No such field or function: {}", member.value);
             }
         }
-        ExprKind::StructInstantiation { name, fields } => {
+        ExprKind::StructInstantiation { path, fields } => {
+            let sym_str = path.to_string();
             let struct_def = compilation_context
                 .type_context
                 .struct_defs
-                .get(name.value.as_ref())
+                .get(sym_str.as_str())
                 .cloned()
-                .ok_or_else(|| anyhow!("Unknown struct: {}", name.value))?;
+                .ok_or_else(|| anyhow!("Unknown struct: {}", sym_str))?;
 
             let struct_ty = struct_def.llvm_type;
 
@@ -300,21 +310,17 @@ pub fn compile_expression_to_value<'a, 'ctx>(
                     .field_indices
                     .contains_key(field_name.value.as_ref())
                 {
-                    bail!(
-                        "No such field {} in struct: {}",
-                        field_name.value,
-                        name.value
-                    );
+                    bail!("No such field {} in struct: {}", field_name.value, sym_str);
                 }
             }
             // Field in struct but not in instantiation
             for field_name in struct_def.field_indices.keys() {
                 if !properties.contains_key(field_name.as_ref()) {
-                    bail!("Missing field {} in struct {}", field_name, name.value);
+                    bail!("Missing field {} in struct {}", field_name, sym_str);
                 }
             }
 
-            let alloca = builder.build_alloca(struct_ty, &format!("inst_{}", name.value))?;
+            let alloca = builder.build_alloca(struct_ty, &format!("inst_{}", sym_str))?;
 
             for (field_name, field_index) in &struct_def.field_indices {
                 let expr_val = properties.get(field_name.as_ref()).expect("field exists");
@@ -403,9 +409,7 @@ pub fn compile_expression_to_value<'a, 'ctx>(
             };
 
             let slice_ty = Type {
-                kind: TypeKind::Slice(SliceType {
-                    underlying: Box::new(underlying.clone()),
-                }),
+                kind: TypeKind::Slice(Box::new(underlying.clone())),
                 span: Span::new(expr.span.start(), underlying.span.end()),
             };
 

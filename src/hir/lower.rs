@@ -2,8 +2,8 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
     ast::{
-        AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, ItemKind, Stmt, StmtKind, Type,
-        TypeKind, Visibility,
+        AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, ItemKind, Path, Stmt, StmtKind,
+        Type, TypeKind, Visibility,
     },
     hashmap::FxHashMap,
     hir::{
@@ -437,14 +437,15 @@ impl LoweringContext {
         self.krate.items[defid.0 as usize].span = span;
     }
 
-    fn lower_impl_stmt(&mut self, self_ty: Type, iface: Ident, items: ThinVec<AssocItem>) {
-        let interface_sym = self.krate.interner.intern(&iface.value);
+    fn lower_impl_stmt(&mut self, self_ty: Type, iface: Path, items: ThinVec<AssocItem>) {
+        let interface_str = iface.to_string();
+        let interface_sym = self.krate.interner.intern(&interface_str);
         let interface_def = match self.lookup_in_current_module(interface_sym) {
             Some(def) => def,
             None => {
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown interface `{}`", iface.value));
+                    .push(format!("Unknown interface `{}`", interface_str));
                 return;
             }
         };
@@ -454,20 +455,21 @@ impl LoweringContext {
             _ => {
                 self.krate
                     .diagnostics
-                    .push(format!("`{}` is not an interface", iface.value));
+                    .push(format!("`{}` is not an interface", interface_str));
                 return;
             }
         }
 
         let self_defid = match &self_ty.kind {
             TypeKind::Symbol(s) => {
-                let sym = self.krate.interner.intern(&s.name.value);
+                let sym_str = s.to_string();
+                let sym = self.krate.interner.intern(&sym_str);
                 match self.lookup_in_current_module(sym) {
                     Some(def) => def,
                     None => {
                         self.krate
                             .diagnostics
-                            .push(format!("Unknown type `{}` in impl", s.name.value));
+                            .push(format!("Unknown type `{}` in impl", sym_str));
                         return;
                     }
                 }
@@ -634,7 +636,8 @@ impl LoweringContext {
         match expr.kind {
             ExprKind::Literal(l) => self.alloc_expr(HirExprKind::Literal(l), span),
             ExprKind::Symbol(s) => {
-                let sym = self.krate.interner.intern(&s.value);
+                let sym_str = s.to_string();
+                let sym = self.krate.interner.intern(&sym_str);
 
                 for scope in self.local_stack.iter().rev() {
                     if let Some(local) = scope.get(&sym) {
@@ -648,7 +651,7 @@ impl LoweringContext {
 
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown symbol {}", s.value));
+                    .push(format!("Unknown symbol {}", sym_str));
                 self.alloc_expr(HirExprKind::Error, span)
             }
             ExprKind::FunctionCall { callee, parameters } => match *callee {
@@ -686,10 +689,11 @@ impl LoweringContext {
                 }
             },
             ExprKind::StructInstantiation {
-                name,
+                path,
                 fields: expr_fields,
             } => {
-                let def_sym = self.krate.interner.intern(&name.value);
+                let sym_str = path.to_string();
+                let def_sym = self.krate.interner.intern(&sym_str);
                 if let Some(defid) = self.lookup_in_current_module(def_sym) {
                     let mut fields = ThinVec::with_capacity(expr_fields.len());
                     for (ident, val) in expr_fields.into_iter() {
@@ -701,7 +705,7 @@ impl LoweringContext {
                 } else {
                     self.krate
                         .diagnostics
-                        .push(format!("Unknown struct name: {}", name.value));
+                        .push(format!("Unknown struct name: {}", sym_str));
                     self.alloc_expr(HirExprKind::Error, span)
                 }
             }
@@ -781,6 +785,7 @@ impl LoweringContext {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let cond = self.lower_expr(*condition);
 
@@ -925,7 +930,7 @@ impl LoweringContext {
     fn lower_type(&mut self, ty: Type) -> TypeId {
         match ty.kind {
             TypeKind::Symbol(s) => {
-                let name = s.name.value;
+                let name = s.to_string();
 
                 if BUILTIN_TYPES.contains(&name.as_ref()) {
                     return self.alloc_type(HirType::Builtin(name.into()));
@@ -941,10 +946,9 @@ impl LoweringContext {
                     .push(format!("Unknown type: {}", name));
                 self.alloc_type(HirType::Error)
             }
-            TypeKind::Pointer(p) => {
-                let inner = *p.underlying;
-                let tid = self.lower_type(inner);
-                self.alloc_type(HirType::Pointer(tid, p.mutability))
+            TypeKind::Pointer(ty, mutability) => {
+                let tid = self.lower_type(*ty);
+                self.alloc_type(HirType::Pointer(tid, mutability))
             }
             _ => todo!("Lowering of {:?} not implemented", ty.kind),
         }

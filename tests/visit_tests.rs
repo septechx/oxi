@@ -5,7 +5,6 @@ mod tests {
             AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
             ImportTreeKind, Item, ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type,
             TypeKind, Visibility,
-            types::{FixedArrayType, FunctionType, PointerType, SliceType, SymbolType, TupleType},
             visit::{VisitAction, Visitable, Visitor},
         },
         hashmap::FxHashMap,
@@ -150,10 +149,10 @@ mod tests {
 
             let kind_name = match &ty.kind {
                 TypeKind::Symbol(_) => "SymbolType",
-                TypeKind::Pointer(_) => "PointerType",
+                TypeKind::Pointer(..) => "PointerType",
                 TypeKind::Slice(_) => "SliceType",
-                TypeKind::FixedArray(_) => "FixedArrayType",
-                TypeKind::Function(_) => "FunctionType",
+                TypeKind::FixedArray(..) => "FixedArrayType",
+                TypeKind::Function { .. } => "FunctionType",
                 TypeKind::Tuple(_) => "TupleType",
                 TypeKind::Infer => "Infer",
                 TypeKind::Never => "Never",
@@ -186,9 +185,7 @@ mod tests {
 
     fn dummy_type_symbol(name: &str) -> Type {
         Type {
-            kind: TypeKind::Symbol(SymbolType {
-                name: dummy_ident(name),
-            }),
+            kind: TypeKind::Symbol(Path::from_ident(dummy_ident(name))),
             span: dummy_span(),
         }
     }
@@ -216,7 +213,7 @@ mod tests {
 
     fn dummy_expr_symbol(name: &str) -> Expr {
         Expr {
-            kind: ExprKind::Symbol(dummy_ident(name)),
+            kind: ExprKind::Symbol(Path::from_ident(dummy_ident(name))),
             span: dummy_span(),
         }
     }
@@ -381,7 +378,7 @@ mod tests {
     fn test_struct_instantiation_expr_single_prop() {
         let expr = Expr {
             kind: ExprKind::StructInstantiation {
-                name: dummy_ident("Foo"),
+                path: Path::from_ident(dummy_ident("Foo")),
                 fields: thin_vec![(dummy_ident("a"), dummy_expr_number(1))],
             },
             span: dummy_span(),
@@ -397,7 +394,7 @@ mod tests {
     fn test_struct_instantiation_expr_multiple_props() {
         let expr = Expr {
             kind: ExprKind::StructInstantiation {
-                name: dummy_ident("Foo"),
+                path: Path::from_ident(dummy_ident("Foo")),
                 fields: thin_vec![
                     (dummy_ident("a"), dummy_expr_number(1)),
                     (dummy_ident("b"), dummy_expr_number(2)),
@@ -791,10 +788,7 @@ mod tests {
     fn test_import_item() {
         let item = Item {
             kind: ItemKind::Import(ImportTree {
-                prefix: Path {
-                    span: dummy_span(),
-                    segments: thin_vec![dummy_ident("foo")],
-                },
+                prefix: Path::from_ident(dummy_ident("foo")),
                 kind: ImportTreeKind::Simple(None),
                 span: dummy_span(),
             }),
@@ -838,10 +832,7 @@ mod tests {
     #[test]
     fn test_pointer_type() {
         let ty = Type {
-            kind: TypeKind::Pointer(PointerType {
-                underlying: Box::new(dummy_type_symbol("i32")),
-                mutability: Mutability::Constant,
-            }),
+            kind: TypeKind::Pointer(Box::new(dummy_type_symbol("i32")), Mutability::Constant),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -854,9 +845,7 @@ mod tests {
     #[test]
     fn test_slice_type() {
         let ty = Type {
-            kind: TypeKind::Slice(SliceType {
-                underlying: Box::new(dummy_type_symbol("i32")),
-            }),
+            kind: TypeKind::Slice(Box::new(dummy_type_symbol("i32"))),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -869,10 +858,7 @@ mod tests {
     #[test]
     fn test_fixed_array_type() {
         let ty = Type {
-            kind: TypeKind::FixedArray(FixedArrayType {
-                length: 10,
-                underlying: Box::new(dummy_type_symbol("i32")),
-            }),
+            kind: TypeKind::FixedArray(Box::new(dummy_type_symbol("i32")), 10),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -885,10 +871,10 @@ mod tests {
     #[test]
     fn test_function_type() {
         let ty = Type {
-            kind: TypeKind::Function(FunctionType {
-                parameters: thin_vec![dummy_type_symbol("i32"), dummy_type_symbol("bool")],
-                return_type: Box::new(dummy_type_symbol("void")),
-            }),
+            kind: TypeKind::Function {
+                params: thin_vec![dummy_type_symbol("i32"), dummy_type_symbol("bool")],
+                ret: Box::new(dummy_type_symbol("void")),
+            },
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -901,9 +887,10 @@ mod tests {
     #[test]
     fn test_tuple_type() {
         let ty = Type {
-            kind: TypeKind::Tuple(TupleType {
-                elements: thin_vec![dummy_type_symbol("i32"), dummy_type_symbol("bool")],
-            }),
+            kind: TypeKind::Tuple(thin_vec![
+                dummy_type_symbol("i32"),
+                dummy_type_symbol("bool")
+            ]),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -922,7 +909,7 @@ mod tests {
                     dummy_expr_number(1),
                     Expr {
                         kind: ExprKind::StructInstantiation {
-                            name: dummy_ident("Bar"),
+                            path: Path::from_ident(dummy_ident("Bar")),
                             fields: thin_vec![
                                 (dummy_ident("x"), dummy_expr_number(2)),
                                 (
@@ -944,10 +931,10 @@ mod tests {
                         kind: ExprKind::As {
                             expr: Box::new(dummy_expr_symbol("z")),
                             ty: Type {
-                                kind: TypeKind::Pointer(PointerType {
-                                    underlying: Box::new(dummy_type_symbol("i32")),
-                                    mutability: Mutability::Constant,
-                                }),
+                                kind: TypeKind::Pointer(
+                                    Box::new(dummy_type_symbol("i32")),
+                                    Mutability::Constant
+                                ),
                                 span: dummy_span(),
                             },
                         },
@@ -978,10 +965,7 @@ mod tests {
             items: thin_vec![
                 Item {
                     kind: ItemKind::Import(ImportTree {
-                        prefix: Path {
-                            span: dummy_span(),
-                            segments: thin_vec![dummy_ident("std")],
-                        },
+                        prefix: Path::from_ident(dummy_ident("std")),
                         kind: ImportTreeKind::Simple(None),
                         span: dummy_span(),
                     },),
@@ -1098,40 +1082,33 @@ mod tests {
     #[test]
     fn test_comprehensive_all_type_types() {
         let ty = Type {
-            kind: TypeKind::Function(FunctionType {
-                parameters: thin_vec![
+            kind: TypeKind::Function {
+                params: thin_vec![
                     Type {
-                        kind: TypeKind::Pointer(PointerType {
-                            underlying: Box::new(dummy_type_symbol("i32")),
-                            mutability: Mutability::Mutable,
-                        }),
+                        kind: TypeKind::Pointer(
+                            Box::new(dummy_type_symbol("i32")),
+                            Mutability::Mutable
+                        ),
                         span: dummy_span(),
                     },
                     Type {
-                        kind: TypeKind::Slice(SliceType {
-                            underlying: Box::new(dummy_type_symbol("u8")),
-                        }),
+                        kind: TypeKind::Slice(Box::new(dummy_type_symbol("u8"))),
                         span: dummy_span(),
                     },
                     Type {
-                        kind: TypeKind::FixedArray(FixedArrayType {
-                            length: 10,
-                            underlying: Box::new(dummy_type_symbol("bool")),
-                        }),
+                        kind: TypeKind::FixedArray(Box::new(dummy_type_symbol("bool")), 10),
                         span: dummy_span(),
                     },
                 ],
-                return_type: Box::new(Type {
-                    kind: TypeKind::Tuple(TupleType {
-                        elements: thin_vec![
-                            dummy_type_infer(),
-                            dummy_type_never(),
-                            dummy_type_symbol("void"),
-                        ],
-                    }),
+                ret: Box::new(Type {
+                    kind: TypeKind::Tuple(thin_vec![
+                        dummy_type_infer(),
+                        dummy_type_never(),
+                        dummy_type_symbol("void"),
+                    ]),
                     span: dummy_span(),
                 }),
-            }),
+            },
             span: dummy_span(),
         };
 
@@ -1198,7 +1175,7 @@ mod tests {
         let item = Item {
             kind: ItemKind::Impl {
                 self_ty: dummy_type_symbol("Foo"),
-                interface: dummy_ident("Bar"),
+                interface: Path::from_ident(dummy_ident("Bar")),
                 items: thin_vec![AssocItem {
                     kind: AssocItemKind::Fn(Fn {
                         name: dummy_ident("bar"),

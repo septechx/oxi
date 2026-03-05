@@ -1,10 +1,8 @@
-use std::convert::TryInto;
-
 use anyhow::{Result, bail};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Block, Expr, ExprKind, Ident, Literal},
+    ast::{Block, Expr, ExprKind, Ident, Literal, Path},
     fatal_at,
     lexer::token::TokenKind,
     parser::{
@@ -12,7 +10,7 @@ use crate::{
         lookups::{BP_LU, BindingPower, LED_LU, NUD_LU},
         string::process_string,
         types::parse_type,
-        utils::{parse_body, unexpected_token},
+        utils::{parse_body, parse_path, unexpected_token},
     },
     span::Span,
 };
@@ -88,10 +86,14 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             )),
             span,
         }),
-        TokenKind::Identifier => Ok(Expr {
-            kind: ExprKind::Symbol(TryInto::<Ident>::try_into(token)?),
-            span,
-        }),
+        TokenKind::Identifier => {
+            parser.backtrack(1);
+            let path = parse_path(parser)?;
+            Ok(Expr {
+                kind: ExprKind::Symbol(path.clone()),
+                span: path.span,
+            })
+        }
         TokenKind::True => Ok(Expr {
             kind: ExprKind::Literal(Literal::Bool(true)),
             span,
@@ -176,8 +178,8 @@ pub fn parse_struct_instantiation_expr(
     left: Expr,
     _bp: BindingPower,
 ) -> Result<Expr> {
-    let struct_name = match &left.kind {
-        ExprKind::Symbol(ident) => ident.clone(),
+    let struct_path = match &left.kind {
+        ExprKind::Symbol(path) => path.clone(),
         _ => bail!("Expected symbol for struct instantiation"),
     };
 
@@ -197,7 +199,7 @@ pub fn parse_struct_instantiation_expr(
             parse_expr(parser, BindingPower::Assignment)?
         } else {
             Expr {
-                kind: ExprKind::Symbol(property.clone()),
+                kind: ExprKind::Symbol(Path::from_ident(property.clone())),
                 span: property.span,
             }
         };
@@ -214,7 +216,7 @@ pub fn parse_struct_instantiation_expr(
     let span = Span::new(left.span.start(), close_token.span.end());
     Ok(Expr {
         kind: ExprKind::StructInstantiation {
-            name: struct_name,
+            path: struct_path,
             fields: properties,
         },
         span,

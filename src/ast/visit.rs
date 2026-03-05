@@ -5,7 +5,7 @@ use thin_vec::ThinVec;
 use crate::{
     ast::{
         AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Item, ItemKind, Literal, Stmt,
-        StmtKind, Type, TypeKind, types::*,
+        StmtKind, Type, TypeKind,
     },
     hashmap::FxHashMap,
 };
@@ -219,7 +219,7 @@ impl Visitable for Expr {
                     assignee.visit(visitor);
                     value.visit(visitor);
                 }
-                ExprKind::StructInstantiation { name: _, fields } => {
+                ExprKind::StructInstantiation { path: _, fields } => {
                     for field in fields {
                         field.1.visit(visitor);
                     }
@@ -275,17 +275,17 @@ impl Visitable for Type {
         match visitor.visit_type(self) {
             VisitAction::Continue => match &self.kind {
                 TypeKind::Symbol(_) => {}
-                TypeKind::Pointer(p) => p.underlying.visit(visitor),
-                TypeKind::Slice(s) => s.underlying.visit(visitor),
-                TypeKind::FixedArray(f) => {
-                    f.underlying.visit(visitor);
+                TypeKind::Pointer(ty, _) => ty.visit(visitor),
+                TypeKind::Slice(ty) => ty.visit(visitor),
+                TypeKind::FixedArray(ty, _) => {
+                    ty.visit(visitor);
                 }
-                TypeKind::Function(ft) => {
-                    ft.parameters.visit(visitor);
-                    ft.return_type.visit(visitor);
+                TypeKind::Function { params, ret } => {
+                    params.visit(visitor);
+                    ret.visit(visitor);
                 }
-                TypeKind::Tuple(t) => {
-                    t.elements.visit(visitor);
+                TypeKind::Tuple(elements) => {
+                    elements.visit(visitor);
                 }
                 TypeKind::Infer => {
                     // Leaf
@@ -295,47 +295,6 @@ impl Visitable for Type {
                 }
             },
             VisitAction::SkipChildren => {}
-        }
-    }
-}
-
-impl Visitable for SymbolType {
-    fn visit(&self, _visitor: &mut impl Visitor) {
-        // Leaf
-    }
-}
-
-impl Visitable for PointerType {
-    fn visit(&self, visitor: &mut impl Visitor) {
-        self.underlying.visit(visitor);
-    }
-}
-
-impl Visitable for SliceType {
-    fn visit(&self, visitor: &mut impl Visitor) {
-        self.underlying.visit(visitor);
-    }
-}
-
-impl Visitable for FixedArrayType {
-    fn visit(&self, visitor: &mut impl Visitor) {
-        self.underlying.visit(visitor);
-    }
-}
-
-impl Visitable for FunctionType {
-    fn visit(&self, visitor: &mut impl Visitor) {
-        for p in &self.parameters {
-            p.visit(visitor);
-        }
-        self.return_type.visit(visitor);
-    }
-}
-
-impl Visitable for TupleType {
-    fn visit(&self, visitor: &mut impl Visitor) {
-        for element in &self.elements {
-            element.visit(visitor);
         }
     }
 }
