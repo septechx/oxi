@@ -2,6 +2,8 @@ pub mod display;
 pub mod validate;
 pub mod visit;
 
+use std::fmt::Display;
+
 use anyhow::bail;
 use thin_vec::{ThinVec, thin_vec};
 
@@ -157,7 +159,6 @@ pub enum ExprKind {
     MemberAccess {
         base: Box<Expr>,
         member: Ident,
-        operator: Token,
     },
     Type(Type),
     As {
@@ -267,16 +268,22 @@ impl Path {
         self.segments.last()
     }
 
-    pub fn to_string(&self) -> String {
-        self.segments
+    pub fn is_single(&self) -> bool {
+        self.segments.len() == 1
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self
+            .segments
             .iter()
             .map(|s| s.value.as_ref())
             .collect::<Vec<_>>()
-            .join("::")
-    }
+            .join("::");
+        write!(f, "{s}")?;
 
-    pub fn is_single(&self) -> bool {
-        self.segments.len() == 1
+        Ok(())
     }
 }
 

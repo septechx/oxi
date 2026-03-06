@@ -770,21 +770,10 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 }
             }
         }
-        ExprKind::MemberAccess {
-            base,
-            member,
-            operator,
-        } => {
+        ExprKind::MemberAccess { base, member } => {
             writeln!(out, "{}", "MemberAccess".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
             write_expr_inline_or_nested(out, "Base: ", base, &expr_ctx)?;
-            writeln!(out)?;
-            write!(
-                out,
-                "{}Operator: {}",
-                expr_ctx.indent_str(),
-                punct_with_color(&operator.value, ctx.color)
-            )?;
             writeln!(out)?;
             write!(out, "{}Member: \"{}\"", expr_ctx.indent_str(), member.value)?;
         }

@@ -403,7 +403,7 @@ pub enum HirStmtKind {
 #[derive(Debug, Clone)]
 pub enum HirType {
     Error,
-    Builtin(String),
+    Builtin(Symbol),
     Adt(DefId),
     Pointer(TypeId, Mutability),
 }

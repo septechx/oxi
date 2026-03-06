@@ -159,16 +159,16 @@ pub fn compile_expression_to_value<'a, 'ctx>(
         ExprKind::FunctionCall { callee, parameters } => {
             if let ExprKind::Symbol(sym) = &callee.kind {
                 let sym_str = sym.to_string();
-                if let Some(builtin) = sym_str.strip_prefix("@") {
-                    if let Some(builtin) = Builtin::from_str(builtin) {
-                        return builtin.handle_call(
-                            context,
-                            module,
-                            builder,
-                            expr,
-                            compilation_context,
-                        );
-                    }
+                if let Some(builtin) = sym_str.strip_prefix("@")
+                    && let Some(builtin) = Builtin::from_str(builtin)
+                {
+                    return builtin.handle_call(
+                        context,
+                        module,
+                        builder,
+                        expr,
+                        compilation_context,
+                    );
                 }
             }
 
@@ -229,11 +229,7 @@ pub fn compile_expression_to_value<'a, 'ctx>(
                     .ok_or_else(|| anyhow!("Espected call site value to be a basic value"))?,
             )
         }
-        ExprKind::MemberAccess {
-            base,
-            member,
-            operator: _,
-        } => {
+        ExprKind::MemberAccess { base, member } => {
             let base =
                 compile_expression_to_value(context, module, builder, base, compilation_context)?;
 

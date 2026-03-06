@@ -455,7 +455,6 @@ mod tests {
             kind: ExprKind::MemberAccess {
                 base: Box::new(dummy_expr_symbol("obj")),
                 member: dummy_ident("field"),
-                operator: dummy_token(TokenKind::Dot),
             },
             span: dummy_span(),
         };

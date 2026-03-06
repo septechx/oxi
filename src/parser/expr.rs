@@ -295,7 +295,7 @@ pub fn parse_member_access_expr(
     left: Expr,
     _bp: BindingPower,
 ) -> Result<Expr> {
-    let operator = parser.advance();
+    parser.advance();
 
     let member = parser.expect_identifier()?;
     let member_span = member.span;
@@ -305,7 +305,6 @@ pub fn parse_member_access_expr(
         kind: ExprKind::MemberAccess {
             base: Box::new(left),
             member,
-            operator,
         },
         span,
     })

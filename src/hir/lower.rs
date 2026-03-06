@@ -12,7 +12,6 @@ use crate::{
         ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,
         ModuleInfo, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
     },
-    lexer::token::TokenKind,
     span::Span,
 };
 
@@ -656,14 +655,9 @@ impl LoweringContext {
             }
             ExprKind::FunctionCall { callee, parameters } => match *callee {
                 Expr {
-                    kind:
-                        ExprKind::MemberAccess {
-                            base,
-                            member,
-                            operator,
-                        },
+                    kind: ExprKind::MemberAccess { base, member },
                     ..
-                } if operator.kind == TokenKind::Dot => {
+                } => {
                     let base_id = self.lower_expr(*base);
                     let method_sym = self.krate.interner.intern(&member.value);
                     let args = parameters.into_iter().map(|a| self.lower_expr(a)).collect();
@@ -709,56 +703,16 @@ impl LoweringContext {
                     self.alloc_expr(HirExprKind::Error, span)
                 }
             }
-            ExprKind::MemberAccess {
-                base,
-                member,
-                operator,
-            } => {
-                if operator.kind == TokenKind::ColonColon {
-                    let base_id = self.lower_expr(*base);
-                    let member_sym = self.krate.interner.intern(&member.value);
-
-                    if let HirExprKind::Global(defid) = &self.krate.exprs[base_id.0 as usize].kind {
-                        let defid = *defid;
-                        let struct_mod = self.krate.items[defid.0 as usize].kind.module();
-
-                        if let Some(methods) = self.krate.modules[struct_mod.0 as usize]
-                            .struct_methods
-                            .get(&defid)
-                            && let Some(meta) = methods.get(&member_sym)
-                        {
-                            if meta.visibility == Visibility::Private {
-                                let allowed = self.current_struct == Some(defid);
-
-                                if !allowed {
-                                    self.krate.diagnostics.push(format!(
-                                        "Cannot access private associated item `{}`",
-                                        member.value
-                                    ));
-                                }
-                            }
-                            return self.alloc_expr(HirExprKind::Global(meta.def), span);
-                        }
-
-                        // Also could be a module, but we don't have good module-as-value yet in HIR.
-                        // Assuming simple associated item access for now.
-                    }
-
-                    self.krate
-                        .diagnostics
-                        .push(format!("Cannot resolve associated item `{}`", member.value));
-                    self.alloc_expr(HirExprKind::Error, span)
-                } else {
-                    let base_id = self.lower_expr(*base);
-                    let field_sym = self.krate.interner.intern(&member.value);
-                    self.alloc_expr(
-                        HirExprKind::Field {
-                            base: base_id,
-                            field: field_sym,
-                        },
-                        span,
-                    )
-                }
+            ExprKind::MemberAccess { base, member } => {
+                let base_id = self.lower_expr(*base);
+                let field_sym = self.krate.interner.intern(&member.value);
+                self.alloc_expr(
+                    HirExprKind::Field {
+                        base: base_id,
+                        field: field_sym,
+                    },
+                    span,
+                )
             }
             ExprKind::Binary {
                 left,
@@ -930,20 +884,18 @@ impl LoweringContext {
     fn lower_type(&mut self, ty: Type) -> TypeId {
         match ty.kind {
             TypeKind::Symbol(s) => {
-                let name = s.to_string();
+                let s = s.to_string();
+                let sym = self.krate.interner.intern(&s);
 
-                if BUILTIN_TYPES.contains(&name.as_ref()) {
-                    return self.alloc_type(HirType::Builtin(name.into()));
+                if BUILTIN_TYPES.contains(&s.as_ref()) {
+                    return self.alloc_type(HirType::Builtin(sym));
                 }
 
-                let sym = self.krate.interner.intern(&name);
                 if let Some(defid) = self.lookup_in_current_module(sym) {
                     return self.alloc_type(HirType::Adt(defid));
                 }
 
-                self.krate
-                    .diagnostics
-                    .push(format!("Unknown type: {}", name));
+                self.krate.diagnostics.push(format!("Unknown type: {}", s));
                 self.alloc_type(HirType::Error)
             }
             TypeKind::Pointer(ty, mutability) => {
