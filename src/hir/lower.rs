@@ -437,14 +437,12 @@ impl LoweringContext {
     }
 
     fn lower_impl_stmt(&mut self, self_ty: Type, iface: Path, items: ThinVec<AssocItem>) {
-        let interface_str = iface.to_string();
-        let interface_sym = self.krate.interner.intern(&interface_str);
-        let interface_def = match self.lookup_in_current_module(interface_sym) {
+        let interface_def = match self.resolve_path(&iface) {
             Some(def) => def,
             None => {
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown interface `{}`", interface_str));
+                    .push(format!("Unknown interface `{iface}`"));
                 return;
             }
         };
@@ -454,7 +452,7 @@ impl LoweringContext {
             _ => {
                 self.krate
                     .diagnostics
-                    .push(format!("`{}` is not an interface", interface_str));
+                    .push(format!("`{iface}` is not an interface"));
                 return;
             }
         }
@@ -634,23 +632,23 @@ impl LoweringContext {
         let span = expr.span;
         match expr.kind {
             ExprKind::Literal(l) => self.alloc_expr(HirExprKind::Literal(l), span),
-            ExprKind::Symbol(s) => {
-                let sym_str = s.to_string();
-                let sym = self.krate.interner.intern(&sym_str);
-
-                for scope in self.local_stack.iter().rev() {
-                    if let Some(local) = scope.get(&sym) {
-                        return self.alloc_expr(HirExprKind::Local(*local), span);
+            ExprKind::Symbol(path) => {
+                if path.is_single() {
+                    let sym = self.krate.interner.intern(&path.to_string());
+                    for scope in self.local_stack.iter().rev() {
+                        if let Some(local) = scope.get(&sym) {
+                            return self.alloc_expr(HirExprKind::Local(*local), span);
+                        }
                     }
                 }
 
-                if let Some(defid) = self.lookup_in_current_module(sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     return self.alloc_expr(HirExprKind::Global(defid), span);
                 }
 
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown symbol {}", sym_str));
+                    .push(format!("Unknown symbol `{path}`"));
                 self.alloc_expr(HirExprKind::Error, span)
             }
             ExprKind::FunctionCall { callee, parameters } => match *callee {
@@ -686,9 +684,7 @@ impl LoweringContext {
                 path,
                 fields: expr_fields,
             } => {
-                let sym_str = path.to_string();
-                let def_sym = self.krate.interner.intern(&sym_str);
-                if let Some(defid) = self.lookup_in_current_module(def_sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     let mut fields = ThinVec::with_capacity(expr_fields.len());
                     for (ident, val) in expr_fields.into_iter() {
                         let fsym = self.krate.interner.intern(&ident.value);
@@ -699,7 +695,7 @@ impl LoweringContext {
                 } else {
                     self.krate
                         .diagnostics
-                        .push(format!("Unknown struct name: {}", sym_str));
+                        .push(format!("Unknown struct `{path}`"));
                     self.alloc_expr(HirExprKind::Error, span)
                 }
             }
@@ -883,19 +879,17 @@ impl LoweringContext {
 
     fn lower_type(&mut self, ty: Type) -> TypeId {
         match ty.kind {
-            TypeKind::Symbol(s) => {
-                let s = s.to_string();
-                let sym = self.krate.interner.intern(&s);
-
+            TypeKind::Symbol(path) => {
+                let s = path.to_string();
                 if BUILTIN_TYPES.contains(&s.as_ref()) {
-                    return self.alloc_type(HirType::Builtin(sym));
+                    return self.alloc_type(HirType::Builtin(s.into()));
                 }
 
-                if let Some(defid) = self.lookup_in_current_module(sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     return self.alloc_type(HirType::Adt(defid));
                 }
 
-                self.krate.diagnostics.push(format!("Unknown type: {}", s));
+                self.krate.diagnostics.push(format!("Unknown type `{s}`"));
                 self.alloc_type(HirType::Error)
             }
             TypeKind::Pointer(ty, mutability) => {
