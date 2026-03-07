@@ -77,14 +77,12 @@ fn build_file(cli: Cli) -> Result<()> {
         let (tokens, module_id) = tokenize(source_text, &file_path)?;
         check_for_errors();
 
-        let ast = parse(
-            tokens,
-            file_path
-                .file_stem()
-                .expect("file has stem")
-                .to_str()
-                .expect("name is valid UTF-8"),
-        )?;
+        let mod_str = file_path
+            .iter()
+            .map(|c| c.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("::");
+        let ast = parse(tokens, &mod_str)?;
         check_for_errors();
 
         if cli.print_ast {

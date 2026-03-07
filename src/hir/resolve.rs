@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Visibility},
+    ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
     hir::{DefId, ExportEntry, interner::Symbol, lower::LoweringContext},
 };
 
@@ -84,22 +84,6 @@ impl LoweringContext {
                 ));
             }
         }
-    }
-
-    pub fn lookup_in_current_module(&self, sym: Symbol) -> Option<DefId> {
-        let modid = self.current_module?;
-        let module = &self.krate.modules[modid.0 as usize];
-
-        // Check local items before imports
-        if let Some(export_entry) = module.exports.get(&sym) {
-            return Some(export_entry.def);
-        }
-
-        if let Some(defid) = module.imports.get(&sym) {
-            return Some(*defid);
-        }
-
-        None
     }
 
     fn try_resolve_import(
@@ -241,5 +225,69 @@ impl LoweringContext {
                 ResolutionStatus::Failed
             }
         }
+    }
+
+    pub fn lookup_in_current_module(&self, sym: Symbol) -> Option<DefId> {
+        let modid = self.current_module?;
+        let module = &self.krate.modules[modid.0 as usize];
+
+        // Check local items before imports
+        if let Some(export_entry) = module.exports.get(&sym) {
+            return Some(export_entry.def);
+        }
+
+        if let Some(defid) = module.imports.get(&sym) {
+            return Some(*defid);
+        }
+
+        None
+    }
+
+    pub fn resolve_path(&mut self, path: &Path) -> Option<DefId> {
+        if path.segments.is_empty() {
+            return None;
+        }
+
+        if path.is_single() {
+            let name = path.segments[0].value.as_ref();
+            let sym = self.krate.interner.intern(name);
+            return self.lookup_in_current_module(sym);
+        }
+
+        // Try longest possible module prefixes first.
+        // For path segments s0, s1, ..., s(n-1) (n >= 2) attempt prefixes:
+        //  p = n-1: module_name = join(s0..s(p-1))  (length p), symbol = s[p]
+        //  p = n-2, ..., 1
+        let seg_count = path.segments.len();
+        for p in (1..seg_count).rev() {
+            let module_name = path.segments[..p]
+                .iter()
+                .map(|id| id.value.as_ref())
+                .collect::<Vec<_>>()
+                .join("::");
+
+            if let Some(target_idx) = self
+                .krate
+                .modules
+                .iter()
+                .position(|m| m.name.as_str() == module_name)
+            {
+                let symbol_name = path.segments[p].value.as_ref();
+                let sym = self.krate.interner.intern(symbol_name);
+
+                if let Some(export_entry) = self.krate.modules[target_idx].exports.get(&sym) {
+                    let curr = self.current_module?;
+                    if target_idx != curr.0 as usize
+                        && export_entry.visibility == Visibility::Private
+                    {
+                        return None;
+                    }
+
+                    return Some(export_entry.def);
+                }
+            }
+        }
+
+        None
     }
 }
