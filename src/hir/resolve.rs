@@ -1,3 +1,7 @@
+use std::{
+    ffi::OsString,
+    path::{self, Component},
+};
 use thin_vec::ThinVec;
 
 use crate::{
@@ -355,6 +359,40 @@ impl LoweringContext {
     }
 }
 
+/// Convert a path like `a/b.oxi` into `a::b`.
+pub fn path_to_mod<P: AsRef<path::Path>>(p: P) -> String {
+    let path = p.as_ref();
+
+    let mut normals: Vec<OsString> = path
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(os) => Some(os.to_os_string()),
+            _ => None,
+        })
+        .collect();
+
+    if normals.is_empty() {
+        return String::new();
+    }
+
+    let last = normals.pop().expect("normals isn't empty");
+    let last_stem = path::Path::new(&last)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let mut parts: Vec<String> = normals
+        .into_iter()
+        .map(|os| os.to_string_lossy().into_owned())
+        .collect();
+
+    if !last_stem.is_empty() {
+        parts.push(last_stem);
+    }
+
+    parts.join("::")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +400,15 @@ mod tests {
     use crate::hashmap::FxHashMap;
     use crate::hir::{HirItem, MethodMeta, ModuleId, ModuleInfo, TypeId};
     use crate::span::Span;
+
+    #[test]
+    fn simple() {
+        assert_eq!(path_to_mod("a/b.oxi"), "a::b");
+        assert_eq!(path_to_mod("a/b.test.oxi"), "a::b.test");
+        assert_eq!(path_to_mod("single.oxi"), "single");
+        assert_eq!(path_to_mod("single"), "single");
+        assert_eq!(path_to_mod("/usr/local/pkg.oxi"), "usr::local::pkg");
+    }
 
     struct TestCtx {
         ctx: LoweringContext,

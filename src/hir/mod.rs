@@ -11,6 +11,8 @@ use crate::{
     span::Span,
 };
 
+pub use resolve::path_to_mod;
+
 mod interner;
 mod lower;
 mod resolve;

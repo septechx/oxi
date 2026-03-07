@@ -15,7 +15,7 @@ use crate::{
 };
 
 use anyhow::Result;
-use std::convert::TryInto;
+use std::{convert::TryInto, path::PathBuf};
 use thin_vec::ThinVec;
 
 pub struct Parser {
@@ -104,7 +104,7 @@ impl Parser {
     }
 }
 
-pub fn parse(tokens: TokenStream, name: &str) -> Result<Ast> {
+pub fn parse(tokens: TokenStream, path: &PathBuf) -> Result<Ast> {
     create_token_lookups();
     create_token_type_lookups();
 
@@ -115,8 +115,5 @@ pub fn parse(tokens: TokenStream, name: &str) -> Result<Ast> {
         items.push(parse_item(&mut parser)?);
     }
 
-    Ok(Ast {
-        name: name.into(),
-        items,
-    })
+    Ok(Ast::new(items, path))
 }

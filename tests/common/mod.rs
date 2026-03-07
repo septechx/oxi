@@ -159,7 +159,7 @@ impl Drop for Test {
             return;
         }
 
-        let ast = match parse(tokens, "main") {
+        let ast = match parse(tokens, &main_path) {
             Ok(a) => a,
             Err(e) => {
                 if self.should_compile == Some(false) {

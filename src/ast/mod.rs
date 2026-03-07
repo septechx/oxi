@@ -2,12 +2,13 @@ pub mod display;
 pub mod validate;
 pub mod visit;
 
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use anyhow::bail;
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
+    hir::path_to_mod,
     lexer::token::{Token, TokenKind},
     span::Span,
 };
@@ -19,6 +20,13 @@ pub struct Ast {
 }
 
 impl Ast {
+    pub fn new(items: ThinVec<Item>, path: &PathBuf) -> Self {
+        Self {
+            name: path_to_mod(path).into(),
+            items,
+        }
+    }
+
     pub fn display(&self, color: bool) -> Result<String, std::fmt::Error> {
         let ctx = display::DisplayContext::new(color);
         let mut output = String::new();

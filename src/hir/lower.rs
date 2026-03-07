@@ -458,19 +458,15 @@ impl LoweringContext {
         }
 
         let self_defid = match &self_ty.kind {
-            TypeKind::Symbol(s) => {
-                let sym_str = s.to_string();
-                let sym = self.krate.interner.intern(&sym_str);
-                match self.lookup_in_current_module(sym) {
-                    Some(def) => def,
-                    None => {
-                        self.krate
-                            .diagnostics
-                            .push(format!("Unknown type `{}` in impl", sym_str));
-                        return;
-                    }
+            TypeKind::Symbol(path) => match self.resolve_path(path) {
+                Some(def) => def,
+                None => {
+                    self.krate
+                        .diagnostics
+                        .push(format!("Unknown type `{path}` in impl"));
+                    return;
                 }
-            }
+            },
             _ => {
                 self.krate
                     .diagnostics
