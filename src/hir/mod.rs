@@ -170,6 +170,66 @@ impl HirCrate {
         );
         &self.impl_items[id.0 as usize]
     }
+
+    pub fn mut_item(&mut self, id: DefId) -> &mut HirItem {
+        debug_assert!(
+            (id.0 as usize) < self.items.len(),
+            "DefId({}) out of bounds (len={})",
+            id.0,
+            self.items.len()
+        );
+        &mut self.items[id.0 as usize]
+    }
+
+    pub fn mut_expr(&mut self, id: ExprId) -> &mut HirExpr {
+        debug_assert!(
+            (id.0 as usize) < self.exprs.len(),
+            "ExprId({}) out of bounds (len={})",
+            id.0,
+            self.exprs.len()
+        );
+        &mut self.exprs[id.0 as usize]
+    }
+
+    pub fn mut_stmt(&mut self, id: StmtId) -> &mut HirStmt {
+        debug_assert!(
+            (id.0 as usize) < self.stmts.len(),
+            "StmtId({}) out of bounds (len={})",
+            id.0,
+            self.stmts.len()
+        );
+        &mut self.stmts[id.0 as usize]
+    }
+
+    pub fn mut_body(&mut self, id: BodyId) -> &mut Body {
+        debug_assert!(
+            (id.0 as usize) < self.bodies.len(),
+            "BodyId({}) out of bounds (len={})",
+            id.0,
+            self.bodies.len()
+        );
+        &mut self.bodies[id.0 as usize]
+    }
+
+    pub fn mut_ty(&mut self, id: TypeId) -> &mut HirType {
+        debug_assert!(
+            (id.0 as usize) < self.types.len(),
+            "TypeId({}) out of bounds (len={})",
+            id.0,
+            self.types.len()
+        );
+        &mut self.types[id.0 as usize]
+    }
+
+    pub fn mut_impl_item(&mut self, id: ImplItemId) -> &mut ImplItem {
+        debug_assert!(
+            (id.0 as usize) < self.impl_items.len(),
+            "ImplItemId({}) out of bounds (len={})",
+            id.0,
+            self.impl_items.len()
+        );
+        &mut self.impl_items[id.0 as usize]
+    }
 }
 
 #[derive(Debug, Clone)]

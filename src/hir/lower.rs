@@ -295,7 +295,7 @@ impl LoweringContext {
 
         // Store the function in the item with the owner set to itself
         self.with_owner(defid, |ctx| {
-            ctx.krate.items[defid.0 as usize].kind = HirItemKind::Function(func);
+            ctx.krate.mut_item(defid).kind = HirItemKind::Function(func);
 
             if let Some(body) = f.body {
                 ctx.local_stack.push(FxHashMap::default());
@@ -315,9 +315,11 @@ impl LoweringContext {
                     .collect();
 
                 let body_id = ctx.alloc_body(Body { stmts: stmt_ids });
-                if let HirItemKind::Function(func) = &mut ctx.krate.items[defid.0 as usize].kind {
-                    func.body = Some(body_id);
-                }
+                let HirItemKind::Function(func) = &mut ctx.krate.mut_item(defid).kind else {
+                    unreachable!()
+                };
+                func.body = Some(body_id);
+
                 ctx.local_stack.pop();
             }
         });
@@ -354,7 +356,7 @@ impl LoweringContext {
             fields,
             module: modid,
         };
-        let item = &mut self.krate.items[defid.0 as usize];
+        let item = &mut self.krate.mut_item(defid);
         item.kind = HirItemKind::Struct(st);
         item.span = span;
 
@@ -432,8 +434,9 @@ impl LoweringContext {
             module: modid,
             methods,
         };
-        self.krate.items[defid.0 as usize].kind = HirItemKind::Interface(iface);
-        self.krate.items[defid.0 as usize].span = span;
+        let item = self.krate.mut_item(defid);
+        item.kind = HirItemKind::Interface(iface);
+        item.span = span;
     }
 
     fn lower_impl_stmt(&mut self, self_ty: Type, iface: Path, items: ThinVec<AssocItem>) {
@@ -447,14 +450,14 @@ impl LoweringContext {
             }
         };
 
-        match &self.krate.items[interface_def.0 as usize].kind {
-            HirItemKind::Interface(_) => {}
-            _ => {
-                self.krate
-                    .diagnostics
-                    .push(format!("`{iface}` is not an interface"));
-                return;
-            }
+        if !matches!(
+            &self.krate.item(interface_def).kind,
+            HirItemKind::Interface(_)
+        ) {
+            self.krate
+                .diagnostics
+                .push(format!("`{iface}` is not an interface"));
+            return;
         }
 
         let self_defid = match &self_ty.kind {
@@ -476,14 +479,11 @@ impl LoweringContext {
         };
 
         let modid = self.current_module.expect("current module set");
-        match &self.krate.items[self_defid.0 as usize].kind {
-            HirItemKind::Struct(_) => {}
-            _ => {
-                self.krate
-                    .diagnostics
-                    .push("Impl target is not a struct".to_string());
-                return;
-            }
+        if !matches!(&self.krate.item(self_defid).kind, HirItemKind::Struct(_)) {
+            self.krate
+                .diagnostics
+                .push("Impl target is not a struct".to_string());
+            return;
         }
 
         let impl_defid = self.alloc_item_placeholder(self_ty.span);
@@ -529,8 +529,8 @@ impl LoweringContext {
             let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func.clone()), item.span);
             impl_item_ids.push(impl_item_id);
 
-            let method_defid = self.krate.impl_items[impl_item_id.0 as usize].defid;
-            self.krate.items[method_defid.0 as usize].kind = HirItemKind::Function(func);
+            let method_defid = self.krate.impl_item(impl_item_id).defid;
+            self.krate.mut_item(method_defid).kind = HirItemKind::Function(func);
             let method_map = &mut self.krate.modules[modid.0 as usize]
                 .struct_methods
                 .entry(self_defid)
@@ -563,14 +563,14 @@ impl LoweringContext {
                         .collect();
 
                     let body_id = ctx.alloc_body(Body { stmts: stmt_ids });
-                    let ImplItemKind::Fn(func) =
-                        &mut ctx.krate.impl_items[impl_item_id.0 as usize].kind;
+                    let ImplItemKind::Fn(func) = &mut ctx.krate.mut_impl_item(impl_item_id).kind;
                     func.body = Some(body_id);
-                    if let HirItemKind::Function(item_func) =
-                        &mut ctx.krate.items[method_defid.0 as usize].kind
-                    {
-                        item_func.body = Some(body_id);
-                    }
+                    let HirItemKind::Function(item_func) =
+                        &mut ctx.krate.mut_item(method_defid).kind
+                    else {
+                        unreachable!()
+                    };
+                    item_func.body = Some(body_id);
                     ctx.local_stack.pop();
                 });
             }
@@ -584,7 +584,7 @@ impl LoweringContext {
             module: modid,
         };
 
-        self.krate.items[impl_defid.0 as usize].kind = HirItemKind::Impl(impl_item);
+        self.krate.mut_item(impl_defid).kind = HirItemKind::Impl(impl_item);
 
         self.krate.modules[modid.0 as usize]
             .struct_impls
@@ -619,8 +619,9 @@ impl LoweringContext {
             init,
             module: modid,
         };
-        self.krate.items[defid.0 as usize].kind = HirItemKind::Variable(var);
-        self.krate.items[defid.0 as usize].span = span;
+        let item = self.krate.mut_item(defid);
+        item.kind = HirItemKind::Variable(var);
+        item.span = span;
     }
 
     fn lower_expr(&mut self, expr: Expr) -> ExprId {
