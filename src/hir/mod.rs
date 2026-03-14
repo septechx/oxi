@@ -8,16 +8,23 @@ use crate::{
         lower::LoweringContext,
     },
     lexer::token::TokenKind,
+    resolve::Resolver,
     span::Span,
 };
 
 pub use resolve::path_to_mod;
 
-mod interner;
+pub mod interner;
 mod lower;
 mod resolve;
 
 pub fn lower_ast(asts: ThinVec<Ast>) -> HirCrate {
+    let mut interner = Interner::new();
+    let mut resolver = Resolver::new(&asts, &mut interner);
+    resolver.collect_definitions();
+    resolver.dump();
+    std::process::exit(0);
+
     let mut ctx = LoweringContext::new();
     ctx.lower_crate(asts);
     for diag in &ctx.krate.diagnostics {

@@ -11,6 +11,7 @@ pub mod hir;
 pub mod lexer;
 pub mod macros;
 pub mod parser;
+pub mod resolve;
 pub mod span;
 pub mod utils;
 
