@@ -1,8 +1,8 @@
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
-use crate::ast::{Item, ItemKind};
-use crate::hir::DefId;
+use crate::ast::{ImportTree, Item, ItemKind, Visibility};
 use crate::hir::interner::Symbol;
-use crate::resolve::{Def, DefKind, Resolver};
+use crate::hir::{DefId, ModuleId};
+use crate::resolve::{Def, DefKind, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
     pub fn create_def(&mut self, name: Symbol, kind: DefKind) -> DefId {
@@ -11,13 +11,27 @@ impl<'a> Resolver<'a> {
         DefId(idx)
     }
 
+    pub fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
+        self.pending_imports.push(PendingImport {
+            import_item,
+            visibility,
+            module: ModuleId(self.module_idx as u32),
+        });
+    }
+
     pub fn collect_definitions(&mut self) {
-        for ast in self.asts {
+        for (i, ast) in self.asts.iter().enumerate() {
+            self.module_idx = i;
             ast.visit(&mut DefCollector::new(self));
         }
     }
 
-    pub fn resolve_imports(&mut self) {}
+    pub fn build_graph(&mut self) {
+        for (i, ast) in self.asts.iter().enumerate() {
+            self.module_idx = i;
+            ast.visit(&mut ImportCollector::new(self));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -52,6 +66,26 @@ impl<'a, 'res> Visitor for DefCollector<'a, 'res> {
             }
             _ => {}
         }
-        VisitAction::Continue
+        VisitAction::SkipChildren
+    }
+}
+
+#[derive(Debug)]
+struct ImportCollector<'a, 'res> {
+    resolver: &'a mut Resolver<'res>,
+}
+
+impl<'a, 'res> ImportCollector<'a, 'res> {
+    pub fn new(resolver: &'a mut Resolver<'res>) -> Self {
+        Self { resolver }
+    }
+}
+
+impl<'a, 'res> Visitor for ImportCollector<'a, 'res> {
+    fn visit_item(&mut self, item: &Item) -> VisitAction {
+        if let ItemKind::Import(tree) = &item.kind {
+            self.resolver.register_import(tree.clone(), item.visibility);
+        }
+        VisitAction::SkipChildren
     }
 }
