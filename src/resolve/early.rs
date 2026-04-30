@@ -5,13 +5,13 @@ use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
-    pub fn create_def(&mut self, name: Symbol, kind: DefKind) -> DefId {
-        let idx = self.defs.len() as u32;
-        self.defs.push(Def { name, kind });
+    fn create_def(&mut self, name: Symbol, kind: DefKind) -> DefId {
+        let idx = self.defs[self.module_idx].len() as u32;
+        self.defs[self.module_idx].push(Def { name, kind });
         DefId(idx)
     }
 
-    pub fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
+    fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
         self.pending_imports.push(PendingImport {
             import_item,
             visibility,

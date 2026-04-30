@@ -1,4 +1,4 @@
-use thin_vec::ThinVec;
+use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{Ast, ImportTree, Visibility};
 use crate::hir::ModuleId;
@@ -6,7 +6,7 @@ use crate::hir::interner::{Interner, Symbol};
 
 mod early;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum DefKind {
     Function,
     Struct,
@@ -14,7 +14,7 @@ pub enum DefKind {
     Static,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Def {
     name: Symbol,
     kind: DefKind,
@@ -33,7 +33,7 @@ pub struct Resolver<'a> {
     module_idx: usize,
     interner: &'a mut Interner,
     pending_imports: ThinVec<PendingImport>,
-    defs: ThinVec<Def>,
+    defs: ThinVec<ThinVec<Def>>,
 }
 
 impl<'a> Resolver<'a> {
@@ -42,7 +42,7 @@ impl<'a> Resolver<'a> {
             asts,
             interner,
             module_idx: 0,
-            defs: ThinVec::new(),
+            defs: thin_vec![ThinVec::new(); asts.len()],
             pending_imports: ThinVec::new(),
         }
     }
