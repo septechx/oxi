@@ -3,8 +3,9 @@ use std::ops::{Index, IndexMut};
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{Ast, ImportTree, Visibility};
-use crate::hir::ModuleId;
+use crate::hashmap::FxHashMap;
 use crate::hir::interner::{Interner, Symbol};
+use crate::hir::{DefId, ModuleId};
 
 mod early;
 
@@ -59,8 +60,9 @@ pub struct Resolver<'a> {
     module_idx: usize,
     interner: &'a mut Interner,
     pending_imports: ThinVec<PendingImport>,
-    defs: PerModule<ThinVec<Def>>,
-    imports: PerModule<ThinVec<Def>>,
+    imports: PerModule<FxHashMap<Symbol, DefId>>,
+    def_map: PerModule<FxHashMap<Symbol, DefId>>,
+    defs: ThinVec<Def>,
 }
 
 impl<'a> Resolver<'a> {
@@ -69,14 +71,18 @@ impl<'a> Resolver<'a> {
             asts,
             interner,
             module_idx: 0,
-            defs: PerModule::new(asts.len()),
-            imports: PerModule::new(asts.len()),
             pending_imports: ThinVec::new(),
+            imports: PerModule::new(asts.len()),
+            def_map: PerModule::new(asts.len()),
+            defs: ThinVec::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn dump(&self) {
         dbg!(&self.defs);
+        dbg!(&self.def_map);
+        dbg!(&self.imports);
         dbg!(&self.pending_imports);
         dbg!(&self.interner);
     }

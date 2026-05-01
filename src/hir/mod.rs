@@ -23,10 +23,7 @@ pub fn lower_ast(asts: ThinVec<Ast>) -> HirCrate {
     let mut resolver = Resolver::new(&asts, &mut interner);
     resolver.collect_definitions();
     resolver.build_graph();
-    println!("==== BEFORE RESOLVING IMPORTS ====");
-    resolver.dump();
     resolver.resolve_imports();
-    println!("==== AFTER RESOLVING IMPORTS ====");
     resolver.dump();
 
     todo!("Finished resolving");

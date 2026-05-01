@@ -7,14 +7,14 @@ use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
-    fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) -> DefId {
-        let idx = self.defs[self.module_idx].len() as u32;
-        self.defs[self.module_idx].push(Def {
+    fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) {
+        let idx = self.defs.len() as u32;
+        self.defs.push(Def {
             name,
             kind,
             visibility,
         });
-        DefId(idx)
+        self.def_map[self.module_idx].insert(name, DefId(idx));
     }
 
     fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
@@ -48,7 +48,7 @@ impl<'a> Resolver<'a> {
             let mut i = 0usize;
             while i < self.pending_imports.len() {
                 // try resolve; if resolved we remove from pending and set progress = true
-                match self.try_resolve_import(i) {
+                match self.resolve_import(i) {
                     ResolutionStatus::Resolved => {
                         self.pending_imports.swap_remove(i);
                         progress = true;
@@ -86,10 +86,71 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn try_resolve_import(&mut self, idx: usize) -> ResolutionStatus {
+    fn resolve_import(&mut self, idx: usize) -> ResolutionStatus {
         let pi = &self.pending_imports[idx];
 
-        ResolutionStatus::Failed
+        match &pi.import_item.kind {
+            ImportTreeKind::Simple(_) => self.resolve_simple_import(idx),
+            _ => todo!(),
+        }
+    }
+
+    fn resolve_simple_import(&mut self, idx: usize) -> ResolutionStatus {
+        let pi = &self.pending_imports[idx];
+        let prefix = &pi.import_item.prefix;
+        let segments = &prefix.segments;
+        let ImportTreeKind::Simple(rename) = &pi.import_item.kind else {
+            unreachable!()
+        };
+
+        if segments.len() < 2 {
+            // An import with 0 segments would fail parsing, so the code must be `import lib`
+            eprintln!("Cannot import module");
+            return ResolutionStatus::Failed;
+        }
+
+        let local_name = rename
+            .as_ref()
+            .map(|r| r.value.as_ref())
+            .unwrap_or(unsafe { segments.last().unwrap_unchecked().value.as_ref() });
+        let local_sym = self.interner.intern(local_name);
+
+        if self.def_map[pi.module.0 as usize].contains_key(&local_sym)
+            || self.imports[pi.module.0 as usize].contains_key(&local_sym)
+        {
+            eprintln!("Import name collision");
+            return ResolutionStatus::Failed;
+        }
+
+        // FIXME: Only supports 2-segment paths, else ignores the middle part(s)
+        let target_mod_name = &segments[0].value;
+        let target_def_name = &segments[segments.len() - 1].value;
+
+        let target_mid = self.asts.iter().position(|m| m.name == *target_mod_name);
+        let Some(target_mid) = target_mid else {
+            eprintln!("Module not found");
+            return ResolutionStatus::Failed;
+        };
+
+        let target_sym = self.interner.intern(target_def_name);
+        let target = self.def_map[target_mid].get(&target_sym).copied();
+        let Some(target) = target else {
+            return ResolutionStatus::Pending;
+        };
+
+        let target_def = self.defs[target.0 as usize];
+        if target_def.visibility != Visibility::Public {
+            eprintln!("Cannot import private item");
+            return ResolutionStatus::Failed;
+        }
+
+        self.imports[self.module_idx].insert(local_sym, target);
+
+        if pi.visibility == Visibility::Public {
+            self.def_map[self.module_idx].insert(local_sym, target);
+        }
+
+        ResolutionStatus::Resolved
     }
 }
 
