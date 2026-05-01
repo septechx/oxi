@@ -11,13 +11,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Install LLVM
         run: |
           sudo apt install --no-install-recommends -y lsb-release wget software-properties-common gnupg
@@ -27,15 +24,31 @@ jobs:
           sudo apt-get update
           sudo apt install --no-install-recommends -y libllvm21 llvm-21 llvm-21-dev llvm-21-runtime libpolly-21-dev
           sudo update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-21 10
-
       - name: Install dependencies
         run: sudo apt-get install -y clang mold just
 
       - name: Run tests
         run: just test
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install LLVM
+        run: |
+          sudo apt install --no-install-recommends -y lsb-release wget software-properties-common gnupg
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get update
+          sudo apt install --no-install-recommends -y libllvm21 llvm-21 llvm-21-dev llvm-21-runtime libpolly-21-dev
+          sudo update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-21 10
+      - name: Install dependencies
+        run: sudo apt-get install -y clang mold just
+
       - name: Run lint
         run: just lint
-
       - name: Check formatting
         run: cargo fmt -- --check
