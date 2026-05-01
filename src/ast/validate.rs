@@ -67,7 +67,6 @@ impl AstValidator {
                     self.module_id,
                     "Extern functions cannot have a body"
                 )
-                .expect("failed to emit error");
             }
         } else if f.body.is_none() && !self.in_interface {
             error_at!(
@@ -75,7 +74,6 @@ impl AstValidator {
                 self.module_id,
                 "Non-extern function must have a body"
             )
-            .expect("failed to emit error");
         }
 
         if let Some(body) = &f.body {
@@ -228,7 +226,6 @@ impl Visitor for AstValidator {
                         self.module_id,
                         "Return statement outside of function"
                     )
-                    .expect("failed to emit error");
                 }
                 VisitAction::Continue
             }

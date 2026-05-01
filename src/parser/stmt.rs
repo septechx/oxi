@@ -39,7 +39,7 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
                 "Expected top-level item (static, struct, interface, impl, fn, import), but found {} instead.",
                 parser.current_token().kind
             )
-        )?;
+        );
         unreachable!()
     }
 }
@@ -130,7 +130,7 @@ pub fn parse_struct_decl_item(
                         fn_decl.name.span,
                         parser.current_token().module_id,
                         "Struct methods must have a body"
-                    )?;
+                    );
                 }
                 items.push(AssocItem {
                     kind: AssocItemKind::Fn(Fn {
@@ -150,7 +150,7 @@ pub fn parse_struct_decl_item(
                 parser.current_token().span,
                 parser.current_token().module_id,
                 "Only struct methods are allowed to be static"
-            )?;
+            );
         }
 
         if parser.current_token().kind == TokenKind::Identifier {
@@ -175,7 +175,7 @@ pub fn parse_struct_decl_item(
                         "Property {} has already been defined in struct",
                         property_name.value
                     )
-                )?;
+                );
                 continue;
             }
 
@@ -248,7 +248,7 @@ pub fn parse_interface_decl_item(
                     stmt.span,
                     parser.current_token().module_id,
                     "Expected interface method to not have a body"
-                )?;
+                );
             }
 
             items.push(AssocItem {
@@ -350,7 +350,7 @@ pub fn parse_fn_decl_item(
                     parser.current_token().span,
                     parser.current_token().module_id,
                     "Expected function body or terminator after signature"
-                )?;
+                );
             }
         }
     }
@@ -404,7 +404,7 @@ pub fn parse_impl_item(
                     fn_decl.name.span,
                     parser.current_token().module_id,
                     "Impl methods must have a body"
-                )?;
+                );
             }
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
@@ -550,7 +550,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
             span,
             parser.current_token().module_id,
             "Declared constant without providing a value"
-        )?;
+        );
     }
 
     let mutability = if is_constant {

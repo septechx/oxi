@@ -2,9 +2,11 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
 use crate::ast::{ImportTree, ImportTreeKind, Item, ItemKind, Visibility};
+use crate::error_at;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, PendingImport, Resolver};
+use crate::span::ModuleId as SpanModuleId;
 
 impl<'a> Resolver<'a> {
     fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) {
@@ -78,9 +80,10 @@ impl<'a> Resolver<'a> {
                     .map(|ident| ident.value.to_string())
                     .collect();
                 let path = segments.join("::");
-                println!(
-                    "Could not resolve import `{}` in module `{}`",
-                    path, self.asts[pi.module.0 as usize].name
+                error_at!(
+                    pi.import_item.span,
+                    SpanModuleId(pi.module.0),
+                    format!("Could not resolve import `{}`", path)
                 );
             }
         }
@@ -105,7 +108,11 @@ impl<'a> Resolver<'a> {
 
         if segments.len() < 2 {
             // An import with 0 segments would fail parsing, so the code must be `import lib`
-            eprintln!("Cannot import module");
+            error_at!(
+                pi.import_item.span,
+                SpanModuleId(pi.module.0),
+                "Cannot import module"
+            );
             return ResolutionStatus::Failed;
         }
 
@@ -118,7 +125,11 @@ impl<'a> Resolver<'a> {
         if self.def_map[pi.module.0 as usize].contains_key(&local_sym)
             || self.imports[pi.module.0 as usize].contains_key(&local_sym)
         {
-            eprintln!("Import name collision");
+            error_at!(
+                pi.import_item.span,
+                SpanModuleId(pi.module.0),
+                "Import name collides with existing definition"
+            );
             return ResolutionStatus::Failed;
         }
 
@@ -128,7 +139,11 @@ impl<'a> Resolver<'a> {
 
         let target_mid = self.asts.iter().position(|m| m.name == *target_mod_name);
         let Some(target_mid) = target_mid else {
-            eprintln!("Module not found");
+            error_at!(
+                pi.import_item.span,
+                SpanModuleId(pi.module.0),
+                "Module not found"
+            );
             return ResolutionStatus::Failed;
         };
 
@@ -140,7 +155,11 @@ impl<'a> Resolver<'a> {
 
         let target_def = self.defs[target.0 as usize];
         if target_def.visibility != Visibility::Public {
-            eprintln!("Cannot import private item");
+            error_at!(
+                pi.import_item.span,
+                SpanModuleId(pi.module.0),
+                "Cannot import private item"
+            );
             return ResolutionStatus::Failed;
         }
 

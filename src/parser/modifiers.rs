@@ -72,7 +72,7 @@ macro_rules! no_modifiers {
                 modifiers[0].span,
                 parser.current_token().module_id,
                 "Modifier not allowed here"
-            )?;
+            );
         }
     }};
 }
@@ -96,7 +96,7 @@ macro_rules! get_modifiers {
                         modifier.span,
                         module_id,
                         format!("Unexpected modifier '{}'", modifier.kind)
-                    )?;
+                    );
                 }
 
                 if modifiers.iter().enumerate().any(|(i, m)| i != idx && m.kind == modifier.kind) {
@@ -104,7 +104,7 @@ macro_rules! get_modifiers {
                         modifier.span,
                         module_id,
                         format!("Duplicate modifier '{}'", modifier.kind)
-                    )?;
+                    );
                 }
 
                 if let Some(expected_idx) = expected_order.iter().position(|&e| e == modifier.kind) {
@@ -124,7 +124,7 @@ macro_rules! get_modifiers {
                                     modifier.kind,
                                     expected_order[prev]
                                 )
-                            )?;
+                            );
                         }
                     }
                 }

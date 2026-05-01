@@ -54,7 +54,7 @@ macro_rules! no_attributes {
                 attributes[0].span,
                 parser.current_token().module_id,
                 "Attribute not allowed here"
-            )?;
+            );
         }
     }};
 }

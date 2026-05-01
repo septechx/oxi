@@ -87,6 +87,7 @@ macro_rules! error_at {
             None::<Box<str>>,
             $crate::errors::widgets::HighlightType::Error
         )
+        .expect("failed to emit error")
     };
     ($token:expr, $msg:expr $(,)?) => {{
         let token = $token;
@@ -105,6 +106,7 @@ macro_rules! warning_at {
             None::<Box<str>>,
             $crate::errors::widgets::HighlightType::Warning
         )
+        .expect("failed to emit warning")
     };
     ($token:expr, $msg:expr $(,)?) => {{
         let token = $token;
