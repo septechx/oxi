@@ -15,6 +15,7 @@ use crate::{
 struct AstValidator {
     module_id: ModuleId,
     in_function: bool,
+    in_loop: bool,
     is_top_level: bool,
     in_interface: bool,
 }
@@ -219,6 +220,28 @@ impl Visitor for AstValidator {
 
                 VisitAction::SkipChildren
             }
+            ExprKind::While { condition, body } => {
+                condition.visit(self);
+                let old_in_loop = self.in_loop;
+                self.in_loop = true;
+                body.visit(self);
+                self.in_loop = old_in_loop;
+                VisitAction::SkipChildren
+            }
+            ExprKind::Loop(body) => {
+                let old_in_loop = self.in_loop;
+                self.in_loop = true;
+                body.visit(self);
+                self.in_loop = old_in_loop;
+                VisitAction::SkipChildren
+            }
+            ExprKind::Break(_) => {
+                if !self.in_loop {
+                    error_at!(expr.span, self.module_id, "Break statement outside of loop")
+                        .expect("failed to emit error");
+                }
+                VisitAction::Continue
+            }
             ExprKind::Return(_) => {
                 if !self.in_function {
                     error_at!(
@@ -239,6 +262,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
     let mut validator = AstValidator {
         module_id,
         in_function: false,
+        in_loop: false,
         is_top_level: true,
         in_interface: false,
     };
