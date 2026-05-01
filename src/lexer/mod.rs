@@ -3,13 +3,10 @@ pub mod verify;
 
 use std::{path::Path, sync::OnceLock};
 
-use crate::{
-    lexer::{
-        token::{Token, TokenKind, TokenStream, lookup_reserved},
-        verify::verify_tokens,
-    },
-    span::{ModuleId, Span},
-};
+use crate::hir::ModuleId;
+use crate::lexer::token::{Token, TokenKind, TokenStream, lookup_reserved};
+use crate::lexer::verify::verify_tokens;
+use crate::span::Span;
 use anyhow::Result;
 use parking_lot::Once;
 use regex::Regex;

@@ -2,7 +2,8 @@ use std::fmt::Display;
 
 use thin_vec::ThinVec;
 
-use crate::span::{ModuleId, Span};
+use crate::hir::ModuleId;
+use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct TokenStream(pub ThinVec<Token>);

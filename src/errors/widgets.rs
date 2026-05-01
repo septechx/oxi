@@ -1,12 +1,11 @@
-use std::{
-    fmt::{Debug, Write},
-    path::PathBuf,
-};
+use std::fmt::{Debug, Write};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::span::{ModuleId, Span};
+use crate::hir::ModuleId;
+use crate::span::Span;
 
 pub trait Widget<T: Write>: Debug {
     fn render(&self, f: &mut T) -> std::fmt::Result;

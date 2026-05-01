@@ -18,6 +18,7 @@ pub mod interner;
 mod lower;
 mod resolve;
 
+#[allow(unreachable_code)]
 pub fn lower_crate(asts: ThinVec<Ast>) -> HirCrate {
     let mut interner = Interner::new();
     let mut resolver = Resolver::new(&asts, &mut interner);
@@ -57,8 +58,14 @@ pub struct LocalId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StmtId(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ModuleId(pub u32);
+
+impl std::fmt::Display for ModuleId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BodyId(pub u32);

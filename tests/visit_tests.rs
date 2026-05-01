@@ -8,8 +8,9 @@ mod tests {
             visit::{VisitAction, Visitable, Visitor},
         },
         hashmap::FxHashMap,
+        hir::ModuleId,
         lexer::token::{Token, TokenKind},
-        span::{ModuleId, Span},
+        span::Span,
     };
     use thin_vec::{ThinVec, thin_vec};
 

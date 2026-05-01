@@ -9,7 +9,7 @@ use crate::{
         widgets::{CodeWidget, HighlightType, InfoWidget, LocationWidget},
     },
     hashmap::FxHashMap,
-    span::ModuleId,
+    hir::ModuleId,
 };
 
 struct AstValidator {

@@ -40,7 +40,7 @@ use crate::{
         emmiter::emit_to_file,
         runtime::generate_c_runtime_integration,
     },
-    span::ModuleId,
+    hir::ModuleId,
 };
 
 #[derive(Debug)]

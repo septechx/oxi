@@ -6,7 +6,6 @@ use crate::error_at;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, PendingImport, Resolver};
-use crate::span::ModuleId as SpanModuleId;
 
 impl<'a> Resolver<'a> {
     fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) {
@@ -82,7 +81,7 @@ impl<'a> Resolver<'a> {
                 let path = segments.join("::");
                 error_at!(
                     pi.import_item.span,
-                    SpanModuleId(pi.module.0),
+                    ModuleId(pi.module.0),
                     format!("Could not resolve import `{}`", path)
                 );
             }
@@ -110,7 +109,7 @@ impl<'a> Resolver<'a> {
             // An import with 0 segments would fail parsing, so the code must be `import lib`
             error_at!(
                 pi.import_item.span,
-                SpanModuleId(pi.module.0),
+                ModuleId(pi.module.0),
                 "Cannot import module"
             );
             return ResolutionStatus::Failed;
@@ -127,7 +126,7 @@ impl<'a> Resolver<'a> {
         {
             error_at!(
                 pi.import_item.span,
-                SpanModuleId(pi.module.0),
+                ModuleId(pi.module.0),
                 "Import name collides with existing definition"
             );
             return ResolutionStatus::Failed;
@@ -141,7 +140,7 @@ impl<'a> Resolver<'a> {
         let Some(target_mid) = target_mid else {
             error_at!(
                 pi.import_item.span,
-                SpanModuleId(pi.module.0),
+                ModuleId(pi.module.0),
                 "Module not found"
             );
             return ResolutionStatus::Failed;
@@ -157,7 +156,7 @@ impl<'a> Resolver<'a> {
         if target_def.visibility != Visibility::Public {
             error_at!(
                 pi.import_item.span,
-                SpanModuleId(pi.module.0),
+                ModuleId(pi.module.0),
                 "Cannot import private item"
             );
             return ResolutionStatus::Failed;

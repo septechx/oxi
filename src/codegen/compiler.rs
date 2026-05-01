@@ -25,7 +25,7 @@ use crate::{
         pointer::SmartValue,
     },
     hashmap::{FxHashMap, FxHashSet},
-    span::ModuleId,
+    hir::ModuleId,
 };
 
 pub type FunctionTable<'ctx> = FxHashMap<Box<str>, FunctionTableEntry<'ctx>>;

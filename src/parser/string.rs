@@ -1,7 +1,6 @@
-use crate::{
-    span::{ModuleId, Span},
-    warning_at,
-};
+use crate::hir::ModuleId;
+use crate::span::Span;
+use crate::warning_at;
 
 pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> String {
     let mut builder = String::new();
@@ -18,7 +17,7 @@ pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> String {
                 _ => {
                     let error_span =
                         Span::new(span.start() + i as u32, span.start() + (i + 2) as u32);
-                    let _ = warning_at!(
+                    warning_at!(
                         error_span,
                         module_id,
                         format!("Unknown escape sequence \\{c}")

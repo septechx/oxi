@@ -10,7 +10,8 @@ use crate::{
         compiler::{self, CompilationContext},
         pointer::SmartValue,
     },
-    span::{ModuleId, Span},
+    hir::ModuleId,
+    span::Span,
 };
 use std::fs;
 

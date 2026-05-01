@@ -17,6 +17,7 @@ pub enum DefKind {
     Static,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Def {
     name: Symbol,
