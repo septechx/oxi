@@ -18,7 +18,7 @@ pub mod interner;
 mod lower;
 mod resolve;
 
-pub fn lower_ast(asts: ThinVec<Ast>) -> HirCrate {
+pub fn lower_crate(asts: ThinVec<Ast>) -> HirCrate {
     let mut interner = Interner::new();
     let mut resolver = Resolver::new(&asts, &mut interner);
     resolver.collect_definitions();

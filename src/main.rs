@@ -26,8 +26,8 @@ use clap::Parser;
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::validate::validate_ast, cli::Cli, errors::ErrorCollector, hir::lower_ast, lexer::tokenize,
-    parser::parse, span::sourcemaps::SourceMapManager,
+    ast::validate::validate_ast, cli::Cli, errors::ErrorCollector, hir::lower_crate,
+    lexer::tokenize, parser::parse, span::sourcemaps::SourceMapManager,
 };
 
 pub static DEFAULT_ROOT: &str = "..";
@@ -103,7 +103,7 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let hir = lower_ast(asts);
+    let hir = lower_crate(asts);
 
     println!("{:#?}", hir);
 
