@@ -238,7 +238,6 @@ impl Visitor for AstValidator {
             ExprKind::Break(_) => {
                 if !self.in_loop {
                     error_at!(expr.span, self.module_id, "Break statement outside of loop")
-                        .expect("failed to emit error");
                 }
                 VisitAction::Continue
             }
