@@ -48,6 +48,7 @@ pub struct Item {
     pub kind: ItemKind,
     pub span: Span,
     pub attributes: ThinVec<Attribute>,
+    pub node_id: NodeId,
     /// Visibility modifier for this item.
     ///
     /// For most item kinds (static, struct, interface, function, import), this is the visibility
@@ -89,6 +90,7 @@ pub enum ItemKind {
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +133,7 @@ pub struct Fn {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]

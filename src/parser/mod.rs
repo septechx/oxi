@@ -8,7 +8,7 @@ mod types;
 mod utils;
 
 use crate::{
-    ast::{Ast, Ident, Item},
+    ast::{Ast, Ident, Item, NodeId},
     fatal_at,
     lexer::token::{Token, TokenKind, TokenStream},
     parser::{lookups::create_token_lookups, stmt::parse_item, types::create_token_type_lookups},
@@ -101,6 +101,10 @@ impl Parser {
     pub fn expect_identifier(&mut self) -> Result<Ident> {
         let token = self.expect(TokenKind::Identifier)?;
         TryInto::<Ident>::try_into(token)
+    }
+
+    pub fn next_zone_id() -> NodeId {
+        crate::CTX.with_borrow_mut(|ctx| ctx.next_node_id())
     }
 }
 
