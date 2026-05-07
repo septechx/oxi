@@ -3,8 +3,8 @@ mod tests {
     use oxic::{
         ast::{
             AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
-            ImportTreeKind, Item, ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type,
-            TypeKind, Visibility,
+            ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, Stmt, StmtKind,
+            Type, TypeKind, Visibility,
             visit::{VisitAction, Visitable, Visitor},
         },
         hashmap::FxHashMap,
@@ -209,6 +209,7 @@ mod tests {
         Expr {
             kind: ExprKind::Literal(Literal::Integer(value as i64)),
             span: dummy_span(),
+            node_id: NodeId::default(),
         }
     }
 
@@ -216,6 +217,7 @@ mod tests {
         Expr {
             kind: ExprKind::Symbol(Path::from_ident(dummy_ident(name))),
             span: dummy_span(),
+            node_id: NodeId::default(),
         }
     }
 
@@ -223,6 +225,7 @@ mod tests {
         Expr {
             kind: ExprKind::Block(Block { stmts: body }),
             span: dummy_span(),
+            node_id: NodeId::default(),
         }
     }
 
@@ -230,6 +233,7 @@ mod tests {
         Stmt {
             kind: StmtKind::Expr(expr),
             span: dummy_span(),
+            node_id: NodeId::default(),
         }
     }
 
@@ -253,6 +257,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Literal(Literal::Float(3.15)),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -266,6 +271,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Literal(Literal::String("hello".to_string().into_boxed_str())),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -287,6 +293,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Literal(Literal::Bool(true)),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -300,6 +307,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Literal(Literal::Char('a')),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -317,6 +325,7 @@ mod tests {
                 right: Box::new(dummy_expr_number(2)),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -333,6 +342,7 @@ mod tests {
                 operator: dummy_token(TokenKind::Plus),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -349,6 +359,7 @@ mod tests {
                 right: Box::new(dummy_expr_symbol("x")),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -366,6 +377,7 @@ mod tests {
                 value: Box::new(dummy_expr_number(1)),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -383,6 +395,7 @@ mod tests {
                 fields: thin_vec![(dummy_ident("a"), dummy_expr_number(1))],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -403,6 +416,7 @@ mod tests {
                 ],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -423,6 +437,7 @@ mod tests {
                 ],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -441,6 +456,7 @@ mod tests {
                 parameters: thin_vec![dummy_expr_number(1), dummy_expr_number(2)],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -458,6 +474,7 @@ mod tests {
                 member: dummy_ident("field"),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -471,6 +488,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Type(dummy_type_symbol("i32")),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -488,6 +506,7 @@ mod tests {
                 ty: dummy_type_symbol("i32"),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -509,6 +528,7 @@ mod tests {
                 ],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -522,6 +542,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Break(None),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -534,6 +555,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Break(Some(Box::new(dummy_expr_number(42)))),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -585,6 +607,7 @@ mod tests {
                 mutability: Mutability::Mutable,
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         stmt.visit(&mut visitor);
@@ -606,6 +629,7 @@ mod tests {
                 mutability: Mutability::Mutable,
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         stmt.visit(&mut visitor);
@@ -626,6 +650,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
@@ -655,6 +680,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
@@ -686,6 +712,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
@@ -716,6 +743,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
@@ -745,6 +773,7 @@ mod tests {
                 span: dummy_span(),
                 attributes: ThinVec::new(),
                 visibility: Visibility::Private,
+                node_id: NodeId::default(),
             }],
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -764,6 +793,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Return(Some(Box::new(dummy_expr_number(1)))),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -777,6 +807,7 @@ mod tests {
         let expr = Expr {
             kind: ExprKind::Return(None),
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
@@ -795,6 +826,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
@@ -921,11 +953,13 @@ mod tests {
                                             right: Box::new(dummy_expr_number(4)),
                                         },
                                         span: dummy_span(),
+                                        node_id: NodeId::default(),
                                     },
                                 ),
                             ],
                         },
                         span: dummy_span(),
+                        node_id: NodeId::default(),
                     },
                     Expr {
                         kind: ExprKind::As {
@@ -939,10 +973,12 @@ mod tests {
                             },
                         },
                         span: dummy_span(),
+                        node_id: NodeId::default(),
                     },
                 ],
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
 
         let mut visitor = NodeCounterVisitor::new();
@@ -972,6 +1008,7 @@ mod tests {
                     span: dummy_span(),
                     attributes: ThinVec::new(),
                     visibility: Visibility::Private,
+                    node_id: NodeId::default(),
                 },
                 Item {
                     kind: ItemKind::Struct {
@@ -999,6 +1036,7 @@ mod tests {
                     span: dummy_span(),
                     attributes: ThinVec::new(),
                     visibility: Visibility::Private,
+                    node_id: NodeId::default(),
                 },
                 Item {
                     kind: ItemKind::Interface {
@@ -1019,6 +1057,7 @@ mod tests {
                     span: dummy_span(),
                     attributes: ThinVec::new(),
                     visibility: Visibility::Private,
+                    node_id: NodeId::default(),
                 },
                 Item {
                     kind: ItemKind::Fn(Fn {
@@ -1034,6 +1073,7 @@ mod tests {
                                         mutability: Mutability::Mutable,
                                     },
                                     span: dummy_span(),
+                                    node_id: NodeId::default(),
                                 },
                                 Stmt {
                                     kind: StmtKind::Expr(Expr {
@@ -1043,14 +1083,18 @@ mod tests {
                                                     kind: ExprKind::Return(Some(Box::new(
                                                         dummy_expr_number(2)
                                                     ))),
-                                                    span: dummy_span()
+                                                    span: dummy_span(),
+                                                    node_id: NodeId::default(),
                                                 }),
                                                 span: dummy_span(),
+                                                node_id: NodeId::default(),
                                             }],
                                         }),
                                         span: dummy_span(),
+                                        node_id: NodeId::default(),
                                     }),
                                     span: dummy_span(),
+                                    node_id: NodeId::default(),
                                 },
                             ],
                         }),
@@ -1060,6 +1104,7 @@ mod tests {
                     span: dummy_span(),
                     attributes: ThinVec::new(),
                     visibility: Visibility::Private,
+                    node_id: NodeId::default(),
                 },
             ],
         };
@@ -1141,6 +1186,7 @@ mod tests {
                                 right: Box::new(dummy_expr_symbol("b")),
                             },
                             span: dummy_span(),
+                            node_id: NodeId::default(),
                         }),
                         operator: dummy_token(TokenKind::Star),
                         right: Box::new(Expr {
@@ -1150,14 +1196,17 @@ mod tests {
                                 right: Box::new(dummy_expr_symbol("d")),
                             },
                             span: dummy_span(),
+                            node_id: NodeId::default(),
                         }),
                     },
                     span: dummy_span(),
+                    node_id: NodeId::default(),
                 }),
                 operator: dummy_token(TokenKind::Dash),
                 right: Box::new(dummy_expr_symbol("e")),
             },
             span: dummy_span(),
+            node_id: NodeId::default(),
         };
 
         let mut visitor = NodeCounterVisitor::new();
@@ -1192,6 +1241,7 @@ mod tests {
             span: dummy_span(),
             attributes: ThinVec::new(),
             visibility: Visibility::Private,
+            node_id: NodeId::default(),
         };
         let mut visitor = NodeCounterVisitor::new();
         item.visit(&mut visitor);
