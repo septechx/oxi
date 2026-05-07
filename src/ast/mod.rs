@@ -1,6 +1,9 @@
 pub mod display;
+mod node_id;
 pub mod validate;
 pub mod visit;
+
+pub use node_id::*;
 
 use std::{fmt::Display, path::PathBuf};
 
