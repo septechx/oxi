@@ -68,13 +68,14 @@ pub struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     pub fn new(asts: &'a ThinVec<Ast>, interner: &'a mut Interner) -> Self {
+        let len = asts.len();
         Self {
             asts,
             interner,
             module_idx: 0,
             pending_imports: ThinVec::new(),
-            imports: PerModule::new(asts.len()),
-            def_map: PerModule::new(asts.len()),
+            imports: PerModule::new(len),
+            def_map: PerModule::new(len),
             defs: ThinVec::new(),
         }
     }

@@ -1,13 +1,26 @@
 use thin_vec::ThinVec;
 
-use crate::ast::visit::{VisitAction, Visitable, Visitor};
-use crate::ast::{ImportTree, ImportTreeKind, Item, ItemKind, Visibility};
+use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
+use crate::ast::{Ast, Expr, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Visibility};
 use crate::error_at;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
+    pub fn resolve(&mut self) {
+        self.collect_definitions();
+        self.build_graph();
+        self.resolve_imports();
+    }
+
+    pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
+        let mut ass = NodeIdAssigner::new();
+        for ast in asts.iter_mut() {
+            ast.visit_mut(&mut ass);
+        }
+    }
+
     fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) {
         let idx = self.defs.len() as u32;
         self.defs.push(Def {
@@ -26,21 +39,21 @@ impl<'a> Resolver<'a> {
         });
     }
 
-    pub fn collect_definitions(&mut self) {
+    fn collect_definitions(&mut self) {
         for (i, ast) in self.asts.iter().enumerate() {
             self.module_idx = i;
             ast.visit(&mut DefCollector::new(self));
         }
     }
 
-    pub fn build_graph(&mut self) {
+    fn build_graph(&mut self) {
         for (i, ast) in self.asts.iter().enumerate() {
             self.module_idx = i;
             ast.visit(&mut ImportCollector::new(self));
         }
     }
 
-    pub fn resolve_imports(&mut self) {
+    fn resolve_imports(&mut self) {
         let mut progress = true;
         while progress && !self.pending_imports.is_empty() {
             progress = false;
@@ -169,6 +182,40 @@ impl<'a> Resolver<'a> {
         }
 
         ResolutionStatus::Resolved
+    }
+}
+
+#[derive(Debug)]
+struct NodeIdAssigner {
+    next_node_id: u32,
+}
+
+impl NodeIdAssigner {
+    pub fn new() -> Self {
+        Self { next_node_id: 0 }
+    }
+
+    fn next_node_id(&mut self) -> NodeId {
+        let id = self.next_node_id;
+        self.next_node_id += 1;
+        NodeId(id)
+    }
+}
+
+impl VisitorMut for NodeIdAssigner {
+    fn visit_item(&mut self, item: &mut Item) -> VisitAction {
+        item.node_id = self.next_node_id();
+        VisitAction::Continue
+    }
+
+    fn visit_stmt(&mut self, stmt: &mut Stmt) -> VisitAction {
+        stmt.node_id = self.next_node_id();
+        VisitAction::Continue
+    }
+
+    fn visit_expr(&mut self, expr: &mut Expr) -> VisitAction {
+        expr.node_id = self.next_node_id();
+        VisitAction::Continue
     }
 }
 

@@ -19,12 +19,12 @@ mod lower;
 mod resolve;
 
 #[allow(unreachable_code)]
-pub fn lower_crate(asts: ThinVec<Ast>) -> HirCrate {
+pub fn lower_crate(mut asts: ThinVec<Ast>) -> HirCrate {
+    Resolver::assign_node_ids(&mut asts);
+
     let mut interner = Interner::new();
     let mut resolver = Resolver::new(&asts, &mut interner);
-    resolver.collect_definitions();
-    resolver.build_graph();
-    resolver.resolve_imports();
+    resolver.resolve();
     resolver.dump();
 
     todo!("Finished resolving");
