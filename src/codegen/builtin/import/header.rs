@@ -4,7 +4,7 @@ use inkwell::{builder::Builder, context::Context, module::Module};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, Fn, Ident, Item, ItemKind, Path, Type, TypeKind, Visibility},
+    ast::{Ast, Fn, Ident, Item, ItemKind, NodeId, Path, Type, TypeKind, Visibility},
     codegen::{
         builtin::import::create_module,
         compiler::{self, CompilationContext},
@@ -66,6 +66,7 @@ pub fn compile_header<'ctx>(
                     return_type: ty.0,
                     is_extern: true,
                 }),
+                node_id: NodeId::default(),
                 span,
                 attributes: ThinVec::new(),
                 visibility: Visibility::Public,

@@ -4,7 +4,7 @@ use thin_vec::ThinVec;
 use crate::{
     ast::{
         AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
-        Item, ItemKind, Mutability, Stmt, StmtKind, Type, TypeKind, Visibility,
+        Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
     },
     error_at, get_modifiers,
     lexer::token::TokenKind,
@@ -83,7 +83,7 @@ pub fn parse_static_item(
 
     Ok(Item {
         kind: ItemKind::Static { name, ty, value },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -221,7 +221,7 @@ pub fn parse_struct_decl_item(
             fields,
             items,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -286,7 +286,7 @@ pub fn parse_interface_decl_item(
 
     Ok(Item {
         kind: ItemKind::Interface { items, name },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -374,7 +374,7 @@ pub fn parse_fn_decl_item(
             return_type,
             is_extern: extern_mod.is_some(),
         }),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -426,7 +426,7 @@ pub fn parse_impl_item(
             self_ty,
             interface,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span: Span::new(start_span.start(), end_span.end()),
         // Impl blocks do not have visibility modifiers in the source grammar, so we use
@@ -457,7 +457,7 @@ pub fn parse_import_item(
 
     Ok(Item {
         kind: ItemKind::Import(tree),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -572,7 +572,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
             value: assigned_value,
             mutability,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -598,6 +598,6 @@ fn parse_expr_stmt(parser: &mut Parser) -> Result<Stmt> {
     Ok(Stmt {
         kind,
         span,
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
     })
 }

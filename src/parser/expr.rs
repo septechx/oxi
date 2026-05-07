@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Block, Expr, ExprKind, Ident, Literal, Path},
+    ast::{Block, Expr, ExprKind, Ident, Literal, NodeId, Path},
     fatal_at,
     lexer::token::TokenKind,
     parser::{
@@ -65,13 +65,13 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             if value.contains('.') {
                 Ok(Expr {
                     kind: ExprKind::Literal(Literal::Float(value.parse::<f64>()?)),
-                    node_id: Parser::next_zone_id(),
+                    node_id: NodeId::default(),
                     span,
                 })
             } else {
                 Ok(Expr {
                     kind: ExprKind::Literal(Literal::Integer(value.parse::<i64>()?)),
-                    node_id: Parser::next_zone_id(),
+                    node_id: NodeId::default(),
                     span,
                 })
             }
@@ -80,14 +80,14 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             kind: ExprKind::Literal(Literal::String(
                 process_string(&value, span, token.module_id).into_boxed_str(),
             )),
-            node_id: Parser::next_zone_id(),
+            node_id: NodeId::default(),
             span,
         }),
         TokenKind::CharLiteral => Ok(Expr {
             kind: ExprKind::Literal(Literal::Char(
                 value.chars().next().expect("value has a char"),
             )),
-            node_id: Parser::next_zone_id(),
+            node_id: NodeId::default(),
             span,
         }),
         TokenKind::Identifier => {
@@ -95,18 +95,18 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             let path = parse_path(parser)?;
             Ok(Expr {
                 kind: ExprKind::Symbol(path.clone()),
-                node_id: Parser::next_zone_id(),
+                node_id: NodeId::default(),
                 span: path.span,
             })
         }
         TokenKind::True => Ok(Expr {
             kind: ExprKind::Literal(Literal::Bool(true)),
-            node_id: Parser::next_zone_id(),
+            node_id: NodeId::default(),
             span,
         }),
         TokenKind::False => Ok(Expr {
             kind: ExprKind::Literal(Literal::Bool(false)),
-            node_id: Parser::next_zone_id(),
+            node_id: NodeId::default(),
             span,
         }),
         _ => unreachable!(),
@@ -124,7 +124,7 @@ pub fn parse_binary_expr(parser: &mut Parser, left: Expr, bp: BindingPower) -> R
             operator,
             right: Box::new(right),
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -144,7 +144,7 @@ pub fn parse_postfix_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) ->
             left: Box::new(left),
             operator,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -159,7 +159,7 @@ pub fn parse_prefix_expr(parser: &mut Parser) -> Result<Expr> {
             operator,
             right: Box::new(right),
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -179,7 +179,7 @@ pub fn parse_assignment_expr(
             operator,
             value: Box::new(value),
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -211,7 +211,7 @@ pub fn parse_struct_instantiation_expr(
         } else {
             Expr {
                 kind: ExprKind::Symbol(Path::from_ident(property.clone())),
-                node_id: Parser::next_zone_id(),
+                node_id: NodeId::default(),
                 span: property.span,
             }
         };
@@ -231,7 +231,7 @@ pub fn parse_struct_instantiation_expr(
             path: struct_path,
             fields: properties,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -268,7 +268,7 @@ pub fn parse_array_literal_expr(parser: &mut Parser) -> Result<Expr> {
             underlying: type_,
             contents,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -300,7 +300,7 @@ pub fn parse_function_call_expr(
             callee: Box::new(left),
             parameters,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -321,7 +321,7 @@ pub fn parse_member_access_expr(
             base: Box::new(left),
             member,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -336,7 +336,7 @@ pub fn parse_type_expr(parser: &mut Parser) -> Result<Expr> {
 
     Ok(Expr {
         kind: ExprKind::Type(ty),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -352,7 +352,7 @@ pub fn parse_as_cast_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) ->
             expr: Box::new(left),
             ty,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -387,7 +387,7 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
     } else {
         Ok(Expr {
             kind: ExprKind::TupleLiteral { elements },
-            node_id: Parser::next_zone_id(),
+            node_id: NodeId::default(),
             span: Span::new(start_token.span.start(), end_span.end()),
         })
     }
@@ -400,7 +400,7 @@ pub fn parse_block_expr(parser: &mut Parser) -> Result<Expr> {
 
     Ok(Expr {
         kind: ExprKind::Block(Block { stmts: body }),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -431,7 +431,7 @@ pub fn parse_if_expr(parser: &mut Parser) -> Result<Expr> {
             then_branch: Block { stmts },
             else_branch,
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -446,7 +446,7 @@ pub fn parse_while_expr(parser: &mut Parser) -> Result<Expr> {
             condition,
             body: Block { stmts },
         },
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -457,7 +457,7 @@ pub fn parse_loop_expr(parser: &mut Parser) -> Result<Expr> {
     let (stmts, span) = parse_body(parser, start_span)?;
     Ok(Expr {
         kind: ExprKind::Loop(Block { stmts }),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -476,7 +476,7 @@ pub fn parse_break_expr(parser: &mut Parser) -> Result<Expr> {
 
     Ok(Expr {
         kind: ExprKind::Break(value),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -495,7 +495,7 @@ pub fn parse_return_expr(parser: &mut Parser) -> Result<Expr> {
 
     Ok(Expr {
         kind: ExprKind::Return(value),
-        node_id: Parser::next_zone_id(),
+        node_id: NodeId::default(),
         span,
     })
 }

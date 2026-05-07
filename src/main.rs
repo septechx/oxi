@@ -16,20 +16,20 @@ pub mod resolve;
 pub mod span;
 pub mod utils;
 
-use std::{
-    cell::{Cell, RefCell},
-    fs,
-    io::IsTerminal,
-};
+use std::cell::RefCell;
+use std::fs;
+use std::io::IsTerminal;
 
 use anyhow::Result;
 use clap::Parser;
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::validate::validate_ast, cli::Cli, context::Ctx, errors::ErrorCollector, hir::lower_crate,
-    lexer::tokenize, parser::parse, span::sourcemaps::SourceMapManager,
-};
+use crate::ast::validate::validate_ast;
+use crate::cli::Cli;
+use crate::context::Ctx;
+use crate::hir::lower_crate;
+use crate::lexer::tokenize;
+use crate::parser::parse;
 
 pub static DEFAULT_ROOT: &str = "..";
 
