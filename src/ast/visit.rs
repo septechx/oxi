@@ -32,13 +32,33 @@ pub trait Visitor {
     }
 }
 
+pub trait VisitorMut {
+    fn visit_item(&mut self, _item: &mut Item) -> VisitAction {
+        VisitAction::Continue
+    }
+    fn visit_stmt(&mut self, _stmt: &mut Stmt) -> VisitAction {
+        VisitAction::Continue
+    }
+    fn visit_expr(&mut self, _expr: &mut Expr) -> VisitAction {
+        VisitAction::Continue
+    }
+    fn visit_type(&mut self, _ty: &mut Type) -> VisitAction {
+        VisitAction::Continue
+    }
+}
+
 pub trait Visitable {
     fn visit(&self, visitor: &mut impl Visitor);
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut);
 }
 
 impl<T: Visitable> Visitable for Box<T> {
     fn visit(&self, visitor: &mut impl Visitor) {
         self.as_ref().visit(visitor);
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        self.as_mut().visit_mut(visitor);
     }
 }
 
@@ -46,6 +66,12 @@ impl<T: Visitable> Visitable for Option<T> {
     fn visit(&self, visitor: &mut impl Visitor) {
         if let Some(inner) = self {
             inner.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        if let Some(inner) = self {
+            inner.visit_mut(visitor);
         }
     }
 }
@@ -56,12 +82,24 @@ impl<T: Visitable> Visitable for ThinVec<T> {
             inner.visit(visitor);
         }
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for inner in self {
+            inner.visit_mut(visitor);
+        }
+    }
 }
 
 impl<T: Visitable> Visitable for Vec<T> {
     fn visit(&self, visitor: &mut impl Visitor) {
         for inner in self {
             inner.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for inner in self {
+            inner.visit_mut(visitor);
         }
     }
 }
@@ -72,6 +110,12 @@ impl<T: Visitable> Visitable for Box<[T]> {
             inner.visit(visitor);
         }
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for inner in self.iter_mut() {
+            inner.visit_mut(visitor);
+        }
+    }
 }
 
 impl<K: Eq + Hash, V: Visitable> Visitable for FxHashMap<K, V> {
@@ -80,12 +124,24 @@ impl<K: Eq + Hash, V: Visitable> Visitable for FxHashMap<K, V> {
             value.visit(visitor);
         }
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for (_, value) in self.iter_mut() {
+            value.visit_mut(visitor);
+        }
+    }
 }
 
 impl Visitable for Ast {
     fn visit(&self, visitor: &mut impl Visitor) {
         for item in &self.items {
             item.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for item in &mut self.items {
+            item.visit_mut(visitor);
         }
     }
 }
@@ -119,11 +175,44 @@ impl Visitable for Item {
             VisitAction::SkipChildren => {}
         }
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        match visitor.visit_item(self) {
+            VisitAction::Continue => match &mut self.kind {
+                ItemKind::Static { value, ty, .. } => {
+                    value.visit_mut(visitor);
+                    ty.visit_mut(visitor);
+                }
+                ItemKind::Struct { fields, items, .. } => {
+                    for field in fields {
+                        field.1.visit_mut(visitor);
+                    }
+                    items.visit_mut(visitor);
+                }
+                ItemKind::Interface { items, .. } => {
+                    items.visit_mut(visitor);
+                }
+                ItemKind::Impl { self_ty, items, .. } => {
+                    self_ty.visit_mut(visitor);
+                    items.visit_mut(visitor);
+                }
+                ItemKind::Fn(f) => f.visit_mut(visitor),
+                ItemKind::Import(_) => {
+                    // Leaf
+                }
+            },
+            VisitAction::SkipChildren => {}
+        }
+    }
 }
 
 impl Visitable for AssocItem {
     fn visit(&self, visitor: &mut impl Visitor) {
         self.kind.visit(visitor);
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        self.kind.visit_mut(visitor);
     }
 }
 
@@ -131,6 +220,12 @@ impl Visitable for AssocItemKind {
     fn visit(&self, visitor: &mut impl Visitor) {
         match self {
             AssocItemKind::Fn(f) => f.visit(visitor),
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        match self {
+            AssocItemKind::Fn(f) => f.visit_mut(visitor),
         }
     }
 }
@@ -145,11 +240,25 @@ impl Visitable for Fn {
         }
         self.return_type.visit(visitor);
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for arg in &mut self.parameters {
+            arg.1.visit_mut(visitor);
+        }
+        if let Some(body) = &mut self.body {
+            body.visit_mut(visitor);
+        }
+        self.return_type.visit_mut(visitor);
+    }
 }
 
 impl Visitable for Block {
     fn visit(&self, visitor: &mut impl Visitor) {
         self.stmts.visit(visitor);
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        self.stmts.visit_mut(visitor);
     }
 }
 
@@ -169,6 +278,27 @@ impl Visitable for Stmt {
                         val.visit(visitor);
                     }
                     ty.visit(visitor);
+                }
+            },
+            VisitAction::SkipChildren => {}
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        match visitor.visit_stmt(self) {
+            VisitAction::Continue => match &mut self.kind {
+                StmtKind::Expr(expr) => expr.visit_mut(visitor),
+                StmtKind::Semi(expr) => expr.visit_mut(visitor),
+                StmtKind::Let {
+                    name: _,
+                    ty,
+                    value,
+                    mutability: _,
+                } => {
+                    if let Some(val) = value {
+                        val.visit_mut(visitor);
+                    }
+                    ty.visit_mut(visitor);
                 }
             },
             VisitAction::SkipChildren => {}
@@ -262,10 +392,100 @@ impl Visitable for Expr {
             VisitAction::SkipChildren => {}
         }
     }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        match visitor.visit_expr(self) {
+            VisitAction::Continue => match &mut self.kind {
+                ExprKind::Literal(l) => l.visit_mut(visitor),
+                ExprKind::Block(b) => b.visit_mut(visitor),
+                ExprKind::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => {
+                    condition.visit_mut(visitor);
+                    then_branch.visit_mut(visitor);
+                    else_branch.visit_mut(visitor);
+                }
+                ExprKind::While { condition, body } => {
+                    condition.visit_mut(visitor);
+                    body.visit_mut(visitor);
+                }
+                ExprKind::Loop(b) => b.visit_mut(visitor),
+                ExprKind::Symbol(_) => {
+                    // Leaf
+                }
+                ExprKind::Binary {
+                    left,
+                    operator: _,
+                    right,
+                } => {
+                    left.visit_mut(visitor);
+                    right.visit_mut(visitor);
+                }
+                ExprKind::Postfix { left, operator: _ } => {
+                    left.visit_mut(visitor);
+                }
+                ExprKind::Prefix { operator: _, right } => {
+                    right.visit_mut(visitor);
+                }
+                ExprKind::Assignment {
+                    assignee, value, ..
+                } => {
+                    assignee.visit_mut(visitor);
+                    value.visit_mut(visitor);
+                }
+                ExprKind::StructInstantiation { path: _, fields } => {
+                    for field in fields {
+                        field.1.visit_mut(visitor);
+                    }
+                }
+                ExprKind::ArrayLiteral {
+                    underlying,
+                    contents,
+                } => {
+                    underlying.visit_mut(visitor);
+                    contents.visit_mut(visitor);
+                }
+                ExprKind::FunctionCall { callee, parameters } => {
+                    callee.visit_mut(visitor);
+                    parameters.visit_mut(visitor);
+                }
+                ExprKind::MemberAccess { base, .. } => {
+                    base.visit_mut(visitor);
+                }
+                ExprKind::Type(t) => t.visit_mut(visitor),
+                ExprKind::As { expr, ty } => {
+                    expr.visit_mut(visitor);
+                    ty.visit_mut(visitor);
+                }
+                ExprKind::TupleLiteral { elements } => {
+                    for element in elements {
+                        element.visit_mut(visitor);
+                    }
+                }
+                ExprKind::Break(b) => {
+                    if let Some(val) = b {
+                        val.visit_mut(visitor);
+                    }
+                }
+                ExprKind::Return(r) => {
+                    if let Some(val) = r {
+                        val.visit_mut(visitor);
+                    }
+                }
+            },
+            VisitAction::SkipChildren => {}
+        }
+    }
 }
 
 impl Visitable for Literal {
     fn visit(&self, _visitor: &mut impl Visitor) {
+        // Unit
+    }
+
+    fn visit_mut(&mut self, _visitor: &mut impl VisitorMut) {
         // Unit
     }
 }
@@ -286,6 +506,33 @@ impl Visitable for Type {
                 }
                 TypeKind::Tuple(elements) => {
                     elements.visit(visitor);
+                }
+                TypeKind::Infer => {
+                    // Leaf
+                }
+                TypeKind::Never => {
+                    // Leaf
+                }
+            },
+            VisitAction::SkipChildren => {}
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        match visitor.visit_type(self) {
+            VisitAction::Continue => match &mut self.kind {
+                TypeKind::Symbol(_) => {}
+                TypeKind::Pointer(ty, _) => ty.visit_mut(visitor),
+                TypeKind::Slice(ty) => ty.visit_mut(visitor),
+                TypeKind::FixedArray(ty, _) => {
+                    ty.visit_mut(visitor);
+                }
+                TypeKind::Function { params, ret } => {
+                    params.visit_mut(visitor);
+                    ret.visit_mut(visitor);
+                }
+                TypeKind::Tuple(elements) => {
+                    elements.visit_mut(visitor);
                 }
                 TypeKind::Infer => {
                     // Leaf
