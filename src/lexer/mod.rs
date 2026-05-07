@@ -100,8 +100,8 @@ impl Lexer {
 pub fn tokenize(file: String, path: &Path) -> Result<(TokenStream, ModuleId)> {
     initialize_regexes();
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
+    let module_id = crate::CTX.with(|ctx| {
+        let maps = &mut ctx.borrow_mut().source_maps;
         maps.add_source(file.clone(), path.to_path_buf())
     });
 

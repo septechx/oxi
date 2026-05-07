@@ -29,8 +29,8 @@ impl AstValidator {
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                 let msg = format!("Duplicate definition of `{}` in {}", ident.value, context);
-                crate::ERRORS
-                    .with(|e| -> anyhow::Result<()> {
+                crate::CTX
+                    .with(|ctx| -> anyhow::Result<()> {
                         let err = builders::error(msg)
                             .add_widget(LocationWidget::new(ident.span, self.module_id)?)
                             .add_widget(CodeWidget::new(
@@ -50,7 +50,7 @@ impl AstValidator {
                                 HighlightType::Info,
                             )?);
 
-                        e.borrow_mut().add(err);
+                        ctx.borrow_mut().errors.add(err);
                         Ok(())
                     })
                     .expect("failed to emit error");
@@ -180,8 +180,8 @@ impl Visitor for AstValidator {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                         let msg =
                             format!("Duplicate field `{}` in struct instantiation", ident.value);
-                        crate::ERRORS
-                            .with(|e| -> anyhow::Result<()> {
+                        crate::CTX
+                            .with(|ctx| -> anyhow::Result<()> {
                                 let err = builders::error(msg)
                                     .add_widget(LocationWidget::new(ident.span, self.module_id)?)
                                     .add_widget(CodeWidget::new(
@@ -200,7 +200,7 @@ impl Visitor for AstValidator {
                                         self.module_id,
                                         HighlightType::Info,
                                     )?);
-                                e.borrow_mut().add(err);
+                                ctx.borrow_mut().errors.add(err);
                                 Ok(())
                             })
                             .expect("failed to emit error");

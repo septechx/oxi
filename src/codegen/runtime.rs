@@ -57,8 +57,8 @@ pub fn generate_c_runtime_integration<'ctx>(
 
         create_exit_syscall(context, builder, result_value)?;
     } else {
-        crate::ERRORS.with(|e| {
-            e.borrow_mut().add(
+        crate::CTX.with(|ctx| {
+            ctx.borrow_mut().errors.add(
                 builders::warning("Main function not found")
                     .add_widget(InfoWidget::from_raw(
                         1,

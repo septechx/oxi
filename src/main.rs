@@ -5,6 +5,7 @@ pub mod backend;
 pub mod bindings;
 pub mod cli;
 pub mod codegen;
+pub mod context;
 pub mod errors;
 pub mod hashmap;
 pub mod hir;
@@ -26,41 +27,43 @@ use clap::Parser;
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::validate::validate_ast, cli::Cli, errors::ErrorCollector, hir::lower_crate,
+    ast::validate::validate_ast, cli::Cli, context::Ctx, errors::ErrorCollector, hir::lower_crate,
     lexer::tokenize, parser::parse, span::sourcemaps::SourceMapManager,
 };
 
 pub static DEFAULT_ROOT: &str = "..";
 
+// TODO: Make this not global
 thread_local! {
-    pub static ERRORS: RefCell<ErrorCollector> = RefCell::new(ErrorCollector::new());
-    pub static SOURCE_MAPS: RefCell<SourceMapManager> = RefCell::new(SourceMapManager::default());
-    pub static ENABLE_PRINTING: Cell<bool> = const { Cell::new(true) };
+    pub static CTX: RefCell<Ctx> = RefCell::new(Ctx::new());
 }
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.quiet {
-        ENABLE_PRINTING.with(|e| e.set(false));
+        CTX.with(|ctx| {
+            ctx.borrow_mut().enable_printing = true;
+        });
     }
 
     build_file(cli)?;
 
-    ERRORS.with(|e| {
-        e.borrow().print_all();
+    CTX.with(|ctx| {
+        ctx.borrow().errors.print_all();
     });
 
     Ok(())
 }
 
 fn check_for_errors() {
-    if ERRORS.with(|e| e.borrow().has_errors()) {
-        ERRORS.with(|e| {
-            e.borrow().print_all();
-        });
-        std::process::exit(1);
-    }
+    CTX.with(|ctx| {
+        let e = &ctx.borrow().errors;
+        if e.has_errors() {
+            e.print_all();
+            std::process::exit(1);
+        }
+    });
 }
 
 fn build_file(cli: Cli) -> Result<()> {

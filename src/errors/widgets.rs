@@ -80,15 +80,15 @@ pub struct CodeWidget {
 
 impl CodeWidget {
     pub fn new(span: Span, module_id: ModuleId, highlight_type: HighlightType) -> Result<Self> {
-        let (_, line, column, length) = crate::SOURCE_MAPS.with(|sm| {
-            let maps = sm.borrow();
+        let (_, line, column, length) = crate::CTX.with(|ctx| {
+            let maps = &ctx.borrow().source_maps;
             maps.get_source(module_id)
                 .map(|sm| sm.span_to_source_location(&span))
                 .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
         })?;
 
-        let code = crate::SOURCE_MAPS.with(|sm| {
-            let maps = sm.borrow();
+        let code = crate::CTX.with(|ctx| {
+            let maps = &ctx.borrow().source_maps;
             maps.get_source(module_id)
                 .and_then(|sm| sm.get_line(line))
                 .unwrap_or("<failed to get line>")
@@ -169,8 +169,8 @@ pub struct LocationWidget {
 
 impl LocationWidget {
     pub fn new(span: Span, module_id: ModuleId) -> Result<Self> {
-        let (file, line, column, _) = crate::SOURCE_MAPS.with(|sm| {
-            let maps = sm.borrow();
+        let (file, line, column, _) = crate::CTX.with(|ctx| {
+            let maps = &ctx.borrow().source_maps;
             maps.get_source(module_id)
                 .map(|sm| sm.span_to_source_location(&span))
                 .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
@@ -207,8 +207,8 @@ pub struct InfoWidget {
 
 impl InfoWidget {
     pub fn new(span: Span, module_id: ModuleId, content: impl Into<Box<str>>) -> Result<Self> {
-        let (_, line, ..) = crate::SOURCE_MAPS.with(|sm| {
-            let maps = sm.borrow();
+        let (_, line, ..) = crate::CTX.with(|ctx| {
+            let maps = &ctx.borrow().source_maps;
             maps.get_source(module_id)
                 .map(|sm| sm.span_to_source_location(&span))
                 .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))

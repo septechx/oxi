@@ -80,8 +80,8 @@ pub fn compile_header<'ctx>(
         items,
     };
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
+    let module_id = crate::CTX.with(|ctx| {
+        let maps = &mut ctx.borrow_mut().source_maps;
         maps.next_id()
     });
 
@@ -169,8 +169,8 @@ fn convert_clang_location(location: SourceLocation) -> (Span, ModuleId) {
     let clang_file = loc.file.expect("file location has no file").get_path();
     let file_path = clang_file.clone();
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
+    let module_id = crate::CTX.with(|ctx| {
+        let maps = &mut ctx.borrow_mut().source_maps;
         if let Ok(content) = fs::read_to_string(&file_path) {
             maps.add_source(content, file_path)
         } else {
