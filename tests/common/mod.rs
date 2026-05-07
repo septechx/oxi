@@ -1,7 +1,7 @@
 use oxic::{
-    ERRORS,
     backend::{BackendOptions, linker::linkers::LdLinker},
     codegen::{self, CompileOptions, EmitType},
+    context::with_ctx,
     errors::ErrorLevel,
     lexer::tokenize,
     parser::parse,
@@ -28,7 +28,7 @@ pub struct Test {
 impl Test {
     pub fn new() -> Self {
         // Clear errors from previous tests to prevent state leakage
-        ERRORS.with(|e| e.borrow_mut().clear());
+        with_ctx(|ctx| ctx.errors.clear());
 
         Self {
             files: vec![],
@@ -69,11 +69,13 @@ impl Test {
     }
 
     fn check_for_errors(&self) -> bool {
-        if ERRORS.with(|e| e.borrow().has_errors_above_level(self.fail_on_level)) {
-            ERRORS.with(|e| e.borrow().print_errors(ErrorLevel::Warning));
-            return true;
-        }
-        false
+        with_ctx(|ctx| {
+            if ctx.errors.has_errors_above_level(self.fail_on_level) {
+                ctx.errors.print_errors(ErrorLevel::Warning);
+                return true;
+            }
+            false
+        })
     }
 
     fn handle_error_check(&self) -> bool {
