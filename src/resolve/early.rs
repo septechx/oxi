@@ -5,7 +5,7 @@ use crate::ast::{Ast, Expr, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, 
 use crate::error_at;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
-use crate::resolve::{Def, DefKind, PendingImport, Resolver};
+use crate::resolve::{Def, DefKind, NameResolution, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
     pub fn resolve(&mut self) {
@@ -21,14 +21,17 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn create_def(&mut self, name: Symbol, kind: DefKind, visibility: Visibility) {
+    fn create_def(&mut self, id: NodeId, name: Symbol, kind: DefKind, visibility: Visibility) {
         let idx = self.defs.len() as u32;
         self.defs.push(Def {
             name,
             kind,
             visibility,
         });
-        self.def_map[self.module_idx].insert(name, DefId(idx));
+        self.def_map.insert(id, DefId(idx));
+        self.current_module_mut()
+            .resolutions
+            .insert(name, NameResolution::non_glob_import(DefId(idx)));
     }
 
     fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
@@ -134,17 +137,6 @@ impl<'a> Resolver<'a> {
             .unwrap_or(unsafe { segments.last().unwrap_unchecked().value.as_ref() });
         let local_sym = self.interner.intern(local_name);
 
-        if self.def_map[pi.module.0 as usize].contains_key(&local_sym)
-            || self.imports[pi.module.0 as usize].contains_key(&local_sym)
-        {
-            error_at!(
-                pi.import_item.span,
-                ModuleId(pi.module.0),
-                "Import name collides with existing definition"
-            );
-            return ResolutionStatus::Failed;
-        }
-
         // FIXME: Only supports 2-segment paths, else ignores the middle part(s)
         let target_mod_name = &segments[0].value;
         let target_def_name = &segments[segments.len() - 1].value;
@@ -160,12 +152,15 @@ impl<'a> Resolver<'a> {
         };
 
         let target_sym = self.interner.intern(target_def_name);
-        let target = self.def_map[target_mid].get(&target_sym).copied();
+        let target = self.modules[target_mid]
+            .resolutions
+            .get(&target_sym)
+            .copied();
         let Some(target) = target else {
             return ResolutionStatus::Pending;
         };
 
-        let target_def = self.defs[target.0 as usize];
+        let target_def = self.defs[target.best_binding().0 as usize];
         if target_def.visibility != Visibility::Public {
             error_at!(
                 pi.import_item.span,
@@ -175,11 +170,13 @@ impl<'a> Resolver<'a> {
             return ResolutionStatus::Failed;
         }
 
-        self.imports[self.module_idx].insert(local_sym, target);
-
         if pi.visibility == Visibility::Public {
-            self.def_map[self.module_idx].insert(local_sym, target);
+            todo!("Implement re-exporting imports");
         }
+
+        self.current_module_mut()
+            .resolutions
+            .insert(local_sym, target);
 
         ResolutionStatus::Resolved
     }
@@ -236,22 +233,22 @@ impl<'a, 'res> Visitor for DefCollector<'a, 'res> {
             ItemKind::Static { name, .. } => {
                 let sym = self.resolver.interner.intern(&name.value);
                 self.resolver
-                    .create_def(sym, DefKind::Static, item.visibility);
+                    .create_def(item.node_id, sym, DefKind::Static, item.visibility);
             }
             ItemKind::Struct { name, .. } => {
                 let sym = self.resolver.interner.intern(&name.value);
                 self.resolver
-                    .create_def(sym, DefKind::Struct, item.visibility);
+                    .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
             }
             ItemKind::Interface { name, .. } => {
                 let sym = self.resolver.interner.intern(&name.value);
                 self.resolver
-                    .create_def(sym, DefKind::Interface, item.visibility);
+                    .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
             }
             ItemKind::Fn(f) => {
                 let sym = self.resolver.interner.intern(&f.name.value);
                 self.resolver
-                    .create_def(sym, DefKind::Function, item.visibility);
+                    .create_def(item.node_id, sym, DefKind::Function, item.visibility);
             }
             _ => {}
         }

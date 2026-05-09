@@ -2,7 +2,7 @@ use std::ops::{Index, IndexMut};
 
 use thin_vec::{ThinVec, thin_vec};
 
-use crate::ast::{Ast, ImportTree, Visibility};
+use crate::ast::{Ast, ImportTree, NodeMap, Visibility};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::{Interner, Symbol};
 use crate::hir::{DefId, ModuleId};
@@ -55,14 +55,58 @@ impl<T: Clone + Default> IndexMut<usize> for PerModule<T> {
     }
 }
 
+// Non glob imports can shadow glob imports, so this cannot be an enum
+#[derive(Debug, Clone, Copy)]
+pub struct NameResolution {
+    /// Name coming from a local definition or single import. e.g.
+    /// ```
+    /// import some_module::SomeStruct;
+    /// // or
+    /// struct MyStruct {}
+    /// ````
+    non_glob_import: Option<DefId>,
+    /// Name coming from a glob import. e.g.
+    /// ```
+    /// import my_module::*;
+    /// ````
+    glob_import: Option<DefId>,
+}
+
+impl NameResolution {
+    pub fn best_binding(&self) -> DefId {
+        self.non_glob_import
+            .or(self.glob_import)
+            .expect("If a resolution exists, it must be a non glob import or a glob import")
+    }
+
+    pub fn non_glob_import(res: DefId) -> Self {
+        Self {
+            non_glob_import: Some(res),
+            glob_import: None,
+        }
+    }
+
+    pub fn glob_import(res: DefId) -> Self {
+        Self {
+            non_glob_import: None,
+            glob_import: Some(res),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModuleData {
+    resolutions: FxHashMap<Symbol, NameResolution>,
+}
+
 #[derive(Debug)]
 pub struct Resolver<'a> {
     asts: &'a ThinVec<Ast>,
     module_idx: usize,
     interner: &'a mut Interner,
     pending_imports: ThinVec<PendingImport>,
-    imports: PerModule<FxHashMap<Symbol, DefId>>,
-    def_map: PerModule<FxHashMap<Symbol, DefId>>,
+    modules: PerModule<ModuleData>,
+    def_map: NodeMap<DefId>,
     defs: ThinVec<Def>,
 }
 
@@ -74,17 +118,25 @@ impl<'a> Resolver<'a> {
             interner,
             module_idx: 0,
             pending_imports: ThinVec::new(),
-            imports: PerModule::new(len),
-            def_map: PerModule::new(len),
+            modules: PerModule::new(len),
+            def_map: NodeMap::default(),
             defs: ThinVec::new(),
         }
+    }
+
+    fn current_module(&self) -> &ModuleData {
+        &self.modules[self.module_idx]
+    }
+
+    fn current_module_mut(&mut self) -> &mut ModuleData {
+        &mut self.modules[self.module_idx]
     }
 
     #[allow(dead_code)]
     pub fn dump(&self) {
         dbg!(&self.defs);
         dbg!(&self.def_map);
-        dbg!(&self.imports);
+        dbg!(&self.modules);
         dbg!(&self.pending_imports);
         dbg!(&self.interner);
     }
