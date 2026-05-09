@@ -631,7 +631,7 @@ impl LoweringContext {
             ExprKind::Literal(l) => self.alloc_expr(HirExprKind::Literal(l), span),
             ExprKind::Symbol(path) => {
                 if path.is_single() {
-                    let sym = self.krate.interner.intern(&path.to_string());
+                    let sym = self.krate.interner.intern(path.to_string());
                     for scope in self.local_stack.iter().rev() {
                         if let Some(local) = scope.get(&sym) {
                             return self.alloc_expr(HirExprKind::Local(*local), span);

@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::hashmap::FxHashMap;
 
 pub type Symbol = u32;
@@ -5,9 +7,9 @@ pub type Symbol = u32;
 #[derive(Debug, Default, Clone)]
 pub struct Interner {
     /// Used for checking if a symbol is already interned
-    map: FxHashMap<String, Symbol>,
+    map: FxHashMap<Rc<str>, Symbol>,
     /// Used for retrieving the symbol value
-    vec: Vec<String>,
+    vec: Vec<Rc<str>>,
 }
 
 impl Interner {
@@ -15,14 +17,16 @@ impl Interner {
         Self::default()
     }
 
-    pub fn intern(&mut self, s: &str) -> Symbol {
+    pub fn intern(&mut self, s: impl AsRef<str>) -> Symbol {
+        let s = s.as_ref();
         if let Some(&sym) = self.map.get(s) {
             return sym;
         }
-        let idx = self.vec.len() as u32;
-        self.vec.push(s.to_owned());
-        self.map
-            .insert(self.vec.last().expect("string exists").clone(), idx);
+
+        let s: Rc<str> = s.into();
+        let idx = self.vec.len() as Symbol;
+        self.vec.push(s.clone());
+        self.map.insert(s, idx);
         idx
     }
 
