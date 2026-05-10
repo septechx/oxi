@@ -27,6 +27,10 @@ impl Default for Ctx {
     }
 }
 
-pub fn with_ctx<T>(callback: impl FnOnce(&mut Ctx) -> T) -> T {
+pub fn with_ctx<T>(callback: impl FnOnce(&Ctx) -> T) -> T {
+    crate::CTX.with_borrow(callback)
+}
+
+pub fn with_ctx_mut<T>(callback: impl FnOnce(&mut Ctx) -> T) -> T {
     crate::CTX.with_borrow_mut(callback)
 }

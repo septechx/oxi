@@ -2,7 +2,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Literal, Mutability, Visibility},
-    context::with_ctx,
+    context::with_ctx_mut,
     hashmap::FxHashMap,
     hir::{
         interner::{Interner, Symbol},
@@ -23,7 +23,7 @@ mod resolve;
 pub fn lower_crate(mut asts: ThinVec<Ast>) -> HirCrate {
     Resolver::assign_node_ids(&mut asts);
 
-    with_ctx(|ctx| {
+    with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &mut ctx.interner);
         resolver.resolve();
         resolver.dump();

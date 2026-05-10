@@ -59,14 +59,14 @@ impl<T: Clone + Default> IndexMut<usize> for PerModule<T> {
 #[derive(Debug, Clone, Copy)]
 pub struct NameResolution {
     /// Name coming from a local definition or single import. e.g.
-    /// ```
+    /// ```ignore
     /// import some_module::SomeStruct;
     /// // or
     /// struct MyStruct {}
     /// ````
     non_glob_import: Option<DefId>,
     /// Name coming from a glob import. e.g.
-    /// ```
+    /// ```ignore
     /// import my_module::*;
     /// ````
     glob_import: Option<DefId>,

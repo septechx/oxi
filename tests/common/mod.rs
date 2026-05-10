@@ -1,7 +1,7 @@
 use oxic::{
     backend::{BackendOptions, linker::linkers::LdLinker},
     codegen::{self, CompileOptions, EmitType},
-    context::with_ctx,
+    context::{with_ctx, with_ctx_mut},
     errors::ErrorLevel,
     lexer::tokenize,
     parser::parse,
@@ -28,7 +28,7 @@ pub struct Test {
 impl Test {
     pub fn new() -> Self {
         // Clear errors from previous tests to prevent state leakage
-        with_ctx(|ctx| ctx.errors.clear());
+        with_ctx_mut(|ctx| ctx.errors.clear());
 
         Self {
             files: vec![],
