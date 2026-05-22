@@ -18,6 +18,7 @@ impl<'a> Resolver<'a> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct Rib {
     pub bindings: FxHashMap<Symbol, Res>,

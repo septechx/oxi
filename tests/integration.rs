@@ -334,7 +334,7 @@ fn import_and_print_function() {
     it(|ctx| {
         ctx.add_source(
             r#"
-            static std = @import("std");
+            const std = @import("std");
 
             pub fn main() isize {
                 std.print("Hello world");
@@ -359,7 +359,7 @@ fn struct_with_methods() {
             struct Foo {
                 a: i32,
 
-                pub static fn bar(a: i32, b: i32) i32 {
+                pub fn bar(a: i32, b: i32) i32 {
                     return a - b;
                 }
             }
