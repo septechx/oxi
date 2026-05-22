@@ -230,10 +230,10 @@ impl<'a, 'res> DefCollector<'a, 'res> {
 impl<'a, 'res> Visitor for DefCollector<'a, 'res> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
-            ItemKind::Static { name, .. } => {
+            ItemKind::Const { name, .. } => {
                 let sym = self.resolver.interner.intern(&name.value);
                 self.resolver
-                    .create_def(item.node_id, sym, DefKind::Static, item.visibility);
+                    .create_def(item.node_id, sym, DefKind::Const, item.visibility);
             }
             ItemKind::Struct { name, .. } => {
                 let sym = self.resolver.interner.intern(&name.value);

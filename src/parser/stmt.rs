@@ -44,7 +44,7 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
     }
 }
 
-pub fn parse_static_item(
+pub fn parse_const_item(
     parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
@@ -82,7 +82,7 @@ pub fn parse_static_item(
     };
 
     Ok(Item {
-        kind: ItemKind::Static { name, ty, value },
+        kind: ItemKind::Const { name, ty, value },
         node_id: NodeId::default(),
         attributes,
         span,
@@ -112,11 +112,6 @@ pub fn parse_struct_decl_item(
             parser.advance();
         }
 
-        let is_static = parser.current_token().kind == TokenKind::Static;
-        if is_static {
-            parser.advance();
-        }
-
         let visibility = if is_public {
             Visibility::Public
         } else {
@@ -139,19 +134,10 @@ pub fn parse_struct_decl_item(
                         ..fn_decl
                     }),
                     span: stmt.span,
-                    is_static,
                     visibility,
                 })
             };
             continue;
-        }
-
-        if is_static {
-            error_at!(
-                parser.current_token().span,
-                parser.current_token().module_id,
-                "Only struct methods are allowed to be static"
-            );
         }
 
         if parser.current_token().kind == TokenKind::Identifier {
@@ -256,7 +242,6 @@ pub fn parse_interface_decl_item(
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
-                is_static: false,
                 span: stmt.span,
             });
 
@@ -413,7 +398,6 @@ pub fn parse_impl_item(
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Public,
-                is_static: false,
                 span: stmt.span,
             });
         }

@@ -63,7 +63,7 @@ pub struct Item {
 
 #[derive(Debug, Clone)]
 pub enum ItemKind {
-    Static {
+    Const {
         name: Ident,
         value: Expr,
         ty: Type,
@@ -111,7 +111,6 @@ pub enum StmtKind {
 pub struct AssocItem {
     pub kind: AssocItemKind,
     pub visibility: Visibility,
-    pub is_static: bool,
     pub span: Span,
 }
 

@@ -120,13 +120,13 @@ impl<T: Visitable> Visitable for Box<[T]> {
 
 impl<K: Eq + Hash, V: Visitable> Visitable for FxHashMap<K, V> {
     fn visit(&self, visitor: &mut impl Visitor) {
-        for (_, value) in self.iter() {
+        for value in self.values() {
             value.visit(visitor);
         }
     }
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
-        for (_, value) in self.iter_mut() {
+        for value in self.values_mut() {
             value.visit_mut(visitor);
         }
     }
@@ -150,7 +150,7 @@ impl Visitable for Item {
     fn visit(&self, visitor: &mut impl Visitor) {
         match visitor.visit_item(self) {
             VisitAction::Continue => match &self.kind {
-                ItemKind::Static { value, ty, .. } => {
+                ItemKind::Const { value, ty, .. } => {
                     value.visit(visitor);
                     ty.visit(visitor);
                 }
@@ -179,7 +179,7 @@ impl Visitable for Item {
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         match visitor.visit_item(self) {
             VisitAction::Continue => match &mut self.kind {
-                ItemKind::Static { value, ty, .. } => {
+                ItemKind::Const { value, ty, .. } => {
                     value.visit_mut(visitor);
                     ty.visit_mut(visitor);
                 }

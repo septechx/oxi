@@ -458,7 +458,6 @@ mod tests {
                     body: None,
                     module: ModuleId(mod_idx as u32),
                     associated: None,
-                    static_method: false,
                 }),
                 span: Span::new(0, 0),
             });
@@ -523,7 +522,6 @@ mod tests {
                     body: None,
                     module: ModuleId(mod_idx as u32),
                     associated: Some(struct_def),
-                    static_method: false,
                 }),
                 span: Span::new(0, 0),
             });
@@ -536,7 +534,6 @@ mod tests {
                     method_sym,
                     MethodMeta {
                         def: method_def,
-                        is_static: false,
                         visibility,
                     },
                 );

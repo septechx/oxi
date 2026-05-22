@@ -172,7 +172,7 @@ pub fn compile_items<'a, 'ctx>(
                     )?;
                 }
             }
-            ItemKind::Static { name, ty, value } => {
+            ItemKind::Const { name, ty, value } => {
                 compile_static_item(
                     context,
                     module,

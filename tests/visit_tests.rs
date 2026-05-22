@@ -83,7 +83,7 @@ mod tests {
             *self.item_counts.entry("Item").or_insert(0) += 1;
 
             let kind_name = match &item.kind {
-                ItemKind::Static { .. } => "StaticItem",
+                ItemKind::Const { .. } => "ConstItem",
                 ItemKind::Struct { .. } => "StructDeclItem",
                 ItemKind::Interface { .. } => "InterfaceDeclItem",
                 ItemKind::Impl { .. } => "ImplItem",
@@ -705,7 +705,6 @@ mod tests {
                         is_extern: false,
                     }),
                     span: dummy_span(),
-                    is_static: false,
                     visibility: Visibility::Private,
                 }],
             },
@@ -736,7 +735,6 @@ mod tests {
                         is_extern: false,
                     }),
                     span: dummy_span(),
-                    is_static: false,
                     visibility: Visibility::Private,
                 }],
             },
@@ -1029,7 +1027,6 @@ mod tests {
                                 is_extern: false,
                             }),
                             span: dummy_span(),
-                            is_static: false,
                             visibility: Visibility::Private,
                         }],
                     },
@@ -1050,7 +1047,6 @@ mod tests {
                                 is_extern: false,
                             }),
                             span: dummy_span(),
-                            is_static: false,
                             visibility: Visibility::Private,
                         }],
                     },
@@ -1234,7 +1230,6 @@ mod tests {
                         is_extern: false,
                     }),
                     span: dummy_span(),
-                    is_static: false,
                     visibility: Visibility::Private,
                 }],
             },

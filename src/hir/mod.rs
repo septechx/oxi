@@ -317,7 +317,6 @@ pub struct Function {
     pub module: ModuleId,
     /// struct defid if this is a method
     pub associated: Option<DefId>,
-    pub static_method: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -382,7 +381,6 @@ pub struct Variable {
 #[derive(Debug, Clone)]
 pub struct MethodMeta {
     pub def: DefId,
-    pub is_static: bool,
     pub visibility: Visibility,
 }
 

@@ -14,7 +14,7 @@ pub enum DefKind {
     Function,
     Struct,
     Interface,
-    Static,
+    Const,
 }
 
 #[allow(dead_code)]

@@ -159,7 +159,7 @@ fn escape_string(s: &str) -> String {
 
 pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::fmt::Result {
     match &item.kind {
-        ItemKind::Static { value, name, ty } => {
+        ItemKind::Const { value, name, ty } => {
             let mut modifiers = Vec::new();
             if item.visibility == Visibility::Public {
                 modifiers.push("pub");
@@ -168,7 +168,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
             write!(
                 out,
                 "{} {}{}{}{}: ",
-                "Static".with_color(ctx.color),
+                "Const".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
                 name.value,
@@ -435,9 +435,6 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
             let mut modifiers = Vec::new();
             if item.visibility == Visibility::Public {
                 modifiers.push("pub");
-            }
-            if item.is_static {
-                modifiers.push("static");
             }
             let modifiers = format_modifiers(&modifiers);
             write!(

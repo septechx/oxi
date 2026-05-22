@@ -136,7 +136,6 @@ impl LoweringContext {
                                 method_sym,
                                 MethodMeta {
                                     def: method_defid,
-                                    is_static: item.is_static,
                                     visibility: item.visibility,
                                 },
                             );
@@ -166,7 +165,7 @@ impl LoweringContext {
                         );
                         self.krate.modules[mid].items.push(defid);
                     }
-                    ItemKind::Static { name, .. } => {
+                    ItemKind::Const { name, .. } => {
                         let sym = self.krate.interner.intern(&name.value);
                         let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
@@ -206,8 +205,8 @@ impl LoweringContext {
                         interface,
                         items,
                     } => self.lower_impl_stmt(self_ty, interface, items),
-                    ItemKind::Static { name, ty, value } => {
-                        self.lower_static_item(name, ty, value, span)
+                    ItemKind::Const { name, ty, value } => {
+                        self.lower_const_item(name, ty, value, span)
                     }
                     ItemKind::Import(_) => {} // Processed in lowering pass 2
                 }
@@ -264,7 +263,7 @@ impl LoweringContext {
         id
     }
 
-    fn lower_fn_impl(&mut self, f: Fn, defid: DefId, associated: Option<DefId>, is_static: bool) {
+    fn lower_fn_impl(&mut self, f: Fn, defid: DefId, associated: Option<DefId>) {
         let sym = self.krate.interner.intern(&f.name.value);
         let modid = self.current_module.expect("current module set");
 
@@ -288,7 +287,6 @@ impl LoweringContext {
             body: None,
             module: modid,
             associated,
-            static_method: is_static,
         };
 
         let param_names: ThinVec<Symbol> = func.params.iter().map(|(name, _)| *name).collect();
@@ -328,7 +326,7 @@ impl LoweringContext {
     fn lower_fn_decl(&mut self, f: Fn) {
         let sym = self.krate.interner.intern(&f.name.value);
         let defid = self.lookup_in_current_module(sym).expect("def must exist");
-        self.lower_fn_impl(f, defid, None, false);
+        self.lower_fn_impl(f, defid, None);
     }
 
     fn lower_struct_decl(
@@ -377,12 +375,12 @@ impl LoweringContext {
 
                 let method_defid = meta.def;
 
-                method_fns.push((fn_decl, method_defid, defid, item.is_static));
+                method_fns.push((fn_decl, method_defid, defid));
             }
         }
 
-        for (fn_decl, method_defid, defid, is_static) in method_fns {
-            self.lower_fn_impl(fn_decl, method_defid, Some(defid), is_static);
+        for (fn_decl, method_defid, defid) in method_fns {
+            self.lower_fn_impl(fn_decl, method_defid, Some(defid));
         }
 
         self.current_struct = prev_struct;
@@ -523,7 +521,6 @@ impl LoweringContext {
                 body: None,
                 module: modid,
                 associated: Some(self_defid),
-                static_method: item.is_static,
             };
 
             let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func.clone()), item.span);
@@ -539,7 +536,6 @@ impl LoweringContext {
                 method_sym,
                 MethodMeta {
                     def: method_defid,
-                    is_static: item.is_static,
                     visibility: item.visibility,
                 },
             );
@@ -599,7 +595,7 @@ impl LoweringContext {
             .push(impl_defid);
     }
 
-    fn lower_static_item(&mut self, sname: Ident, sty: Type, svalue: Expr, span: Span) {
+    fn lower_const_item(&mut self, sname: Ident, sty: Type, svalue: Expr, span: Span) {
         let sym = self.krate.interner.intern(&sname.value);
         let modid = self.current_module.expect("current module set");
         let defid = self.lookup_in_current_module(sym).expect("def must exist");
@@ -610,7 +606,7 @@ impl LoweringContext {
             Some(self.lower_type(sty))
         };
 
-        // Lower the init expression with the owner set to the static item itself
+        // Lower the init expression with the owner set to the const item itself
         let init = self.with_owner(defid, |ctx| Some(ctx.lower_expr(svalue)));
 
         let var = Variable {

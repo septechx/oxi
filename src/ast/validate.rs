@@ -149,7 +149,7 @@ impl Visitor for AstValidator {
 
                 VisitAction::SkipChildren
             }
-            ItemKind::Static { .. } => VisitAction::Continue,
+            ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
         }
     }
@@ -272,7 +272,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
             ItemKind::Fn(f) => top_level_names.push(&f.name),
             ItemKind::Struct { name, .. } => top_level_names.push(name),
             ItemKind::Interface { name, .. } => top_level_names.push(name),
-            ItemKind::Static { name, .. } => top_level_names.push(name),
+            ItemKind::Const { name, .. } => top_level_names.push(name),
             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
         }
     }

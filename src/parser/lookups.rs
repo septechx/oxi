@@ -271,7 +271,7 @@ pub fn create_token_lookups() {
         nud(T::Return, parse_return_expr, &mut nud_lu);
 
         // Items (top-level definitions)
-        item(T::Static, parse_static_item, &mut bp_lu, &mut item_lu);
+        item(T::Const, parse_const_item, &mut bp_lu, &mut item_lu);
         item(T::Struct, parse_struct_decl_item, &mut bp_lu, &mut item_lu);
         item(
             T::Interface,
