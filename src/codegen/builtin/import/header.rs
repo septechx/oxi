@@ -142,6 +142,7 @@ fn parse_type(ty: &str, span: Span) -> Type {
             value: ty.into(),
             span,
         })),
+        node_id: NodeId::default(),
         span,
     }
 }

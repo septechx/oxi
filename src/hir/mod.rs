@@ -350,7 +350,7 @@ pub struct Struct {
 
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub self_ty: TypeId,
+    pub self_ty: DefId,
     pub of_interface: DefId,
     pub items: ThinVec<ImplItemId>,
     pub module: ModuleId,

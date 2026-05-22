@@ -6,7 +6,7 @@ use thin_vec::ThinVec;
 use colored::Colorize;
 
 use crate::{
-    ast::{Mutability, Type, TypeKind},
+    ast::{Mutability, NodeId, Type, TypeKind},
     hashmap::FxHashMap,
     lexer::token::TokenKind::{self, self as T},
     parser::{
@@ -70,6 +70,7 @@ fn parse_symbol_type(parser: &mut Parser) -> Result<Type> {
 
     Ok(Type {
         kind: TypeKind::Symbol(path),
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -94,6 +95,7 @@ fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
     Ok(Type {
         kind: TypeKind::Pointer(Box::new(underlying), mutability),
         span: Span::new(start_token.span.start(), end_span.end()),
+        node_id: NodeId::default(),
     })
 }
 
@@ -111,6 +113,7 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
             Ok(Type {
                 kind: TypeKind::FixedArray(Box::new(underlying), length),
                 span: Span::new(start_token.span.start(), end_span.end()),
+                node_id: NodeId::default(),
             })
         }
         T::CloseBracket => {
@@ -121,6 +124,7 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
             Ok(Type {
                 kind: TypeKind::Slice(Box::new(underlying)),
                 span: Span::new(start_token.span.start(), end_span.end()),
+                node_id: NodeId::default(),
             })
         }
         _ => Err(anyhow!(
@@ -209,11 +213,13 @@ fn parse_parenthesis_type(parser: &mut Parser) -> Result<Type> {
                 ret: Box::new(return_type),
             },
             span: Span::new(start_token.span.start(), end_span.end()),
+            node_id: NodeId::default(),
         })
     } else {
         Ok(Type {
             kind: TypeKind::Tuple(types),
             span: Span::new(start_token.span.start(), close_token.span.end()),
+            node_id: NodeId::default(),
         })
     }
 }

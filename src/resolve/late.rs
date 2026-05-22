@@ -1,10 +1,12 @@
 use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
-use crate::ast::{AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, Stmt, StmtKind};
+use crate::ast::{
+    AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, NodeId, Path, Stmt, StmtKind,
+};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::Symbol;
-use crate::resolve::{DefKind, Res, Resolver};
+use crate::resolve::{Res, Resolver};
 
 impl<'a> Resolver<'a> {
     pub(super) fn late_resolve(&mut self) {
@@ -58,10 +60,10 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
                 let rib = this.ribs.last_mut().expect("rib exists");
                 rib.bindings.insert(sym, Res::Local(arg.2));
             }
+            fun.return_type.visit(this);
             if let Some(body) = &fun.body {
                 body.visit(this);
             }
-            fun.return_type.visit(this);
         });
     }
 
@@ -72,63 +74,83 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
             }
         }
     }
+
+    fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> Res {
+        if path.segments.len() == 1 {
+            let sym = self.resolver.interner.intern(&path.segments[0].value);
+
+            let mut depth = 1;
+            while depth <= self.ribs.len() {
+                if let Some(&res) = self.ribs[self.ribs.len() - depth].bindings.get(&sym) {
+                    self.resolver.res_map.insert(node_id, res);
+                    return res;
+                }
+                depth += 1;
+            }
+
+            if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
+                let res = Res::Def(res.best_binding());
+                self.resolver.res_map.insert(node_id, res);
+                return res;
+            };
+
+            todo!("Throw error")
+        } else {
+            todo!("handle paths from other modules / assoc items")
+        }
+    }
+
+    fn inject_self_ty(&mut self, node_id: NodeId) {
+        let def_id = self.resolver.def_id_for_node(node_id).expect("resolved");
+        let self_sym = self.resolver.interner.intern("Self");
+        let rib = self.ribs.last_mut().expect("rib exists");
+        rib.bindings.insert(self_sym, Res::Def(def_id));
+    }
+
+    fn inject_self_ty_res(&mut self, res: Res) {
+        assert!(matches!(res, Res::Def(_)));
+        let self_sym = self.resolver.interner.intern("Self");
+        let rib = self.ribs.last_mut().expect("rib exists");
+        rib.bindings.insert(self_sym, res);
+    }
 }
 
 impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
-        if matches!(item.kind, ItemKind::Import(_) | ItemKind::Impl { .. }) {
-            return VisitAction::SkipChildren;
-        }
-
-        let def_id = self
-            .resolver
-            .def_id_for_node(item.node_id)
-            .expect("def already resolved");
-        let def = self.resolver.get_def(def_id);
-
-        match def.kind {
-            DefKind::Const => {
-                let ItemKind::Const { value, ty, .. } = &item.kind else {
-                    unreachable!()
-                };
-
+        match &item.kind {
+            ItemKind::Import(_) => {}
+            ItemKind::Const { value, ty, .. } => {
                 value.visit(self);
                 ty.visit(self);
             }
-            DefKind::Function => {
-                let ItemKind::Fn(fun) = &item.kind else {
-                    unreachable!()
-                };
-
+            ItemKind::Fn(fun) => {
                 self.resolve_fn(fun);
             }
-            DefKind::Struct => {
-                let ItemKind::Struct { fields, items, .. } = &item.kind else {
-                    unreachable!()
-                };
-
+            ItemKind::Struct { fields, items, .. } => {
                 self.with_rib(Rib::default(), |this| {
-                    let self_sym = this.resolver.interner.intern("Self");
-                    let rib = this.ribs.last_mut().expect("rib exists");
-                    rib.bindings.insert(self_sym, Res::Def(def_id));
-
+                    this.inject_self_ty(item.node_id);
                     for field in fields {
                         field.1.visit(this);
                     }
-
                     this.resolve_assoc_items(items);
                 });
             }
-            DefKind::Interface => {
-                let ItemKind::Interface { items, .. } = &item.kind else {
-                    unreachable!()
-                };
+            ItemKind::Interface { items, .. } => {
+                self.with_rib(Rib::default(), |this| {
+                    this.inject_self_ty(item.node_id);
+                    this.resolve_assoc_items(items);
+                });
+            }
+            ItemKind::Impl {
+                self_ty,
+                interface,
+                items,
+            } => {
+                let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
+                self.resolve_path(&interface.0, interface.1);
 
                 self.with_rib(Rib::default(), |this| {
-                    let self_sym = this.resolver.interner.intern("Self");
-                    let rib = this.ribs.last_mut().expect("rib exists");
-                    rib.bindings.insert(self_sym, Res::Def(def_id));
-
+                    this.inject_self_ty_res(self_ty_res);
                     this.resolve_assoc_items(items);
                 });
             }
@@ -160,29 +182,7 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
     fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
         match &expr.kind {
             ExprKind::Symbol(path) => {
-                if path.segments.len() == 1 {
-                    let sym = self.resolver.interner.intern(&path.segments[0].value);
-
-                    let mut depth = 1;
-                    while depth <= self.ribs.len() {
-                        if let Some(&res) = self.ribs[self.ribs.len() - depth].bindings.get(&sym) {
-                            self.resolver.res_map.insert(expr.node_id, res);
-                            return VisitAction::SkipChildren;
-                        }
-                        depth += 1;
-                    }
-
-                    if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
-                        self.resolver
-                            .res_map
-                            .insert(expr.node_id, Res::Def(res.best_binding()));
-                        return VisitAction::SkipChildren;
-                    };
-
-                    todo!("Throw error")
-                } else {
-                    todo!("handle paths from other modules / assoc items")
-                }
+                self.resolve_path(path, expr.node_id);
             }
             ExprKind::Literal(_) => {}
             ExprKind::Binary { left, right, .. } => {
@@ -197,7 +197,8 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                 assignee.visit(self);
                 value.visit(self);
             }
-            ExprKind::StructInstantiation { fields, .. } => {
+            ExprKind::StructInstantiation { fields, path } => {
+                self.resolve_path(path, expr.node_id);
                 for (_, expr) in fields {
                     expr.visit(self);
                 }

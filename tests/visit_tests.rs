@@ -187,6 +187,7 @@ mod tests {
     fn dummy_type_symbol(name: &str) -> Type {
         Type {
             kind: TypeKind::Symbol(Path::from_ident(dummy_ident(name))),
+            node_id: NodeId::default(),
             span: dummy_span(),
         }
     }
@@ -194,6 +195,7 @@ mod tests {
     fn dummy_type_infer() -> Type {
         Type {
             kind: TypeKind::Infer,
+            node_id: NodeId::default(),
             span: dummy_span(),
         }
     }
@@ -201,6 +203,7 @@ mod tests {
     fn dummy_type_never() -> Type {
         Type {
             kind: TypeKind::Never,
+            node_id: NodeId::default(),
             span: dummy_span(),
         }
     }
@@ -871,6 +874,7 @@ mod tests {
     fn test_pointer_type() {
         let ty = Type {
             kind: TypeKind::Pointer(Box::new(dummy_type_symbol("i32")), Mutability::Constant),
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -884,6 +888,7 @@ mod tests {
     fn test_slice_type() {
         let ty = Type {
             kind: TypeKind::Slice(Box::new(dummy_type_symbol("i32"))),
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -897,6 +902,7 @@ mod tests {
     fn test_fixed_array_type() {
         let ty = Type {
             kind: TypeKind::FixedArray(Box::new(dummy_type_symbol("i32")), 10),
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -913,6 +919,7 @@ mod tests {
                 params: thin_vec![dummy_type_symbol("i32"), dummy_type_symbol("bool")],
                 ret: Box::new(dummy_type_symbol("void")),
             },
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -929,6 +936,7 @@ mod tests {
                 dummy_type_symbol("i32"),
                 dummy_type_symbol("bool")
             ]),
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
         let mut visitor = NodeCounterVisitor::new();
@@ -975,6 +983,7 @@ mod tests {
                                     Box::new(dummy_type_symbol("i32")),
                                     Mutability::Constant
                                 ),
+                                node_id: NodeId::default(),
                                 span: dummy_span(),
                             },
                         },
@@ -1138,14 +1147,17 @@ mod tests {
                             Box::new(dummy_type_symbol("i32")),
                             Mutability::Mutable
                         ),
+                        node_id: NodeId::default(),
                         span: dummy_span(),
                     },
                     Type {
                         kind: TypeKind::Slice(Box::new(dummy_type_symbol("u8"))),
+                        node_id: NodeId::default(),
                         span: dummy_span(),
                     },
                     Type {
                         kind: TypeKind::FixedArray(Box::new(dummy_type_symbol("bool")), 10),
+                        node_id: NodeId::default(),
                         span: dummy_span(),
                     },
                 ],
@@ -1155,9 +1167,11 @@ mod tests {
                         dummy_type_never(),
                         dummy_type_symbol("void"),
                     ]),
+                    node_id: NodeId::default(),
                     span: dummy_span(),
                 }),
             },
+            node_id: NodeId::default(),
             span: dummy_span(),
         };
 
@@ -1227,8 +1241,8 @@ mod tests {
     fn test_impl_item() {
         let item = Item {
             kind: ItemKind::Impl {
-                self_ty: dummy_type_symbol("Foo"),
-                interface: Path::from_ident(dummy_ident("Bar")),
+                self_ty: (Path::from_ident(dummy_ident("Foo")), NodeId::default()),
+                interface: (Path::from_ident(dummy_ident("Bar")), NodeId::default()),
                 items: thin_vec![AssocItem {
                     kind: AssocItemKind::Fn(Fn {
                         name: dummy_ident("bar"),
@@ -1250,6 +1264,6 @@ mod tests {
         item.visit(&mut visitor);
         visitor.assert_visited("item", "Item", 1);
         visitor.assert_visited("item", "ImplItem", 1);
-        visitor.assert_visited("type", "SymbolType", 2);
+        visitor.assert_visited("type", "SymbolType", 1);
     }
 }

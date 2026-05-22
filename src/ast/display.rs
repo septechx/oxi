@@ -264,9 +264,9 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 out,
                 "{} {} {} {}",
                 "Impl".with_color(ctx.color),
-                write_type(self_ty, ctx),
+                format_path(&self_ty.0, ctx.color),
                 punct_with_color(":", ctx.color),
-                format_path(interface, ctx.color)
+                format_path(&interface.0, ctx.color)
             )?;
             if items.is_empty() {
                 write!(out, ": (empty)")?;

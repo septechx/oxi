@@ -376,8 +376,8 @@ pub fn parse_impl_item(
 
     let start_span = parser.expect(TokenKind::Impl)?.span;
     let interface = parse_path(parser)?;
-    parser.expect(TokenKind::Colon)?;
-    let self_ty = parse_type(parser, BindingPower::DefaultBp)?;
+    parser.expect(TokenKind::For)?;
+    let self_ty = parse_path(parser)?;
 
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     parser.expect(TokenKind::OpenCurly)?;
@@ -407,8 +407,8 @@ pub fn parse_impl_item(
     Ok(Item {
         kind: ItemKind::Impl {
             items,
-            self_ty,
-            interface,
+            self_ty: (self_ty, NodeId::default()),
+            interface: (interface, NodeId::default()),
         },
         node_id: NodeId::default(),
         attributes,
@@ -511,6 +511,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
     let mut type_ = Type {
         kind: TypeKind::Infer,
         span: Span::new(let_token.span.end(), let_token.span.end()),
+        node_id: NodeId::default(),
     };
     let mut assigned_value: Option<Expr> = None;
 

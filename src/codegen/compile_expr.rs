@@ -9,7 +9,7 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{Expr, ExprKind, Literal, Type, TypeKind},
+    ast::{Expr, ExprKind, Literal, NodeId, Type, TypeKind},
     codegen::{
         arch::compile_arch_size_type,
         builtin::{Builtin, get_builtin},
@@ -407,6 +407,7 @@ pub fn compile_expression_to_value<'a, 'ctx>(
             let slice_ty = Type {
                 kind: TypeKind::Slice(Box::new(underlying.clone())),
                 span: Span::new(expr.span.start(), underlying.span.end()),
+                node_id: NodeId::default(),
             };
 
             let slice_llvm_type = compile_type(context, &slice_ty, compilation_context)?;

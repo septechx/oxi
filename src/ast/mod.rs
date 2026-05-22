@@ -78,8 +78,8 @@ pub enum ItemKind {
         items: ThinVec<AssocItem>,
     },
     Impl {
-        self_ty: Type,
-        interface: Path,
+        self_ty: (Path, NodeId),
+        interface: (Path, NodeId),
         items: ThinVec<AssocItem>,
     },
     Fn(Fn),
@@ -208,6 +208,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Type {
     pub kind: TypeKind,
+    pub node_id: NodeId,
     pub span: Span,
 }
 

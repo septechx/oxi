@@ -204,7 +204,7 @@ impl LoweringContext {
                         self_ty,
                         interface,
                         items,
-                    } => self.lower_impl_stmt(self_ty, interface, items),
+                    } => self.lower_impl_stmt(self_ty.0, interface.0, items),
                     ItemKind::Const { name, ty, value } => {
                         self.lower_const_item(name, ty, value, span)
                     }
@@ -437,7 +437,7 @@ impl LoweringContext {
         item.span = span;
     }
 
-    fn lower_impl_stmt(&mut self, self_ty: Type, iface: Path, items: ThinVec<AssocItem>) {
+    fn lower_impl_stmt(&mut self, self_ty: Path, iface: Path, items: ThinVec<AssocItem>) {
         let interface_def = match self.resolve_path(&iface) {
             Some(def) => def,
             None => {
@@ -458,20 +458,12 @@ impl LoweringContext {
             return;
         }
 
-        let self_defid = match &self_ty.kind {
-            TypeKind::Symbol(path) => match self.resolve_path(path) {
-                Some(def) => def,
-                None => {
-                    self.krate
-                        .diagnostics
-                        .push(format!("Unknown type `{path}` in impl"));
-                    return;
-                }
-            },
-            _ => {
+        let self_defid = match self.resolve_path(&self_ty) {
+            Some(def) => def,
+            None => {
                 self.krate
                     .diagnostics
-                    .push("Impl target must be a named type".to_string());
+                    .push(format!("Unknown type `{self_ty}` in impl"));
                 return;
             }
         };
@@ -485,7 +477,6 @@ impl LoweringContext {
         }
 
         let impl_defid = self.alloc_item_placeholder(self_ty.span);
-        let self_ty_id = self.lower_type(self_ty);
 
         let mut impl_item_ids = ThinVec::with_capacity(items.len());
 
@@ -574,7 +565,7 @@ impl LoweringContext {
         self.current_struct = prev_struct;
 
         let impl_item = Impl {
-            self_ty: self_ty_id,
+            self_ty: self_defid,
             of_interface: interface_def,
             items: impl_item_ids,
             module: modid,

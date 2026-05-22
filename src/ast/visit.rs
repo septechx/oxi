@@ -163,8 +163,7 @@ impl Visitable for Item {
                 ItemKind::Interface { items, .. } => {
                     items.visit(visitor);
                 }
-                ItemKind::Impl { self_ty, items, .. } => {
-                    self_ty.visit(visitor);
+                ItemKind::Impl { items, .. } => {
                     items.visit(visitor);
                 }
                 ItemKind::Fn(f) => f.visit(visitor),
@@ -192,8 +191,7 @@ impl Visitable for Item {
                 ItemKind::Interface { items, .. } => {
                     items.visit_mut(visitor);
                 }
-                ItemKind::Impl { self_ty, items, .. } => {
-                    self_ty.visit_mut(visitor);
+                ItemKind::Impl { items, .. } => {
                     items.visit_mut(visitor);
                 }
                 ItemKind::Fn(f) => f.visit_mut(visitor),
