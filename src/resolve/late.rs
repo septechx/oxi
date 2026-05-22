@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
-use crate::ast::{AssocItem, AssocItemKind, Fn, Item, ItemKind};
+use crate::ast::{AssocItem, AssocItemKind, Fn, Item, ItemKind, Stmt, StmtKind};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::Symbol;
 use crate::resolve::{DefKind, Res, Resolver};
@@ -92,10 +92,8 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                     unreachable!()
                 };
 
-                self.with_rib(Rib::default(), |this| {
-                    value.visit(this);
-                    ty.visit(this);
-                });
+                value.visit(self);
+                ty.visit(self);
             }
             DefKind::Function => {
                 let ItemKind::Fn(fun) = &item.kind else {
@@ -134,6 +132,26 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                     this.resolve_assoc_items(items);
                 });
             }
+        }
+
+        VisitAction::SkipChildren
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) -> VisitAction {
+        match &stmt.kind {
+            StmtKind::Let {
+                name, ty, value, ..
+            } => {
+                let sym = self.resolver.interner.intern(&name.value);
+                let rib = self.ribs.last_mut().expect("rib exists");
+                rib.bindings.insert(sym, Res::Local(stmt.node_id));
+
+                ty.visit(self);
+                if let Some(value) = value {
+                    value.visit(self);
+                }
+            }
+            StmtKind::Expr(expr) | StmtKind::Semi(expr) => expr.visit(self),
         }
 
         VisitAction::SkipChildren
