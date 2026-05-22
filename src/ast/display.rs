@@ -458,7 +458,7 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
             } else {
                 writeln!(out)?;
                 let arg_ctx = sub_ctx.indented();
-                for (name, ty) in &f.parameters {
+                for (name, ty, _) in &f.parameters {
                     writeln!(
                         out,
                         "{}FnArg \"{}\": {}",

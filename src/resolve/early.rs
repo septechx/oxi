@@ -8,12 +8,6 @@ use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, NameResolution, PendingImport, Resolver};
 
 impl<'a> Resolver<'a> {
-    pub fn resolve(&mut self) {
-        self.collect_definitions();
-        self.build_graph();
-        self.resolve_imports();
-    }
-
     pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
         let mut ass = NodeIdAssigner::new();
         for ast in asts.iter_mut() {
@@ -42,21 +36,21 @@ impl<'a> Resolver<'a> {
         });
     }
 
-    fn collect_definitions(&mut self) {
+    pub(super) fn collect_definitions(&mut self) {
         for (i, ast) in self.asts.iter().enumerate() {
             self.module_idx = i;
             ast.visit(&mut DefCollector::new(self));
         }
     }
 
-    fn build_graph(&mut self) {
+    pub(super) fn build_graph(&mut self) {
         for (i, ast) in self.asts.iter().enumerate() {
             self.module_idx = i;
             ast.visit(&mut ImportCollector::new(self));
         }
     }
 
-    fn resolve_imports(&mut self) {
+    pub(super) fn resolve_imports(&mut self) {
         let mut progress = true;
         while progress && !self.pending_imports.is_empty() {
             progress = false;

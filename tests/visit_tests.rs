@@ -759,8 +759,16 @@ mod tests {
                 kind: ItemKind::Fn(Fn {
                     name: dummy_ident("foo"),
                     parameters: thin_vec![
-                        (dummy_ident("a"), dummy_type_symbol("i32"),),
-                        (dummy_ident("b"), dummy_type_symbol("bool"),),
+                        (
+                            dummy_ident("a"),
+                            dummy_type_symbol("i32"),
+                            NodeId::default()
+                        ),
+                        (
+                            dummy_ident("b"),
+                            dummy_type_symbol("bool"),
+                            NodeId::default()
+                        ),
                     ],
                     body: Some(Block {
                         stmts: thin_vec![dummy_stmt_expr(dummy_expr_number(1))],

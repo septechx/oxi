@@ -295,7 +295,7 @@ pub fn parse_fn_decl_item(
     let name = parser.expect_identifier()?;
 
     parser.expect(TokenKind::OpenParen)?;
-    let mut parameters: ThinVec<(Ident, Type)> = ThinVec::new();
+    let mut parameters: ThinVec<(Ident, Type, NodeId)> = ThinVec::new();
 
     loop {
         if parser.current_token().kind == TokenKind::CloseParen {
@@ -307,7 +307,7 @@ pub fn parse_fn_decl_item(
         parser.expect(TokenKind::Colon)?;
         let type_ = parse_type(parser, BindingPower::DefaultBp)?;
 
-        parameters.push((arg_name, type_));
+        parameters.push((arg_name, type_, NodeId::default()));
 
         if parser.current_token().kind == TokenKind::Comma {
             parser.advance();

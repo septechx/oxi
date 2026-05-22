@@ -2,12 +2,13 @@ use std::ops::{Index, IndexMut};
 
 use thin_vec::{ThinVec, thin_vec};
 
-use crate::ast::{Ast, ImportTree, NodeMap, Visibility};
+use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::{Interner, Symbol};
 use crate::hir::{DefId, ModuleId};
 
 mod early;
+mod late;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DefKind {
@@ -17,12 +18,17 @@ pub enum DefKind {
     Const,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Def {
     name: Symbol,
     kind: DefKind,
     visibility: Visibility,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Res {
+    Def(DefId),
+    Local(NodeId),
 }
 
 #[derive(Debug)]
@@ -104,10 +110,17 @@ pub struct Resolver<'a> {
     asts: &'a ThinVec<Ast>,
     module_idx: usize,
     interner: &'a mut Interner,
+
+    // Early res
     pending_imports: ThinVec<PendingImport>,
     modules: PerModule<ModuleData>,
     def_map: NodeMap<DefId>,
+    /// Arena\[DefId] -> Def
     defs: ThinVec<Def>,
+
+    // Late res
+    /// maps (path node id) -> (res)
+    res_map: NodeMap<Res>,
 }
 
 impl<'a> Resolver<'a> {
@@ -121,7 +134,15 @@ impl<'a> Resolver<'a> {
             modules: PerModule::new(len),
             def_map: NodeMap::default(),
             defs: ThinVec::new(),
+            res_map: NodeMap::default(),
         }
+    }
+
+    pub fn resolve(&mut self) {
+        self.collect_definitions();
+        self.build_graph();
+        self.resolve_imports();
+        self.late_resolve();
     }
 
     fn current_module(&self) -> &ModuleData {
@@ -130,6 +151,14 @@ impl<'a> Resolver<'a> {
 
     fn current_module_mut(&mut self) -> &mut ModuleData {
         &mut self.modules[self.module_idx]
+    }
+
+    pub fn def_id_for_node(&self, node_id: NodeId) -> Option<DefId> {
+        self.def_map.get(&node_id).copied()
+    }
+
+    pub fn get_def(&self, def_id: DefId) -> &Def {
+        &self.defs[def_id.0 as usize]
     }
 
     #[allow(dead_code)]

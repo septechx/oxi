@@ -270,7 +270,7 @@ impl LoweringContext {
         let params = f
             .parameters
             .into_iter()
-            .map(|(pname, pty)| {
+            .map(|(pname, pty, _)| {
                 (
                     self.krate.interner.intern(&pname.value),
                     self.lower_type(pty),
@@ -498,13 +498,13 @@ impl LoweringContext {
             let param_names: ThinVec<Symbol> = fn_decl
                 .parameters
                 .iter()
-                .map(|(pname, _)| self.krate.interner.intern(&pname.value))
+                .map(|(pname, _, _)| self.krate.interner.intern(&pname.value))
                 .collect();
 
             let params = fn_decl
                 .parameters
                 .into_iter()
-                .map(|(pname, pty)| {
+                .map(|(pname, pty, _)| {
                     (
                         self.krate.interner.intern(&pname.value),
                         self.lower_type(pty),

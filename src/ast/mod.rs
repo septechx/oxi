@@ -122,7 +122,7 @@ pub enum AssocItemKind {
 #[derive(Debug, Clone)]
 pub struct Fn {
     pub name: Ident,
-    pub parameters: ThinVec<(Ident, Type)>,
+    pub parameters: ThinVec<(Ident, Type, NodeId)>,
     pub body: Option<Block>,
     pub return_type: Type,
     pub is_extern: bool,

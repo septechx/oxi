@@ -51,6 +51,7 @@ pub fn compile_header<'ctx>(
                                 span: arg.span,
                             },
                             arg,
+                            NodeId::default(),
                         )
                     })
                     .collect::<ThinVec<_>>();
