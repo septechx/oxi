@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
-use crate::ast::{AssocItem, AssocItemKind, Fn, Item, ItemKind, Stmt, StmtKind};
+use crate::ast::{AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, Stmt, StmtKind};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::Symbol;
 use crate::resolve::{DefKind, Res, Resolver};
@@ -142,16 +142,118 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
             StmtKind::Let {
                 name, ty, value, ..
             } => {
-                let sym = self.resolver.interner.intern(&name.value);
-                let rib = self.ribs.last_mut().expect("rib exists");
-                rib.bindings.insert(sym, Res::Local(stmt.node_id));
-
                 ty.visit(self);
                 if let Some(value) = value {
                     value.visit(self);
                 }
+
+                let sym = self.resolver.interner.intern(&name.value);
+                let rib = self.ribs.last_mut().expect("rib exists");
+                rib.bindings.insert(sym, Res::Local(stmt.node_id));
             }
             StmtKind::Expr(expr) | StmtKind::Semi(expr) => expr.visit(self),
+        }
+
+        VisitAction::SkipChildren
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
+        match &expr.kind {
+            ExprKind::Symbol(path) => {
+                if path.segments.len() == 1 {
+                    let sym = self.resolver.interner.intern(&path.segments[0].value);
+
+                    let mut depth = 1;
+                    while depth <= self.ribs.len() {
+                        if let Some(&res) = self.ribs[self.ribs.len() - depth].bindings.get(&sym) {
+                            self.resolver.res_map.insert(expr.node_id, res);
+                            return VisitAction::SkipChildren;
+                        }
+                        depth += 1;
+                    }
+
+                    if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
+                        self.resolver
+                            .res_map
+                            .insert(expr.node_id, Res::Def(res.best_binding()));
+                        return VisitAction::SkipChildren;
+                    };
+
+                    todo!("Throw error")
+                } else {
+                    todo!("handle paths from other modules / assoc items")
+                }
+            }
+            ExprKind::Literal(_) => {}
+            ExprKind::Binary { left, right, .. } => {
+                left.visit(self);
+                right.visit(self);
+            }
+            ExprKind::Postfix { left, .. } => left.visit(self),
+            ExprKind::Prefix { right, .. } => right.visit(self),
+            ExprKind::Assignment {
+                assignee, value, ..
+            } => {
+                assignee.visit(self);
+                value.visit(self);
+            }
+            ExprKind::StructInstantiation { fields, .. } => {
+                for (_, expr) in fields {
+                    expr.visit(self);
+                }
+            }
+            ExprKind::ArrayLiteral {
+                underlying,
+                contents,
+                ..
+            } => {
+                underlying.visit(self);
+                for elem in contents {
+                    elem.visit(self);
+                }
+            }
+            ExprKind::FunctionCall { callee, parameters } => {
+                callee.visit(self);
+                parameters.visit(self);
+            }
+            ExprKind::MemberAccess { base, .. } => base.visit(self),
+            ExprKind::Type(ty) => ty.visit(self),
+            ExprKind::As { expr, ty } => {
+                expr.visit(self);
+                ty.visit(self);
+            }
+            ExprKind::TupleLiteral { elements } => {
+                for elem in elements {
+                    elem.visit(self);
+                }
+            }
+            ExprKind::Block(b) => b.visit(self),
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                condition.visit(self);
+                then_branch.visit(self);
+                if let Some(else_expr) = else_branch {
+                    else_expr.visit(self);
+                }
+            }
+            ExprKind::While { condition, body } => {
+                condition.visit(self);
+                body.visit(self);
+            }
+            ExprKind::Loop(b) => b.visit(self),
+            ExprKind::Break(val) => {
+                if let Some(expr) = val {
+                    expr.visit(self);
+                }
+            }
+            ExprKind::Return(val) => {
+                if let Some(expr) = val {
+                    expr.visit(self);
+                }
+            }
         }
 
         VisitAction::SkipChildren
