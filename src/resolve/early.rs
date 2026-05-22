@@ -196,6 +196,13 @@ impl NodeIdAssigner {
 impl VisitorMut for NodeIdAssigner {
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
         item.node_id = self.next_node_id();
+
+        if let ItemKind::Fn(fun) = &mut item.kind {
+            for arg in &mut fun.parameters {
+                arg.2 = self.next_node_id();
+            }
+        }
+
         VisitAction::Continue
     }
 
