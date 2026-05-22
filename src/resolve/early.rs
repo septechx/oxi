@@ -1,7 +1,9 @@
 use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
-use crate::ast::{Ast, Expr, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Visibility};
+use crate::ast::{
+    Ast, Expr, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Type, Visibility,
+};
 use crate::error_at;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
@@ -197,10 +199,19 @@ impl VisitorMut for NodeIdAssigner {
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
         item.node_id = self.next_node_id();
 
-        if let ItemKind::Fn(fun) = &mut item.kind {
-            for arg in &mut fun.parameters {
-                arg.2 = self.next_node_id();
+        match &mut item.kind {
+            ItemKind::Fn(fun) => {
+                for arg in &mut fun.parameters {
+                    arg.2 = self.next_node_id();
+                }
             }
+            ItemKind::Impl {
+                self_ty, interface, ..
+            } => {
+                self_ty.1 = self.next_node_id();
+                interface.1 = self.next_node_id();
+            }
+            _ => {}
         }
 
         VisitAction::Continue
@@ -213,6 +224,11 @@ impl VisitorMut for NodeIdAssigner {
 
     fn visit_expr(&mut self, expr: &mut Expr) -> VisitAction {
         expr.node_id = self.next_node_id();
+        VisitAction::Continue
+    }
+
+    fn visit_type(&mut self, ty: &mut Type) -> VisitAction {
+        ty.node_id = self.next_node_id();
         VisitAction::Continue
     }
 }

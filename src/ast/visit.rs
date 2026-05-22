@@ -18,31 +18,39 @@ pub enum VisitAction {
 }
 
 pub trait Visitor {
-    fn visit_item(&mut self, _item: &Item) -> VisitAction {
+    fn visit_item(&mut self, item: &Item) -> VisitAction {
+        _ = item;
         VisitAction::Continue
     }
-    fn visit_stmt(&mut self, _stmt: &Stmt) -> VisitAction {
+    fn visit_stmt(&mut self, stmt: &Stmt) -> VisitAction {
+        _ = stmt;
         VisitAction::Continue
     }
-    fn visit_expr(&mut self, _expr: &Expr) -> VisitAction {
+    fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
+        _ = expr;
         VisitAction::Continue
     }
-    fn visit_type(&mut self, _ty: &Type) -> VisitAction {
+    fn visit_type(&mut self, ty: &Type) -> VisitAction {
+        _ = ty;
         VisitAction::Continue
     }
 }
 
 pub trait VisitorMut {
-    fn visit_item(&mut self, _item: &mut Item) -> VisitAction {
+    fn visit_item(&mut self, item: &mut Item) -> VisitAction {
+        _ = item;
         VisitAction::Continue
     }
-    fn visit_stmt(&mut self, _stmt: &mut Stmt) -> VisitAction {
+    fn visit_stmt(&mut self, stmt: &mut Stmt) -> VisitAction {
+        _ = stmt;
         VisitAction::Continue
     }
-    fn visit_expr(&mut self, _expr: &mut Expr) -> VisitAction {
+    fn visit_expr(&mut self, expr: &mut Expr) -> VisitAction {
+        _ = expr;
         VisitAction::Continue
     }
-    fn visit_type(&mut self, _ty: &mut Type) -> VisitAction {
+    fn visit_type(&mut self, ty: &mut Type) -> VisitAction {
+        _ = ty;
         VisitAction::Continue
     }
 }

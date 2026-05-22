@@ -3,6 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
 use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, NodeId, Path, Stmt, StmtKind,
+    Type, TypeKind,
 };
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::Symbol;
@@ -255,6 +256,30 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                     expr.visit(self);
                 }
             }
+        }
+
+        VisitAction::SkipChildren
+    }
+
+    fn visit_type(&mut self, ty: &Type) -> VisitAction {
+        match &ty.kind {
+            TypeKind::Symbol(path) => {
+                self.resolve_path(path, ty.node_id);
+            }
+            TypeKind::Pointer(ty, _) => ty.visit(self),
+            TypeKind::Slice(ty) => ty.visit(self),
+            TypeKind::FixedArray(ty, _) => {
+                ty.visit(self);
+            }
+            TypeKind::Function { params, ret } => {
+                params.visit(self);
+                ret.visit(self);
+            }
+            TypeKind::Tuple(elements) => {
+                elements.visit(self);
+            }
+            TypeKind::Infer => {}
+            TypeKind::Never => {}
         }
 
         VisitAction::SkipChildren
