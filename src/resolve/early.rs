@@ -197,6 +197,7 @@ impl<'a> Resolver<'a> {
             todo!("Implement re-exporting imports");
         }
 
+        self.module_idx = current_module;
         self.current_module_mut()
             .resolutions
             .insert(local_sym, target);

@@ -138,6 +138,7 @@ pub enum PrimTy {
     Uint(UintTy),
     Float(FloatTy),
     Bool,
+    Void,
 }
 
 impl PrimTy {
@@ -160,6 +161,7 @@ impl PrimTy {
             sym::f64 => Self::Float(FloatTy::F64),
             sym::f128 => Self::Float(FloatTy::F128),
             sym::bool => Self::Bool,
+            sym::void => Self::Void,
             _ => return None,
         })
     }
@@ -183,6 +185,7 @@ impl PrimTy {
             PrimTy::Float(FloatTy::F64) => sym::f64,
             PrimTy::Float(FloatTy::F128) => sym::f128,
             PrimTy::Bool => sym::bool,
+            PrimTy::Void => sym::void,
         }
     }
 }
