@@ -124,13 +124,9 @@ pub struct ModuleData {
 #[derive(Debug)]
 pub struct Resolver<'a> {
     pub asts: &'a ThinVec<Ast>,
+    module_tree: ModuleTree,
     module_idx: usize,
     interner: &'a mut Interner,
-
-    // Module tree state
-    module_tree: Option<ModuleTree>,
-    /// Maps ast index -> first tree node index for that ast
-    ast_to_module: FxHashMap<usize, usize>,
 
     // Early res
     pending_imports: ThinVec<PendingImport>,
@@ -145,42 +141,36 @@ pub struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(asts: &'a ThinVec<Ast>, interner: &'a mut Interner) -> Self {
+    pub fn new(
+        asts: &'a ThinVec<Ast>,
+        module_tree: ModuleTree,
+        interner: &'a mut Interner,
+    ) -> Self {
+        let node_count = module_tree.nodes.len();
+        let mut modules: PerModule<ModuleData> = PerModule::new(node_count);
+
+        for (i, node) in module_tree.nodes.iter().enumerate() {
+            modules[i].parent = node.parent;
+            modules[i].qualified_name = node.qualified_name.clone();
+        }
+
+        for (i, node) in module_tree.nodes.iter().enumerate() {
+            for &child in &node.children {
+                modules[i].children.push(child);
+            }
+        }
+
         Self {
             asts,
             interner,
             module_idx: 0,
-            module_tree: None,
-            ast_to_module: FxHashMap::default(),
+            module_tree,
             pending_imports: ThinVec::new(),
-            modules: PerModule::new(asts.len()),
+            modules,
             def_map: NodeMap::default(),
             defs: ThinVec::new(),
             res_map: NodeMap::default(),
         }
-    }
-
-    pub fn build_module_tree(&mut self, tree: ModuleTree) {
-        let node_count = tree.nodes.len();
-        self.modules = PerModule::new(node_count);
-
-        for (i, node) in tree.nodes.iter().enumerate() {
-            let parent = node.parent;
-            let qualified = node.qualified_name.clone();
-            self.modules[i].parent = parent;
-            self.modules[i].qualified_name = qualified;
-        }
-
-        for (i, node) in tree.nodes.iter().enumerate() {
-            for &child in &node.children {
-                self.modules[i].children.push(child);
-            }
-            if let Some(ast_idx) = node.ast_idx {
-                self.ast_to_module.entry(ast_idx).or_insert(i);
-            }
-        }
-
-        self.module_tree = Some(tree);
     }
 
     pub fn resolve(&mut self) {

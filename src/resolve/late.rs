@@ -12,20 +12,13 @@ use crate::resolve::{PrimTy, Res, Resolver};
 
 impl<'a> Resolver<'a> {
     pub(super) fn late_resolve(&mut self) {
-        if self.module_tree.is_some() {
-            self.traverse_tree(|this, node_idx, items| {
-                this.module_idx = node_idx;
-                let mut visitor = LateResolutionVisitor::new(this);
-                for item in items {
-                    item.visit(&mut visitor);
-                }
-            });
-        } else {
-            for (i, ast) in self.asts.iter().enumerate() {
-                self.module_idx = i;
-                ast.visit(&mut LateResolutionVisitor::new(self));
+        self.traverse_tree(|this, node_idx, items| {
+            this.module_idx = node_idx;
+            let mut visitor = LateResolutionVisitor::new(this);
+            for item in items {
+                item.visit(&mut visitor);
             }
-        }
+        });
     }
 }
 
@@ -119,58 +112,53 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
             Res::Err
         } else {
             // Multi-segment path: walk the module tree
-            if let Some(tree) = &self.resolver.module_tree {
-                let current = self.resolver.module_idx;
-                let mut module_node_idx = current;
+            let tree = &self.resolver.module_tree;
+            let current = self.resolver.module_idx;
+            let mut module_node_idx = current;
 
-                // Resolve all segments except the last one as module path
-                for seg in segments[..segments.len() - 1].iter() {
-                    let name = seg.value.as_ref();
-                    match name {
-                        "crate" => module_node_idx = 0,
-                        "super" => {
-                            if let Some(parent) = tree.nodes[module_node_idx].parent {
-                                module_node_idx = parent;
-                            } else {
-                                println!("ERROR: No parent module for `super`");
-                                return Res::Err;
-                            }
+            // Resolve all segments except the last one as module path
+            for seg in segments[..segments.len() - 1].iter() {
+                let name = seg.value.as_ref();
+                match name {
+                    "crate" => module_node_idx = 0,
+                    "super" => {
+                        if let Some(parent) = tree.nodes[module_node_idx].parent {
+                            module_node_idx = parent;
+                        } else {
+                            println!("ERROR: No parent module for `super`");
+                            return Res::Err;
                         }
-                        "self" => {}
-                        _ => {
-                            let child = tree.nodes[module_node_idx]
-                                .children
-                                .iter()
-                                .find(|&&c| tree.nodes[c].name == name)
-                                .copied();
-                            match child {
-                                Some(c) => module_node_idx = c,
-                                None => {
-                                    println!("ERROR: Module `{}` not found in path `{path}`", name);
-                                    return Res::Err;
-                                }
+                    }
+                    "self" => {}
+                    _ => {
+                        let child = tree.nodes[module_node_idx]
+                            .children
+                            .iter()
+                            .find(|&&c| tree.nodes[c].name == name)
+                            .copied();
+                        match child {
+                            Some(c) => module_node_idx = c,
+                            None => {
+                                println!("ERROR: Module `{}` not found in path `{path}`", name);
+                                return Res::Err;
                             }
                         }
                     }
                 }
-
-                // Last segment: look up in the target module's resolutions
-                let last = &segments[segments.len() - 1];
-                let sym = self.resolver.interner.intern(&last.value);
-
-                if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
-                    let res = Res::Def(res.best_binding());
-                    self.resolver.res_map.insert(node_id, res);
-                    return res;
-                };
-
-                println!("ERROR: Couldn't resolve path `{path}`");
-                Res::Err
-            } else {
-                // Fallback (no module tree)
-                println!("ERROR: Path outside module `{path}`");
-                Res::Err
             }
+
+            // Last segment: look up in the target module's resolutions
+            let last = &segments[segments.len() - 1];
+            let sym = self.resolver.interner.intern(&last.value);
+
+            if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
+                let res = Res::Def(res.best_binding());
+                self.resolver.res_map.insert(node_id, res);
+                return res;
+            };
+
+            println!("ERROR: Couldn't resolve path `{path}`");
+            Res::Err
         }
     }
 

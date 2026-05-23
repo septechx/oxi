@@ -39,8 +39,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn collect_items_for_node(&self, node_idx: usize) -> ThinVec<Item> {
-        let tree = self.module_tree.as_ref().expect("module tree built");
-        let node = &tree.nodes[node_idx];
+        let node = &self.module_tree.nodes[node_idx];
         match node.ast_idx {
             Some(ast_idx) => self.asts[ast_idx].items.clone(),
             None => node.inline_body.clone().unwrap_or_default(),
@@ -58,11 +57,7 @@ impl<'a> Resolver<'a> {
     where
         F: FnMut(&mut Self, usize, &[Item]),
     {
-        let children: Vec<usize> = self
-            .module_tree
-            .as_ref()
-            .map(|t| t.nodes[node_idx].children.clone())
-            .unwrap_or_default();
+        let children: Vec<usize> = self.module_tree.nodes[node_idx].children.clone();
         let items = self.collect_items_for_node(node_idx);
         visitor(self, node_idx, &items);
         for &child in &children {
@@ -71,35 +66,21 @@ impl<'a> Resolver<'a> {
     }
 
     pub(super) fn collect_definitions(&mut self) {
-        if self.module_tree.is_some() {
-            self.traverse_tree(|this, node_idx, items| {
-                this.module_idx = node_idx;
-                for item in items {
-                    item.visit(&mut DefCollector::new(this));
-                }
-            });
-        } else {
-            for (i, ast) in self.asts.iter().enumerate() {
-                self.module_idx = i;
-                ast.visit(&mut DefCollector::new(self));
+        self.traverse_tree(|this, node_idx, items| {
+            this.module_idx = node_idx;
+            for item in items {
+                item.visit(&mut DefCollector::new(this));
             }
-        }
+        });
     }
 
     pub(super) fn build_graph(&mut self) {
-        if self.module_tree.is_some() {
-            self.traverse_tree(|this, node_idx, items| {
-                this.module_idx = node_idx;
-                for item in items {
-                    item.visit(&mut ImportCollector::new(this));
-                }
-            });
-        } else {
-            for (i, ast) in self.asts.iter().enumerate() {
-                self.module_idx = i;
-                ast.visit(&mut ImportCollector::new(self));
+        self.traverse_tree(|this, node_idx, items| {
+            this.module_idx = node_idx;
+            for item in items {
+                item.visit(&mut ImportCollector::new(this));
             }
-        }
+        });
     }
 
     pub(super) fn resolve_imports(&mut self) {
@@ -185,88 +166,45 @@ impl<'a> Resolver<'a> {
         let target_def_name = &segments[segments.len() - 1].value;
         let target_sym = self.interner.intern(target_def_name);
 
-        if self.module_tree.is_some() {
-            let current_module = pi.module.0 as usize;
+        let current_module = pi.module.0 as usize;
 
-            // Walk path segments (excluding last which is the symbol name) to find target module
-            let module_prefix = &segments[..segments.len() - 1];
-            let module_node_idx = self.resolve_module_path(current_module, module_prefix);
-            let Some(module_node_idx) = module_node_idx else {
-                return ResolutionStatus::Pending;
-            };
+        // Walk path segments (excluding last which is the symbol name) to find target module
+        let module_prefix = &segments[..segments.len() - 1];
+        let module_node_idx = self.resolve_module_path(current_module, module_prefix);
+        let Some(module_node_idx) = module_node_idx else {
+            return ResolutionStatus::Pending;
+        };
 
-            let target = self.modules[module_node_idx]
-                .resolutions
-                .get(&target_sym)
-                .copied();
-            let Some(target) = target else {
-                return ResolutionStatus::Pending;
-            };
+        let target = self.modules[module_node_idx]
+            .resolutions
+            .get(&target_sym)
+            .copied();
+        let Some(target) = target else {
+            return ResolutionStatus::Pending;
+        };
 
-            let target_def = self.defs[target.best_binding().0 as usize];
-            if target_def.visibility != Visibility::Public {
-                error_at!(
-                    pi.import_item.span,
-                    ModuleId(pi.module.0),
-                    "Cannot import private item"
-                );
-                return ResolutionStatus::Failed;
-            }
-
-            if pi.visibility == Visibility::Public {
-                todo!("Implement re-exporting imports");
-            }
-
-            self.current_module_mut()
-                .resolutions
-                .insert(local_sym, target);
-
-            ResolutionStatus::Resolved
-        } else {
-            // Fallback: flat search by module name (legacy path)
-            let target_mod_name = &segments[0].value;
-            let target_mid = self.asts.iter().position(|m| m.name == *target_mod_name);
-            let Some(target_mid) = target_mid else {
-                error_at!(
-                    pi.import_item.span,
-                    ModuleId(pi.module.0),
-                    "Module not found"
-                );
-                return ResolutionStatus::Failed;
-            };
-
-            let target = self.modules[target_mid]
-                .resolutions
-                .get(&target_sym)
-                .copied();
-            let Some(target) = target else {
-                return ResolutionStatus::Pending;
-            };
-
-            let target_def = self.defs[target.best_binding().0 as usize];
-            if target_def.visibility != Visibility::Public {
-                error_at!(
-                    pi.import_item.span,
-                    ModuleId(pi.module.0),
-                    "Cannot import private item"
-                );
-                return ResolutionStatus::Failed;
-            }
-
-            if pi.visibility == Visibility::Public {
-                todo!("Implement re-exporting imports");
-            }
-
-            self.current_module_mut()
-                .resolutions
-                .insert(local_sym, target);
-
-            ResolutionStatus::Resolved
+        let target_def = self.defs[target.best_binding().0 as usize];
+        if target_def.visibility != Visibility::Public {
+            error_at!(
+                pi.import_item.span,
+                ModuleId(pi.module.0),
+                "Cannot import private item"
+            );
+            return ResolutionStatus::Failed;
         }
+
+        if pi.visibility == Visibility::Public {
+            todo!("Implement re-exporting imports");
+        }
+
+        self.current_module_mut()
+            .resolutions
+            .insert(local_sym, target);
+
+        ResolutionStatus::Resolved
     }
 
     fn resolve_module_path(&self, from_node: usize, segments: &[Ident]) -> Option<usize> {
-        let tree = self.module_tree.as_ref()?;
         let mut current = from_node;
 
         for seg in segments.iter() {
@@ -276,14 +214,14 @@ impl<'a> Resolver<'a> {
                     current = 0;
                 }
                 "super" => {
-                    current = tree.nodes[current].parent?;
+                    current = self.module_tree.nodes[current].parent?;
                 }
                 "self" => {}
                 _ => {
-                    let child = tree.nodes[current]
+                    let child = self.module_tree.nodes[current]
                         .children
                         .iter()
-                        .find(|&&child| tree.nodes[child].name == name)
+                        .find(|&&child| self.module_tree.nodes[child].name == name)
                         .copied();
                     current = child?;
                 }

@@ -115,8 +115,7 @@ fn build_file(cli: Cli) -> Result<()> {
 
     Resolver::assign_node_ids(&mut asts);
     with_ctx_mut(|ctx| {
-        let mut resolver = Resolver::new(&asts, &mut ctx.interner);
-        resolver.build_module_tree(module_tree);
+        let mut resolver = Resolver::new(&asts, module_tree, &mut ctx.interner);
         resolver.resolve();
         println!("resolver = {resolver:#?}")
     });
