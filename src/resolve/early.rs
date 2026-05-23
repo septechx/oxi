@@ -2,7 +2,8 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    Ast, Expr, Ident, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Type, Visibility,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
+    NodeId, Stmt, Type, Visibility,
 };
 use crate::error_at;
 use crate::hir::interner::Symbol;
@@ -248,6 +249,19 @@ impl NodeIdAssigner {
         self.next_node_id += 1;
         NodeId(id)
     }
+
+    fn assign_to_assoc_items(&mut self, items: &mut ThinVec<AssocItem>) {
+        for item in items {
+            let AssocItemKind::Fn(fun) = &mut item.kind;
+            self.assign_to_fn(fun);
+        }
+    }
+
+    fn assign_to_fn(&mut self, fun: &mut Fn) {
+        for arg in &mut fun.parameters {
+            arg.2 = self.next_node_id();
+        }
+    }
 }
 
 impl VisitorMut for NodeIdAssigner {
@@ -256,15 +270,22 @@ impl VisitorMut for NodeIdAssigner {
 
         match &mut item.kind {
             ItemKind::Fn(fun) => {
-                for arg in &mut fun.parameters {
-                    arg.2 = self.next_node_id();
-                }
+                self.assign_to_fn(fun);
             }
             ItemKind::Impl {
-                self_ty, interface, ..
+                self_ty,
+                interface,
+                items,
             } => {
                 self_ty.1 = self.next_node_id();
                 interface.1 = self.next_node_id();
+                self.assign_to_assoc_items(items);
+            }
+            ItemKind::Struct { items, .. } => {
+                self.assign_to_assoc_items(items);
+            }
+            ItemKind::Interface { items, .. } => {
+                self.assign_to_assoc_items(items);
             }
             _ => {}
         }
