@@ -26,10 +26,10 @@ use thin_vec::ThinVec;
 
 use crate::ast::validate::validate_ast;
 use crate::cli::Cli;
-use crate::context::Ctx;
-use crate::hir::lower_crate;
+use crate::context::{Ctx, with_ctx_mut};
 use crate::lexer::tokenize;
 use crate::parser::parse;
+use crate::resolve::{Resolver, build_module_tree};
 
 pub static DEFAULT_ROOT: &str = "..";
 
@@ -68,8 +68,8 @@ fn check_for_errors() {
 
 fn build_file(cli: Cli) -> Result<()> {
     let mut asts = ThinVec::with_capacity(cli.input.len());
-    for file_path in cli.input {
-        let source_text = match fs::read_to_string(&file_path) {
+    for file_path in &cli.input {
+        let source_text = match fs::read_to_string(file_path) {
             Err(err) => fatal!(format!(
                 "Source file `{}` not found: {}",
                 file_path.display(),
@@ -78,10 +78,10 @@ fn build_file(cli: Cli) -> Result<()> {
             Ok(source_text) => source_text,
         };
 
-        let (tokens, module_id) = tokenize(source_text, &file_path)?;
+        let (tokens, module_id) = tokenize(source_text, file_path)?;
         check_for_errors();
 
-        let ast = parse(tokens, &file_path)?;
+        let ast = parse(tokens, file_path)?;
         check_for_errors();
 
         if cli.print_ast {
@@ -106,9 +106,22 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let hir = lower_crate(asts);
+    let file_paths: Vec<_> = cli.input.clone();
+    let module_tree = match build_module_tree(&asts, &file_paths) {
+        Ok(tree) => tree,
+        Err(e) => fatal!(e.to_string()),
+    };
+    check_for_errors();
 
-    println!("{:#?}", hir);
+    Resolver::assign_node_ids(&mut asts);
+    with_ctx_mut(|ctx| {
+        let mut resolver = Resolver::new(&asts, &mut ctx.interner);
+        resolver.build_module_tree(module_tree);
+        resolver.resolve();
+        println!("resolver = {resolver:#?}")
+    });
+
+    println!("Module resolution completed successfully.");
 
     Ok(())
 }

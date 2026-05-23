@@ -157,6 +157,17 @@ impl Visitor for AstValidator {
             }
             ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
+            ItemKind::Module { body, .. } => {
+                if body.is_some() {
+                    let old_top_level = self.is_top_level;
+                    self.is_top_level = true;
+                    body.visit(self);
+                    self.is_top_level = old_top_level;
+                    VisitAction::SkipChildren
+                } else {
+                    VisitAction::SkipChildren
+                }
+            }
         }
     }
 
@@ -286,6 +297,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
             ItemKind::Struct { name, .. } => top_level_names.push(name),
             ItemKind::Interface { name, .. } => top_level_names.push(name),
             ItemKind::Const { name, .. } => top_level_names.push(name),
+            ItemKind::Module { name, .. } => top_level_names.push(name),
             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
         }
     }

@@ -36,7 +36,7 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
             parser.current_token().span,
             parser.current_token().module_id,
             format!(
-                "Expected top-level item (static, struct, interface, impl, fn, import), but found {} instead.",
+                "Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.",
                 parser.current_token().kind
             )
         );
@@ -444,6 +444,45 @@ pub fn parse_import_item(
         node_id: NodeId::default(),
         attributes,
         span,
+        visibility,
+    })
+}
+
+pub fn parse_module_item(
+    parser: &mut Parser,
+    attributes: ThinVec<Attribute>,
+    modifiers: ThinVec<Modifier>,
+) -> Result<Item> {
+    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+
+    let start_span = parser.expect(TokenKind::Mod)?.span;
+    let name = parser.expect_identifier()?;
+
+    let end_span: Span;
+    let body = if parser.current_token().kind == TokenKind::Semicolon {
+        end_span = parser.advance().span;
+        None
+    } else {
+        parser.expect(TokenKind::OpenCurly)?;
+        let mut items = ThinVec::new();
+        while parser.has_tokens() && parser.current_token().kind != TokenKind::CloseCurly {
+            items.push(parse_item(parser)?);
+        }
+        end_span = parser.expect(TokenKind::CloseCurly)?.span;
+        Some(items)
+    };
+
+    let visibility = if pub_mod.is_some() {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
+
+    Ok(Item {
+        kind: ItemKind::Module { name, body },
+        node_id: NodeId::default(),
+        attributes,
+        span: Span::new(start_span.start(), end_span.end()),
         visibility,
     })
 }

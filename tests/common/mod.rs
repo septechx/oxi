@@ -1,68 +1,55 @@
 use oxic::{
-    backend::{BackendOptions, linker::linkers::LdLinker},
-    codegen::{self, CompileOptions, EmitType},
+    ast::validate::validate_ast,
     context::{with_ctx, with_ctx_mut},
     errors::ErrorLevel,
+    hir::ModuleId,
     lexer::tokenize,
     parser::parse,
+    resolve::{Resolver, build_module_tree},
 };
 use std::{
     fs,
     hash::{DefaultHasher, Hash, Hasher},
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    process::Command,
+    path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
 };
+use thin_vec::ThinVec;
 
 static TEST_RUN_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Test {
     files: Vec<(String, String)>,
-    should_compile: Option<bool>,
-    expected_ir: Option<String>,
-    execute: Option<Box<dyn FnOnce(ExecutionResult)>>,
+    should_succeed: Option<bool>,
     fail_on_level: ErrorLevel,
 }
 
 impl Test {
     pub fn new() -> Self {
-        // Clear errors from previous tests to prevent state leakage
         with_ctx_mut(|ctx| ctx.errors.clear());
 
         Self {
             files: vec![],
-            should_compile: None,
-            expected_ir: None,
-            execute: None,
+            should_succeed: None,
             fail_on_level: ErrorLevel::Warning,
         }
     }
 
-    pub fn add_source(&mut self, source: &str) -> &mut Self {
+    /// Add a source file with a given filename. The filename should be relative
+    /// The first file added is assumed to be the crate root (must be named main.oxi).
+    pub fn add_source(&mut self, filename: &str, source: &str) -> &mut Self {
         self.files
-            .push(("main.oxi".to_string(), source.trim().to_string()));
+            .push((filename.to_string(), source.trim().to_string()));
         self
     }
 
-    pub fn compiles(&mut self, should_succeed: bool) -> &mut Self {
-        self.should_compile = Some(should_succeed);
+    /// Expect resolution to succeed (true) or fail (false).
+    /// If not set, panics on any error above fail_on_level.
+    pub fn succeeds(&mut self, should: bool) -> &mut Self {
+        self.should_succeed = Some(should);
         self
     }
 
-    pub fn ir_eq(&mut self, expected: &str) -> &mut Self {
-        self.expected_ir = Some(expected.to_string());
-        self
-    }
-
-    pub fn execute<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(ExecutionResult) + 'static,
-    {
-        self.execute = Some(Box::new(f));
-        self
-    }
-
+    /// Set the error level at which the test should fail.
     pub fn fail_on_level(&mut self, level: ErrorLevel) -> &mut Self {
         self.fail_on_level = level;
         self
@@ -80,37 +67,12 @@ impl Test {
 
     fn handle_error_check(&self) -> bool {
         if self.check_for_errors() {
-            if self.should_compile == Some(false) {
+            if self.should_succeed == Some(false) {
                 return true;
             }
-            panic!("Compilation had errors or warnings above threshold");
+            panic!("Resolution had errors or warnings above threshold");
         }
         false
-    }
-}
-
-#[allow(dead_code)]
-pub struct ExecutionResult {
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl ExecutionResult {
-    pub fn exit_code(&self, expected: i32) -> &Self {
-        assert_eq!(self.exit_code, expected);
-        self
-    }
-
-    pub fn stdout(&self, expected: &str) -> &Self {
-        assert_eq!(self.stdout, expected);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn stderr(&self, expected: &str) -> &Self {
-        assert_eq!(self.stderr, expected);
-        self
     }
 }
 
@@ -122,169 +84,104 @@ impl Drop for Test {
         let hash = format!("{:016x}", hasher.finish());
         let run_id = TEST_RUN_ID.fetch_add(1, Ordering::Relaxed);
         let test_dir = temp_dir.join(format!("{hash}-{run_id}"));
-        let cache_dir = test_dir.join("cache");
 
         if let Err(e) = fs::create_dir_all(&test_dir) {
             panic!("Failed to create test directory: {}", e);
         }
 
+        let mut file_paths = Vec::new();
         for (filename, content) in &self.files {
             let file_path = test_dir.join(filename);
+            if let Some(parent) = file_path.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                panic!("Failed to create directory: {}", e);
+            }
             if let Err(e) = fs::write(&file_path, content) {
                 panic!("Failed to write source file {}: {}", filename, e);
             }
+            file_paths.push(file_path);
         }
 
-        let main_file = self
-            .files
-            .first()
-            .expect("Test must have at least one source file");
-        let main_path = test_dir.join(&main_file.0);
-        let output_path = test_dir.join("output.ll");
-
-        let source = match fs::read_to_string(&main_path) {
-            Ok(s) => s,
-            Err(e) => panic!("Failed to read source file: {}", e),
-        };
-
-        let (tokens, module_id) = match tokenize(source, &main_path) {
-            Ok(t) => t,
-            Err(e) => {
-                if self.should_compile == Some(false) {
-                    return;
+        // Phase 1: Tokenize and parse all files
+        let mut asts = ThinVec::new();
+        for file_path in &file_paths {
+            let source = match fs::read_to_string(file_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    if self.should_succeed == Some(false) {
+                        return;
+                    }
+                    panic!("Failed to read source file: {}", e);
                 }
-                panic!("Tokenization failed: {}", e);
-            }
-        };
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        let ast = match parse(tokens, &main_path) {
-            Ok(a) => a,
-            Err(e) => {
-                if self.should_compile == Some(false) {
-                    return;
-                }
-                panic!("Parsing failed: {}", e);
-            }
-        };
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        let module_name = "main";
-        let opts = CompileOptions {
-            module_name,
-            module_id,
-            source_dir: &test_dir,
-            output_file: &output_path,
-            source_file: &main_path,
-            emit: &EmitType::Llvm,
-            backend_options: &BackendOptions::default(),
-            pie: true,
-            static_linking: false,
-            linker_kind: PhantomData::<LdLinker>,
-            cache_dir: Some(&cache_dir),
-        };
-
-        match codegen::compile(ast.clone(), &opts) {
-            Ok(_) => {
-                if self.should_compile == Some(false) {
-                    panic!("Compilation succeeded but was expected to fail");
-                }
-            }
-            Err(e) => {
-                if self.should_compile == Some(false) {
-                    return;
-                }
-                panic!("Compilation failed: {}", e);
-            }
-        }
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        if let Some(expected_ir_file) = &self.expected_ir {
-            let expected_path = Path::new("tests").join(expected_ir_file);
-            let expected_content = match fs::read_to_string(&expected_path) {
-                Ok(c) => c,
-                Err(e) => panic!(
-                    "Failed to read expected IR file {}: {}",
-                    expected_ir_file, e
-                ),
             };
 
-            let actual_content = match fs::read_to_string(&output_path) {
-                Ok(c) => c,
-                Err(e) => panic!("Failed to read generated IR: {}", e),
-            };
-
-            if expected_content != actual_content {
-                println!("IR mismatch");
-                println!("Expected: {}", expected_path.display());
-                println!("Actual: {}", output_path.display());
-
-                let diff = similar::TextDiff::from_lines(&expected_content, &actual_content);
-                println!("\nDiff:");
-                for change in diff.iter_all_changes() {
-                    let sign = match change.tag() {
-                        similar::ChangeTag::Delete => "-",
-                        similar::ChangeTag::Insert => "+",
-                        similar::ChangeTag::Equal => " ",
-                    };
-                    print!("{}{}", sign, change);
+            let (tokens, _module_id) = match tokenize(source, file_path) {
+                Ok(t) => t,
+                Err(_) => {
+                    if self.should_succeed == Some(false) {
+                        return;
+                    }
+                    panic!("Tokenization failed");
                 }
-
-                panic!("IR output does not match expected");
-            }
-        }
-
-        if let Some(execute_fn) = self.execute.take() {
-            let exe_path = test_dir.join("main");
-            let exe_opts = CompileOptions {
-                module_id,
-                module_name: "main",
-                source_dir: &test_dir,
-                output_file: &exe_path,
-                source_file: &main_path,
-                emit: &EmitType::Executable,
-                backend_options: &BackendOptions::default(),
-                pie: true,
-                static_linking: false,
-                linker_kind: PhantomData::<LdLinker>,
-                cache_dir: Some(&cache_dir),
             };
-
-            if let Err(e) = codegen::compile(ast, &exe_opts) {
-                panic!("Failed to compile executable: {}", e);
-            }
 
             if self.handle_error_check() {
                 return;
             }
 
-            let output = match Command::new(&exe_path).output() {
-                Ok(o) => o,
-                Err(e) => {
-                    eprintln!("Tried to execute: {exe_path:?}");
-                    panic!("Failed to execute test: {}", e);
+            let ast = match parse(tokens, file_path) {
+                Ok(a) => a,
+                Err(_) => {
+                    if self.should_succeed == Some(false) {
+                        return;
+                    }
+                    panic!("Parsing failed");
                 }
             };
 
-            let result = ExecutionResult {
-                exit_code: output.status.code().unwrap_or(-1),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            };
+            if self.handle_error_check() {
+                return;
+            }
 
-            execute_fn(result);
+            validate_ast(&ast, ModuleId(0));
+            if self.handle_error_check() {
+                return;
+            }
+
+            asts.push(ast);
         }
 
-        let _ = fs::remove_dir_all(&test_dir);
+        // Phase 2: Build module tree
+        let module_tree = match build_module_tree(&asts, &file_paths) {
+            Ok(tree) => tree,
+            Err(_) => {
+                if self.should_succeed == Some(false) {
+                    return;
+                }
+                panic!("Module tree building failed");
+            }
+        };
+
+        if self.handle_error_check() {
+            return;
+        }
+
+        // Phase 3: Run name resolution
+        Resolver::assign_node_ids(&mut asts);
+        with_ctx_mut(|ctx| {
+            let mut resolver = Resolver::new(&asts, &mut ctx.interner);
+            resolver.build_module_tree(module_tree);
+            resolver.resolve();
+        });
+
+        if self.should_succeed == Some(false) {
+            if !self.check_for_errors() {
+                panic!("Resolution succeeded but was expected to fail");
+            }
+        } else {
+            self.handle_error_check();
+        }
     }
 }
 

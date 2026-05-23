@@ -338,6 +338,37 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
             )?;
             write_import_tree(out, i, ctx)?;
         }
+        ItemKind::Module { name, body } => {
+            let mut modifiers = Vec::new();
+            if item.visibility == Visibility::Public {
+                modifiers.push("pub");
+            }
+            let modifiers = format_modifiers(&modifiers);
+            write!(
+                out,
+                "{} {}{}{}{}",
+                "Module".with_color(ctx.color),
+                modifiers_with_color(&modifiers, ctx.color),
+                punct_with_color("\"", ctx.color),
+                name.value,
+                punct_with_color("\"", ctx.color)
+            )?;
+            match body {
+                None => write!(out, ": (file)")?,
+                Some(items) if items.is_empty() => write!(out, ": (empty)")?,
+                Some(items) => {
+                    writeln!(out, ":")?;
+                    let body_ctx = ctx.indented();
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 {
+                            writeln!(out)?;
+                        }
+                        write!(out, "{}", body_ctx.indent_str())?;
+                        write_item(out, item, &body_ctx)?;
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }

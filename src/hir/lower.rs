@@ -174,6 +174,7 @@ impl LoweringContext {
                     }
                     ItemKind::Impl { .. } => {} // Processed in lowering pass 3
                     ItemKind::Import(_) => {}   // Processed in lowering pass 2
+                    ItemKind::Module { .. } => {} // Processed during module tree building
                 }
             }
         }
@@ -204,6 +205,7 @@ impl LoweringContext {
                         self.lower_const_item(name, ty, value, span)
                     }
                     ItemKind::Import(_) => {} // Processed in lowering pass 2
+                    ItemKind::Module { .. } => {} // Processed during module tree building
                 }
             }
         }

@@ -6,9 +6,13 @@ use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::{Interner, Symbol};
 use crate::hir::{DefId, ModuleId, PrimTy};
+use crate::resolve::mod_tree::ModuleTree;
+
+pub use mod_tree::build_module_tree;
 
 mod early;
 mod late;
+mod mod_tree;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DefKind {
@@ -111,40 +115,72 @@ impl NameResolution {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
-    resolutions: FxHashMap<Symbol, NameResolution>,
+    pub resolutions: FxHashMap<Symbol, NameResolution>,
+    pub parent: Option<usize>,
+    pub children: Vec<usize>,
+    pub qualified_name: String,
 }
 
 #[derive(Debug)]
 pub struct Resolver<'a> {
-    asts: &'a ThinVec<Ast>,
+    pub asts: &'a ThinVec<Ast>,
     module_idx: usize,
     interner: &'a mut Interner,
+
+    // Module tree state
+    module_tree: Option<ModuleTree>,
+    /// Maps ast index -> first tree node index for that ast
+    ast_to_module: FxHashMap<usize, usize>,
 
     // Early res
     pending_imports: ThinVec<PendingImport>,
     modules: PerModule<ModuleData>,
     def_map: NodeMap<DefId>,
     /// Arena\[DefId] -> Def
-    defs: ThinVec<Def>,
+    pub defs: ThinVec<Def>,
 
     // Late res
     /// maps (path node id) -> (res)
-    res_map: NodeMap<Res>,
+    pub res_map: NodeMap<Res>,
 }
 
 impl<'a> Resolver<'a> {
     pub fn new(asts: &'a ThinVec<Ast>, interner: &'a mut Interner) -> Self {
-        let len = asts.len();
         Self {
             asts,
             interner,
             module_idx: 0,
+            module_tree: None,
+            ast_to_module: FxHashMap::default(),
             pending_imports: ThinVec::new(),
-            modules: PerModule::new(len),
+            modules: PerModule::new(asts.len()),
             def_map: NodeMap::default(),
             defs: ThinVec::new(),
             res_map: NodeMap::default(),
         }
+    }
+
+    pub fn build_module_tree(&mut self, tree: ModuleTree) {
+        let node_count = tree.nodes.len();
+        self.modules = PerModule::new(node_count);
+
+        for (i, node) in tree.nodes.iter().enumerate() {
+            let parent = node.parent;
+            let qualified = node.qualified_name.clone();
+            self.modules[i].parent = parent;
+            self.modules[i].qualified_name = qualified;
+        }
+
+        for (i, node) in tree.nodes.iter().enumerate() {
+            for &child in &node.children {
+                self.modules[i].children.push(child);
+            }
+            if let Some(ast_idx) = node.ast_idx {
+                self.ast_to_module.entry(ast_idx).or_insert(i);
+            }
+        }
+
+        self.module_tree = Some(tree);
     }
 
     pub fn resolve(&mut self) {
@@ -154,11 +190,11 @@ impl<'a> Resolver<'a> {
         self.late_resolve();
     }
 
-    fn current_module(&self) -> &ModuleData {
+    pub fn current_module(&self) -> &ModuleData {
         &self.modules[self.module_idx]
     }
 
-    fn current_module_mut(&mut self) -> &mut ModuleData {
+    pub fn current_module_mut(&mut self) -> &mut ModuleData {
         &mut self.modules[self.module_idx]
     }
 
@@ -168,14 +204,5 @@ impl<'a> Resolver<'a> {
 
     pub fn get_def(&self, def_id: DefId) -> &Def {
         &self.defs[def_id.0 as usize]
-    }
-
-    #[allow(dead_code)]
-    pub fn dump(&self) {
-        dbg!(&self.defs);
-        dbg!(&self.def_map);
-        dbg!(&self.modules);
-        dbg!(&self.pending_imports);
-        dbg!(&self.interner);
     }
 }

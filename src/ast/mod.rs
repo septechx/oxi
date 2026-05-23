@@ -84,6 +84,10 @@ pub enum ItemKind {
     },
     Fn(Fn),
     Import(ImportTree),
+    Module {
+        name: Ident,
+        body: Option<ThinVec<Item>>,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -89,6 +89,7 @@ mod tests {
                 ItemKind::Impl { .. } => "ImplItem",
                 ItemKind::Fn(_) => "FnDeclItem",
                 ItemKind::Import(_) => "ImportItem",
+                ItemKind::Module { .. } => "ModuleItem",
             };
             *self.item_counts.entry(kind_name).or_insert(0) += 1;
 

@@ -2,14 +2,12 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Literal, Mutability, Visibility},
-    context::with_ctx_mut,
     hashmap::FxHashMap,
     hir::{
         interner::{Interner, Symbol, sym},
         lower::LoweringContext,
     },
     lexer::token::TokenKind,
-    resolve::Resolver,
     span::Span,
 };
 
@@ -20,17 +18,7 @@ mod lower;
 mod resolve;
 
 #[allow(unreachable_code)]
-pub fn lower_crate(mut asts: ThinVec<Ast>) -> HirCrate {
-    Resolver::assign_node_ids(&mut asts);
-
-    with_ctx_mut(|ctx| {
-        let mut resolver = Resolver::new(&asts, &mut ctx.interner);
-        resolver.resolve();
-        resolver.dump();
-    });
-
-    todo!("Finished resolving");
-
+pub fn lower_crate(asts: ThinVec<Ast>) -> HirCrate {
     let mut ctx = LoweringContext::new();
     ctx.lower_crate(asts);
     for diag in &ctx.krate.diagnostics {

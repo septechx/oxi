@@ -188,6 +188,7 @@ pub fn compile_items<'a, 'ctx>(
             ItemKind::Interface { .. } => todo!(),
             ItemKind::Impl { .. } => todo!(),
             ItemKind::Import(_) => todo!(),
+            ItemKind::Module { .. } => {}
         }
     }
 

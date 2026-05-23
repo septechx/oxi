@@ -2,7 +2,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    Ast, Expr, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Type, Visibility,
+    Ast, Expr, Ident, ImportTree, ImportTreeKind, Item, ItemKind, NodeId, Stmt, Type, Visibility,
 };
 use crate::error_at;
 use crate::hir::interner::Symbol;
@@ -38,17 +38,67 @@ impl<'a> Resolver<'a> {
         });
     }
 
+    fn collect_items_for_node(&self, node_idx: usize) -> ThinVec<Item> {
+        let tree = self.module_tree.as_ref().expect("module tree built");
+        let node = &tree.nodes[node_idx];
+        match node.ast_idx {
+            Some(ast_idx) => self.asts[ast_idx].items.clone(),
+            None => node.inline_body.clone().unwrap_or_default(),
+        }
+    }
+
+    pub(super) fn traverse_tree<F>(&mut self, mut visitor: F)
+    where
+        F: FnMut(&mut Self, usize, &[Item]),
+    {
+        self.traverse_tree_rec(0, &mut visitor);
+    }
+
+    fn traverse_tree_rec<F>(&mut self, node_idx: usize, visitor: &mut F)
+    where
+        F: FnMut(&mut Self, usize, &[Item]),
+    {
+        let children: Vec<usize> = self
+            .module_tree
+            .as_ref()
+            .map(|t| t.nodes[node_idx].children.clone())
+            .unwrap_or_default();
+        let items = self.collect_items_for_node(node_idx);
+        visitor(self, node_idx, &items);
+        for &child in &children {
+            self.traverse_tree_rec(child, visitor);
+        }
+    }
+
     pub(super) fn collect_definitions(&mut self) {
-        for (i, ast) in self.asts.iter().enumerate() {
-            self.module_idx = i;
-            ast.visit(&mut DefCollector::new(self));
+        if self.module_tree.is_some() {
+            self.traverse_tree(|this, node_idx, items| {
+                this.module_idx = node_idx;
+                for item in items {
+                    item.visit(&mut DefCollector::new(this));
+                }
+            });
+        } else {
+            for (i, ast) in self.asts.iter().enumerate() {
+                self.module_idx = i;
+                ast.visit(&mut DefCollector::new(self));
+            }
         }
     }
 
     pub(super) fn build_graph(&mut self) {
-        for (i, ast) in self.asts.iter().enumerate() {
-            self.module_idx = i;
-            ast.visit(&mut ImportCollector::new(self));
+        if self.module_tree.is_some() {
+            self.traverse_tree(|this, node_idx, items| {
+                this.module_idx = node_idx;
+                for item in items {
+                    item.visit(&mut ImportCollector::new(this));
+                }
+            });
+        } else {
+            for (i, ast) in self.asts.iter().enumerate() {
+                self.module_idx = i;
+                ast.visit(&mut ImportCollector::new(self));
+            }
         }
     }
 
@@ -118,7 +168,6 @@ impl<'a> Resolver<'a> {
         };
 
         if segments.len() < 2 {
-            // An import with 0 segments would fail parsing, so the code must be `import lib`
             error_at!(
                 pi.import_item.span,
                 ModuleId(pi.module.0),
@@ -133,48 +182,115 @@ impl<'a> Resolver<'a> {
             .unwrap_or(unsafe { segments.last().unwrap_unchecked().value.as_ref() });
         let local_sym = self.interner.intern(local_name);
 
-        // FIXME: Only supports 2-segment paths, else ignores the middle part(s)
-        let target_mod_name = &segments[0].value;
         let target_def_name = &segments[segments.len() - 1].value;
-
-        let target_mid = self.asts.iter().position(|m| m.name == *target_mod_name);
-        let Some(target_mid) = target_mid else {
-            error_at!(
-                pi.import_item.span,
-                ModuleId(pi.module.0),
-                "Module not found"
-            );
-            return ResolutionStatus::Failed;
-        };
-
         let target_sym = self.interner.intern(target_def_name);
-        let target = self.modules[target_mid]
-            .resolutions
-            .get(&target_sym)
-            .copied();
-        let Some(target) = target else {
-            return ResolutionStatus::Pending;
-        };
 
-        let target_def = self.defs[target.best_binding().0 as usize];
-        if target_def.visibility != Visibility::Public {
-            error_at!(
-                pi.import_item.span,
-                ModuleId(pi.module.0),
-                "Cannot import private item"
-            );
-            return ResolutionStatus::Failed;
+        if self.module_tree.is_some() {
+            let current_module = pi.module.0 as usize;
+
+            // Walk path segments (excluding last which is the symbol name) to find target module
+            let module_prefix = &segments[..segments.len() - 1];
+            let module_node_idx = self.resolve_module_path(current_module, module_prefix);
+            let Some(module_node_idx) = module_node_idx else {
+                return ResolutionStatus::Pending;
+            };
+
+            let target = self.modules[module_node_idx]
+                .resolutions
+                .get(&target_sym)
+                .copied();
+            let Some(target) = target else {
+                return ResolutionStatus::Pending;
+            };
+
+            let target_def = self.defs[target.best_binding().0 as usize];
+            if target_def.visibility != Visibility::Public {
+                error_at!(
+                    pi.import_item.span,
+                    ModuleId(pi.module.0),
+                    "Cannot import private item"
+                );
+                return ResolutionStatus::Failed;
+            }
+
+            if pi.visibility == Visibility::Public {
+                todo!("Implement re-exporting imports");
+            }
+
+            self.current_module_mut()
+                .resolutions
+                .insert(local_sym, target);
+
+            ResolutionStatus::Resolved
+        } else {
+            // Fallback: flat search by module name (legacy path)
+            let target_mod_name = &segments[0].value;
+            let target_mid = self.asts.iter().position(|m| m.name == *target_mod_name);
+            let Some(target_mid) = target_mid else {
+                error_at!(
+                    pi.import_item.span,
+                    ModuleId(pi.module.0),
+                    "Module not found"
+                );
+                return ResolutionStatus::Failed;
+            };
+
+            let target = self.modules[target_mid]
+                .resolutions
+                .get(&target_sym)
+                .copied();
+            let Some(target) = target else {
+                return ResolutionStatus::Pending;
+            };
+
+            let target_def = self.defs[target.best_binding().0 as usize];
+            if target_def.visibility != Visibility::Public {
+                error_at!(
+                    pi.import_item.span,
+                    ModuleId(pi.module.0),
+                    "Cannot import private item"
+                );
+                return ResolutionStatus::Failed;
+            }
+
+            if pi.visibility == Visibility::Public {
+                todo!("Implement re-exporting imports");
+            }
+
+            self.current_module_mut()
+                .resolutions
+                .insert(local_sym, target);
+
+            ResolutionStatus::Resolved
+        }
+    }
+
+    fn resolve_module_path(&self, from_node: usize, segments: &[Ident]) -> Option<usize> {
+        let tree = self.module_tree.as_ref()?;
+        let mut current = from_node;
+
+        for seg in segments.iter() {
+            let name = seg.value.as_ref();
+            match name {
+                "crate" => {
+                    current = 0;
+                }
+                "super" => {
+                    current = tree.nodes[current].parent?;
+                }
+                "self" => {}
+                _ => {
+                    let child = tree.nodes[current]
+                        .children
+                        .iter()
+                        .find(|&&child| tree.nodes[child].name == name)
+                        .copied();
+                    current = child?;
+                }
+            }
         }
 
-        if pi.visibility == Visibility::Public {
-            todo!("Implement re-exporting imports");
-        }
-
-        self.current_module_mut()
-            .resolutions
-            .insert(local_sym, target);
-
-        ResolutionStatus::Resolved
+        Some(current)
     }
 }
 

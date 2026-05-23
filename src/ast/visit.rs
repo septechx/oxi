@@ -178,6 +178,11 @@ impl Visitable for Item {
                 ItemKind::Import(_) => {
                     // Leaf
                 }
+                ItemKind::Module { body, .. } => {
+                    if let Some(items) = body {
+                        items.visit(visitor);
+                    }
+                }
             },
             VisitAction::SkipChildren => {}
         }
@@ -205,6 +210,11 @@ impl Visitable for Item {
                 ItemKind::Fn(f) => f.visit_mut(visitor),
                 ItemKind::Import(_) => {
                     // Leaf
+                }
+                ItemKind::Module { body, .. } => {
+                    if let Some(items) = body {
+                        items.visit_mut(visitor);
+                    }
                 }
             },
             VisitAction::SkipChildren => {}

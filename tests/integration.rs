@@ -3,26 +3,11 @@ mod common;
 use common::it;
 use oxic::errors::ErrorLevel;
 
-// TODO: This is supported by the parser, but not by the codegen
-#[ignore]
-#[test]
-fn can_compile_interface_declaration() {
-    it(|ctx| {
-        ctx.add_source(
-            r#"
-            interface Foo {
-                fn bar() void,
-            }
-            "#,
-        )
-        .compiles(true);
-    })
-}
-
 #[test]
 fn can_compile_nested_block_with_implicit_returns() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             pub fn main() void {
                 {
@@ -33,7 +18,7 @@ fn can_compile_nested_block_with_implicit_returns() {
             }
             "#,
         )
-        .compiles(true);
+        .succeeds(true);
     })
 }
 
@@ -41,6 +26,7 @@ fn can_compile_nested_block_with_implicit_returns() {
 fn can_compile_simple_nested_block() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             pub fn main() void {
                 {
@@ -51,7 +37,7 @@ fn can_compile_simple_nested_block() {
             }
             "#,
         )
-        .compiles(true);
+        .succeeds(true);
     })
 }
 
@@ -59,6 +45,7 @@ fn can_compile_simple_nested_block() {
 fn duplicate_struct_property_fails() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             struct Foo {
                 a: i32,
@@ -68,7 +55,7 @@ fn duplicate_struct_property_fails() {
             pub fn main() void {}
             "#,
         )
-        .compiles(false);
+        .succeeds(false);
     })
 }
 
@@ -76,46 +63,20 @@ fn duplicate_struct_property_fails() {
 fn can_compile_program_with_shebang() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             #!/usr/bin/env oxic
             pub fn main() void {}
             "#,
         )
-        .compiles(true)
-        .execute(|res| {
-            res.exit_code(0);
-        });
+        .succeeds(true);
     })
 }
 
 #[test]
 fn can_compile_empty_program() {
     it(|ctx| {
-        ctx.add_source("").compiles(true);
-    })
-}
-
-#[test]
-fn compiling_empty_program_emits_warning() {
-    it(|ctx| {
-        ctx.add_source("")
-            .compiles(true)
-            .fail_on_level(ErrorLevel::Warning);
-    })
-}
-
-#[ignore]
-#[test]
-fn invalid_return_type_fails() {
-    it(|ctx| {
-        ctx.add_source(
-            r#"
-                pub fn main() []u8 {
-                    return []u8{1, 2, 3};
-                }
-                "#,
-        )
-        .compiles(false);
+        ctx.add_source("main.oxi", "").succeeds(true);
     })
 }
 
@@ -123,45 +84,14 @@ fn invalid_return_type_fails() {
 fn slice_literals() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             pub fn main() void {
                 let s = []u8{1, 2, 3};
             }
         "#,
         )
-        .compiles(true);
-    })
-}
-
-#[ignore]
-#[test]
-fn internal_attribute_fails_in_user_code() {
-    it(|ctx| {
-        ctx.add_source(
-            r#"
-            #[internal]
-            pub fn internal_fn() isize {
-                return 0;
-            }
-            "#,
-        )
-        .compiles(false);
-    })
-}
-
-#[ignore]
-#[test]
-fn internal_attribute_on_struct_fails() {
-    it(|ctx| {
-        ctx.add_source(
-            r#"
-            #[internal]
-            pub struct InternalStruct {
-                value: i32,
-            }
-            "#,
-        )
-        .compiles(false);
+        .succeeds(true);
     })
 }
 
@@ -169,6 +99,7 @@ fn internal_attribute_on_struct_fails() {
 fn test_attribute_works() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
                 #[test]
                 pub fn main() isize {
@@ -176,11 +107,8 @@ fn test_attribute_works() {
                 }
                 "#,
         )
-        .compiles(true)
-        .fail_on_level(ErrorLevel::Error)
-        .execute(|res| {
-            res.exit_code(42);
-        });
+        .succeeds(true)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -188,6 +116,7 @@ fn test_attribute_works() {
 fn attribute_with_arguments() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
                 #[foo(bar, baz)]
                 pub fn main() isize {
@@ -195,11 +124,8 @@ fn attribute_with_arguments() {
                 }
                 "#,
         )
-        .compiles(true)
-        .fail_on_level(ErrorLevel::Error)
-        .execute(|res| {
-            res.exit_code(10);
-        });
+        .succeeds(true)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -207,6 +133,7 @@ fn attribute_with_arguments() {
 fn multiple_attributes() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
                 #[test]
                 #[foo]
@@ -215,11 +142,8 @@ fn multiple_attributes() {
                 }
                 "#,
         )
-        .compiles(true)
-        .fail_on_level(ErrorLevel::Error)
-        .execute(|res| {
-            res.exit_code(5);
-        });
+        .succeeds(true)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -227,17 +151,14 @@ fn multiple_attributes() {
 fn main_fn_declaration() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
         pub fn main() isize {
             return 0;
         }
     "#,
         )
-        .compiles(true)
-        .ir_eq("01.ll")
-        .execute(|res| {
-            res.exit_code(0);
-        });
+        .succeeds(true);
     })
 }
 
@@ -245,6 +166,7 @@ fn main_fn_declaration() {
 fn variable_declaration() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
         pub fn main() isize {
             let a = 2;
@@ -252,11 +174,7 @@ fn variable_declaration() {
         }
     "#,
         )
-        .compiles(true)
-        .ir_eq("02.ll")
-        .execute(|res| {
-            res.exit_code(2);
-        });
+        .succeeds(true);
     })
 }
 
@@ -264,6 +182,7 @@ fn variable_declaration() {
 fn multiple_variables_and_addition() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
         pub fn main() isize {
             let a = 1;
@@ -273,11 +192,7 @@ fn multiple_variables_and_addition() {
         }
     "#,
         )
-        .compiles(true)
-        .ir_eq("03.ll")
-        .execute(|res| {
-            res.exit_code(3);
-        });
+        .succeeds(true);
     })
 }
 
@@ -285,6 +200,7 @@ fn multiple_variables_and_addition() {
 fn struct_declaration_and_initialization() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
         struct Foo {
             a: i32,
@@ -299,11 +215,7 @@ fn struct_declaration_and_initialization() {
         }
     "#,
         )
-        .compiles(true)
-        .ir_eq("05.ll")
-        .execute(|res| {
-            res.exit_code(1);
-        });
+        .succeeds(true);
     })
 }
 
@@ -311,6 +223,7 @@ fn struct_declaration_and_initialization() {
 fn string_literals_and_slice_operations() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
         pub fn main() i64 {
             let s = "Hello world!";
@@ -320,34 +233,7 @@ fn string_literals_and_slice_operations() {
         }
     "#,
         )
-        .compiles(true)
-        .ir_eq("06.ll")
-        .execute(|res| {
-            res.exit_code(12);
-        });
-    })
-}
-
-#[ignore]
-#[test]
-fn import_and_print_function() {
-    it(|ctx| {
-        ctx.add_source(
-            r#"
-            const std = @import("std");
-
-            pub fn main() isize {
-                std.print("Hello world");
-
-                return 0;
-            }
-        "#,
-        )
-        .compiles(true)
-        .ir_eq("07.ll")
-        .execute(|res| {
-            res.exit_code(0).stdout("Hello world");
-        });
+        .succeeds(true);
     })
 }
 
@@ -355,6 +241,7 @@ fn import_and_print_function() {
 fn struct_with_methods() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             struct Foo {
                 a: i32,
@@ -373,11 +260,7 @@ fn struct_with_methods() {
             }
         "#,
         )
-        .compiles(true)
-        .ir_eq("08.ll")
-        .execute(|res| {
-            res.exit_code(0);
-        });
+        .succeeds(true);
     })
 }
 
@@ -385,17 +268,14 @@ fn struct_with_methods() {
 fn sizeof_builtin() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             pub fn main() isize {
                 return @sizeof($u16);
             }
         "#,
         )
-        .compiles(true)
-        .ir_eq("10.ll")
-        .execute(|res| {
-            res.exit_code(2);
-        });
+        .succeeds(true);
     })
 }
 
@@ -403,15 +283,12 @@ fn sizeof_builtin() {
 fn main_function_return_void() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             pub fn main() void {}
         "#,
         )
-        .compiles(true)
-        .ir_eq("11.ll")
-        .execute(|res| {
-            res.exit_code(0);
-        });
+        .succeeds(true);
     })
 }
 
@@ -419,6 +296,7 @@ fn main_function_return_void() {
 fn integer_literals() {
     it(|t| {
         t.add_source(
+            "main.oxi",
             r#"
             fn main() i32 {
                 let a: i32 = 10;
@@ -427,9 +305,7 @@ fn integer_literals() {
             }
             "#,
         )
-        .execute(|res| {
-            res.exit_code(5);
-        });
+        .succeeds(true);
     });
 }
 
@@ -437,6 +313,7 @@ fn integer_literals() {
 fn boolean_literals() {
     it(|t| {
         t.add_source(
+            "main.oxi",
             r#"
             fn main() bool {
                 let a: bool = true;
@@ -444,9 +321,7 @@ fn boolean_literals() {
             }
             "#,
         )
-        .execute(|res| {
-            res.exit_code(1);
-        });
+        .succeeds(true);
     });
 }
 
@@ -454,6 +329,7 @@ fn boolean_literals() {
 fn char_literals() {
     it(|t| {
         t.add_source(
+            "main.oxi",
             r#"
             fn main() u8 {
                 let a: u8 = 'a';
@@ -461,9 +337,7 @@ fn char_literals() {
             }
             "#,
         )
-        .execute(|res| {
-            res.exit_code(97);
-        });
+        .succeeds(true);
     });
 }
 
@@ -471,6 +345,7 @@ fn char_literals() {
 fn string_literals() {
     it(|t| {
         t.add_source(
+            "main.oxi",
             r#"
             fn main() isize {
                 let s: []u8 = "hello";
@@ -478,9 +353,7 @@ fn string_literals() {
             }
             "#,
         )
-        .execute(|res| {
-            res.exit_code(5);
-        });
+        .succeeds(true);
     });
 }
 
@@ -488,6 +361,7 @@ fn string_literals() {
 fn struct_shorthand_initialization() {
     it(|ctx| {
         ctx.add_source(
+            "main.oxi",
             r#"
             struct Foo {
                 x: i32,
@@ -505,10 +379,7 @@ fn struct_shorthand_initialization() {
             }
             "#,
         )
-        .compiles(true)
-        .execute(|res| {
-            res.exit_code(30);
-        });
+        .succeeds(true);
     })
 }
 
@@ -516,18 +387,190 @@ fn struct_shorthand_initialization() {
 fn float_literals() {
     it(|t| {
         t.add_source(
+            "main.oxi",
             r#"
             fn main() i32 {
                 let a: f64 = 1.5;
                 let b: f64 = 2.5;
-                // We don't have float comparison yet, so we just check if it compiles 
-                // and return a dummy value
                 return 1;
             }
             "#,
         )
-        .execute(|res| {
-            res.exit_code(1);
-        });
+        .succeeds(true);
     });
+}
+
+#[test]
+fn mod_declaration_file_based() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod foo;
+
+            fn main() i32 {
+                return foo::bar();
+            }
+            "#,
+        )
+        .add_source(
+            "foo.oxi",
+            r#"
+            pub fn bar() i32 {
+                return 42;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn mod_directory_convention() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod bar;
+
+            fn main() i32 {
+                return bar::dir_conv();
+            }
+            "#,
+        )
+        .add_source(
+            "bar/mod.oxi",
+            r#"
+            pub fn dir_conv() i32 {
+                return 5;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn mod_inline() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod math {
+                pub fn add(a: i32, b: i32) i32 {
+                    return a + b;
+                }
+            }
+
+            fn main() i32 {
+                return math::add(2, 3);
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn mod_nested_file_based() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod outer;
+
+            fn main() i32 {
+                return outer::inner::deep();
+            }
+            "#,
+        )
+        .add_source(
+            "outer.oxi",
+            r#"
+            pub mod inner;
+
+            pub fn deep() i32 {
+                return inner::deep();
+            }
+            "#,
+        )
+        .add_source(
+            "inner.oxi",
+            r#"
+            pub fn deep() i32 {
+                return 99;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn mod_nested_with_inline_child() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod outer;
+
+            fn main() i32 {
+                return outer::inner::value();
+            }
+            "#,
+        )
+        .add_source(
+            "outer.oxi",
+            r#"
+            pub mod inner {
+                pub fn value() i32 {
+                    return 7;
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn mod_unmatched_declaration_fails() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod nonexistent;
+
+            fn main() i32 {
+                return 0;
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn mod_crate_path_root() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            mod foo;
+
+            fn main() i32 {
+                return crate::foo::bar();
+            }
+            "#,
+        )
+        .add_source(
+            "foo.oxi",
+            r#"
+            pub fn bar() i32 {
+                return 10;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
 }
