@@ -6,8 +6,9 @@ use crate::ast::{
     Type, TypeKind,
 };
 use crate::hashmap::FxHashMap;
+use crate::hir::DefId;
 use crate::hir::interner::Symbol;
-use crate::resolve::{Res, Resolver};
+use crate::resolve::{PrimTy, Res, Resolver};
 
 impl<'a> Resolver<'a> {
     pub(super) fn late_resolve(&mut self) {
@@ -79,7 +80,12 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
 
     fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> Res {
         if path.segments.len() == 1 {
-            let sym = self.resolver.interner.intern(&path.segments[0].value);
+            let value = &path.segments[0].value;
+            let sym = self.resolver.interner.intern(value);
+
+            if let Some(prim) = PrimTy::from_name(sym) {
+                return Res::PrimTy(prim);
+            }
 
             let mut depth = 1;
             while depth <= self.ribs.len() {
@@ -96,24 +102,28 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
                 return res;
             };
 
-            todo!("Throw error")
+            // TODO: Use better error manager
+            println!("ERROR: Couldn't resolve path `{path}`");
+
+            Res::Err
         } else {
-            todo!("handle paths from other modules / assoc items")
+            // TODO: Handle paths from other modules / assoc items"
+            println!("ERROR: Path outside module `{path}`");
+
+            Res::Err
         }
     }
 
     fn inject_self_ty(&mut self, node_id: NodeId) {
         let def_id = self.resolver.def_id_for_node(node_id).expect("resolved");
-        let self_sym = self.resolver.interner.intern("Self");
-        let rib = self.ribs.last_mut().expect("rib exists");
-        rib.bindings.insert(self_sym, Res::Def(def_id));
+        self.inject_self_ty_from_def_id(def_id);
     }
 
-    fn inject_self_ty_res(&mut self, res: Res) {
-        assert!(matches!(res, Res::Def(_)));
+    fn inject_self_ty_from_def_id(&mut self, def_id: DefId) {
         let self_sym = self.resolver.interner.intern("Self");
         let rib = self.ribs.last_mut().expect("rib exists");
-        rib.bindings.insert(self_sym, res);
+        rib.bindings
+            .insert(self_sym, Res::SelfTyAlias { alias_to: def_id });
     }
 }
 
@@ -152,7 +162,11 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                 self.resolve_path(&interface.0, interface.1);
 
                 self.with_rib(Rib::default(), |this| {
-                    this.inject_self_ty_res(self_ty_res);
+                    let Res::Def(def_id) = self_ty_res else {
+                        // Name resolution probably failed and self_ty_res is Res::Err
+                        todo!("Handle name resolution failure in impl self_ty")
+                    };
+                    this.inject_self_ty_from_def_id(def_id);
                     this.resolve_assoc_items(items);
                 });
             }

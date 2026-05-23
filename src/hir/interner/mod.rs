@@ -2,9 +2,12 @@ use std::rc::Rc;
 
 use crate::hashmap::FxHashMap;
 
+mod symbol;
+pub use symbol::sym;
+
 pub type Symbol = u32;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Interner {
     /// Used for checking if a symbol is already interned
     map: FxHashMap<Rc<str>, Symbol>,
@@ -12,9 +15,29 @@ pub struct Interner {
     vec: Vec<Rc<str>>,
 }
 
+impl Default for Interner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interner {
     pub fn new() -> Self {
-        Self::default()
+        let mut this = Self {
+            map: FxHashMap::default(),
+            vec: Vec::new(),
+        };
+        this.prefill();
+        this
+    }
+
+    fn prefill(&mut self) {
+        for &name in symbol::SYM_PREFILL {
+            let s: Rc<str> = name.into();
+            let idx = self.vec.len() as Symbol;
+            self.vec.push(s.clone());
+            self.map.insert(s, idx);
+        }
     }
 
     pub fn intern(&mut self, s: impl AsRef<str>) -> Symbol {

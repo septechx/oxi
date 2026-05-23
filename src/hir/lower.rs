@@ -10,15 +10,10 @@ use crate::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
         HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Impl, ImplItem, ImplItemId,
         ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,
-        ModuleInfo, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
+        ModuleInfo, PrimTy, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
     },
     span::Span,
 };
-
-const BUILTIN_TYPES: [&str; 15] = [
-    "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64", "f128",
-    "bool", "void",
-];
 
 #[derive(Debug, Default)]
 pub struct LoweringContext {
@@ -865,8 +860,10 @@ impl LoweringContext {
         match ty.kind {
             TypeKind::Symbol(path) => {
                 let s = path.to_string();
-                if BUILTIN_TYPES.contains(&s.as_ref()) {
-                    return self.alloc_type(HirType::Builtin(s.into()));
+                let sym = self.krate.interner.intern(&s);
+
+                if let Some(prim) = PrimTy::from_name(sym) {
+                    return self.alloc_type(HirType::PrimTy(prim));
                 }
 
                 if let Some(defid) = self.resolve_path(&path) {

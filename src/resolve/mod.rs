@@ -5,7 +5,7 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::{Interner, Symbol};
-use crate::hir::{DefId, ModuleId};
+use crate::hir::{DefId, ModuleId, PrimTy};
 
 mod early;
 mod late;
@@ -28,8 +28,16 @@ pub struct Def {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Res {
+    /// Module-level def
     Def(DefId),
+    /// Local definition in function body
     Local(NodeId),
+    /// Primitive type, like `i32`
+    PrimTy(PrimTy),
+    /// Self param in struct or impl
+    SelfTyAlias { alias_to: DefId },
+    /// Error in name resolution
+    Err,
 }
 
 #[derive(Debug)]
