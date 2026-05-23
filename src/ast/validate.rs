@@ -29,31 +29,37 @@ impl AstValidator {
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                 let msg = format!("Duplicate definition of `{}` in {}", ident.value, context);
-                crate::CTX
-                    .with(|ctx| -> anyhow::Result<()> {
-                        let err = builders::error(msg)
-                            .add_widget(LocationWidget::new(ident.span, self.module_id)?)
-                            .add_widget(CodeWidget::new(
-                                ident.span,
-                                self.module_id,
-                                HighlightType::Error,
-                            )?)
-                            .add_widget(InfoWidget::new(
-                                first_span,
-                                self.module_id,
-                                format!("First definition of `{}` here", ident.value),
-                            )?)
-                            .add_widget(LocationWidget::new(first_span, self.module_id)?)
-                            .add_widget(CodeWidget::new(
-                                first_span,
-                                self.module_id,
-                                HighlightType::Info,
-                            )?);
 
-                        ctx.borrow_mut().errors.add(err);
-                        Ok(())
-                    })
-                    .expect("failed to emit error");
+                let err = {
+                    let loc_widget = LocationWidget::new(ident.span, self.module_id)
+                        .expect("failed to get source location");
+                    let code_widget =
+                        CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
+                            .expect("failed to get source location");
+                    let info_widget = InfoWidget::new(
+                        first_span,
+                        self.module_id,
+                        format!("First definition of `{}` here", ident.value),
+                    )
+                    .expect("failed to get source location");
+                    let first_loc_widget = LocationWidget::new(first_span, self.module_id)
+                        .expect("failed to get source location");
+                    let first_code_widget =
+                        CodeWidget::new(first_span, self.module_id, HighlightType::Info)
+                            .expect("failed to get source location");
+
+                    builders::error(msg)
+                        .add_widget(loc_widget)
+                        .add_widget(code_widget)
+                        .add_widget(info_widget)
+                        .add_widget(first_loc_widget)
+                        .add_widget(first_code_widget)
+                };
+
+                crate::CTX.with_borrow_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(err, enable_printing);
+                });
             }
         }
     }
@@ -180,30 +186,37 @@ impl Visitor for AstValidator {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                         let msg =
                             format!("Duplicate field `{}` in struct instantiation", ident.value);
-                        crate::CTX
-                            .with(|ctx| -> anyhow::Result<()> {
-                                let err = builders::error(msg)
-                                    .add_widget(LocationWidget::new(ident.span, self.module_id)?)
-                                    .add_widget(CodeWidget::new(
-                                        ident.span,
-                                        self.module_id,
-                                        HighlightType::Error,
-                                    )?)
-                                    .add_widget(InfoWidget::new(
-                                        first_span,
-                                        self.module_id,
-                                        format!("First initialization of `{}` here", ident.value),
-                                    )?)
-                                    .add_widget(LocationWidget::new(first_span, self.module_id)?)
-                                    .add_widget(CodeWidget::new(
-                                        first_span,
-                                        self.module_id,
-                                        HighlightType::Info,
-                                    )?);
-                                ctx.borrow_mut().errors.add(err);
-                                Ok(())
-                            })
-                            .expect("failed to emit error");
+
+                        let err = {
+                            let loc_widget = LocationWidget::new(ident.span, self.module_id)
+                                .expect("failed to get source location");
+                            let code_widget =
+                                CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
+                                    .expect("failed to get source location");
+                            let info_widget = InfoWidget::new(
+                                first_span,
+                                self.module_id,
+                                format!("First initialization of `{}` here", ident.value),
+                            )
+                            .expect("failed to get source location");
+                            let first_loc_widget = LocationWidget::new(first_span, self.module_id)
+                                .expect("failed to get source location");
+                            let first_code_widget =
+                                CodeWidget::new(first_span, self.module_id, HighlightType::Info)
+                                    .expect("failed to get source location");
+
+                            builders::error(msg)
+                                .add_widget(loc_widget)
+                                .add_widget(code_widget)
+                                .add_widget(info_widget)
+                                .add_widget(first_loc_widget)
+                                .add_widget(first_code_widget)
+                        };
+
+                        crate::CTX.with_borrow_mut(|ctx| {
+                            let enable_printing = ctx.enable_printing;
+                            ctx.errors.add(err, enable_printing);
+                        });
                     }
                     val.visit(self);
                 }
