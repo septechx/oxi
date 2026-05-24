@@ -326,21 +326,6 @@ pub fn parse_member_access_expr(
     })
 }
 
-pub fn parse_type_expr(parser: &mut Parser) -> Result<Expr> {
-    let start_token = parser.expect(TokenKind::Dollar)?;
-
-    let ty = parse_type(parser, BindingPower::DefaultBp)?;
-
-    let end_token = parser.current_token();
-    let span = Span::new(start_token.span.start(), end_token.span.end());
-
-    Ok(Expr {
-        kind: ExprKind::Type(ty),
-        node_id: NodeId::default(),
-        span,
-    })
-}
-
 pub fn parse_as_cast_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
     parser.expect(TokenKind::As)?;
 

@@ -384,7 +384,6 @@ impl Visitable for Expr {
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit(visitor);
                 }
-                ExprKind::Type(t) => t.visit(visitor),
                 ExprKind::As { expr, ty } => {
                     expr.visit(visitor);
                     ty.visit(visitor);
@@ -470,7 +469,6 @@ impl Visitable for Expr {
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit_mut(visitor);
                 }
-                ExprKind::Type(t) => t.visit_mut(visitor),
                 ExprKind::As { expr, ty } => {
                     expr.visit_mut(visitor);
                     ty.visit_mut(visitor);

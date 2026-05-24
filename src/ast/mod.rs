@@ -177,7 +177,6 @@ pub enum ExprKind {
         base: Box<Expr>,
         member: Ident,
     },
-    Type(Type),
     As {
         expr: Box<Expr>,
         ty: Type,

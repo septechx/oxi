@@ -381,7 +381,6 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 parameters.visit(self);
             }
             ExprKind::MemberAccess { base, .. } => base.visit(self),
-            ExprKind::Type(ty) => ty.visit(self),
             ExprKind::As { expr, ty } => {
                 expr.visit(self);
                 ty.visit(self);

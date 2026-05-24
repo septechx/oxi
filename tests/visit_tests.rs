@@ -135,7 +135,6 @@ mod tests {
                 ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
                 ExprKind::FunctionCall { .. } => "FunctionCallExpr",
                 ExprKind::MemberAccess { .. } => "MemberAccessExpr",
-                ExprKind::Type(_) => "TypeExpr",
                 ExprKind::As { .. } => "AsExpr",
                 ExprKind::TupleLiteral { .. } => "TupleLiteralExpr",
                 ExprKind::Break(_) => "BreakExpr",
@@ -485,21 +484,6 @@ mod tests {
         visitor.assert_visited("expr", "Expr", 2);
         visitor.assert_visited("expr", "MemberAccessExpr", 1);
         visitor.assert_visited("expr", "SymbolExpr", 1);
-    }
-
-    #[test]
-    fn test_type_expr() {
-        let expr = Expr {
-            kind: ExprKind::Type(dummy_type_symbol("i32")),
-            span: dummy_span(),
-            node_id: NodeId::default(),
-        };
-        let mut visitor = NodeCounterVisitor::new();
-        expr.visit(&mut visitor);
-        visitor.assert_visited("expr", "Expr", 1);
-        visitor.assert_visited("expr", "TypeExpr", 1);
-        visitor.assert_visited("type", "Type", 1);
-        visitor.assert_visited("type", "SymbolType", 1);
     }
 
     #[test]

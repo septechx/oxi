@@ -265,21 +265,6 @@ fn struct_with_methods() {
 }
 
 #[test]
-fn sizeof_builtin() {
-    it(|ctx| {
-        ctx.add_source(
-            "main.oxi",
-            r#"
-            pub fn main() isize {
-                return @sizeof($u16);
-            }
-        "#,
-        )
-        .succeeds(true);
-    })
-}
-
-#[test]
 fn main_function_return_void() {
     it(|ctx| {
         ctx.add_source(

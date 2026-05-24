@@ -224,7 +224,6 @@ pub fn create_token_lookups() {
         nud(T::OpenCurly, parse_block_expr, &mut nud_lu);
         nud(T::Dash, parse_prefix_expr, &mut nud_lu);
         nud(T::Reference, parse_prefix_expr, &mut nud_lu);
-        nud(T::Dollar, parse_type_expr, &mut nud_lu);
 
         // Call & Member
         led(

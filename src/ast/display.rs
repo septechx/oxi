@@ -805,11 +805,6 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             writeln!(out)?;
             write!(out, "{}Member: \"{}\"", expr_ctx.indent_str(), member.value)?;
         }
-        ExprKind::Type(t) => {
-            write!(out, "{}", "Type".with_color(ctx.color),)?;
-            write!(out, ": ")?;
-            write!(out, "{}", write_type(t, ctx))?;
-        }
         ExprKind::As { expr, ty } => {
             writeln!(out, "{}", "As".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
