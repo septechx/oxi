@@ -837,6 +837,244 @@ fn glob_import_uses_glob_slot() {
 }
 
 // ---------------------------------------------------------------------------
+// Nested import tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nested_import_resolves_all_items() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; import foo::{bar, baz}; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let baz_sym = intern("baz");
+    assert!(
+        main_mod.resolutions.contains_key(&bar_sym),
+        "nested-imported `bar` should appear in main module"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&baz_sym),
+        "nested-imported `baz` should appear in main module"
+    );
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1),
+    );
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().def_id,
+        DefId(2),
+    );
+}
+
+#[test]
+fn nested_import_with_rename() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; import foo::{bar, baz as qux}; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let qux_sym = intern("qux");
+    let baz_sym = intern("baz");
+    assert!(
+        main_mod.resolutions.contains_key(&bar_sym),
+        "`bar` should be imported from nested import"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&qux_sym),
+        "renamed `baz as qux` should create resolution for `qux`"
+    );
+    assert!(
+        !main_mod.resolutions.contains_key(&baz_sym),
+        "original name `baz` should NOT be in main module"
+    );
+    assert_eq!(
+        main_mod.resolutions[&qux_sym].best_binding().def_id,
+        DefId(2),
+    );
+}
+
+#[test]
+fn nested_import_from_inline_module() {
+    let outputs = resolve_outputs(&[(
+        "main.oxi",
+        r#"
+        mod math {
+            pub fn add(a: i32, b: i32) i32 { return a + b; }
+            pub fn sub(a: i32, b: i32) i32 { return a - b; }
+        }
+        import math::{add, sub};
+        fn main() void {}
+        "#,
+    )]);
+    let main_mod = &outputs.modules[0];
+    let add_sym = intern("add");
+    let sub_sym = intern("sub");
+    assert!(
+        main_mod.resolutions.contains_key(&add_sym),
+        "nested-imported `add` from inline module should resolve"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&sub_sym),
+        "nested-imported `sub` from inline module should resolve"
+    );
+    // Tree traversal: root (fn main → DefId(0)), then inline module (fn add → DefId(1), fn sub → DefId(2))
+    assert_eq!(
+        main_mod.resolutions[&add_sym].best_binding().def_id,
+        DefId(1),
+    );
+    assert_eq!(
+        main_mod.resolutions[&sub_sym].best_binding().def_id,
+        DefId(2),
+    );
+}
+
+#[test]
+fn deeply_nested_import() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod a; import a::{b, c::{d, e}}; fn main() void {}",
+        ),
+        ("a.oxi", "pub fn b() void {} pub mod c;"),
+        ("c.oxi", "pub fn d() void {} pub fn e() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let b_sym = intern("b");
+    let d_sym = intern("d");
+    let e_sym = intern("e");
+    assert!(
+        main_mod.resolutions.contains_key(&b_sym),
+        "`b` from `a::b` should resolve"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&d_sym),
+        "`d` from `a::c::d` should resolve"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&e_sym),
+        "`e` from `a::c::e` should resolve"
+    );
+    // Def order: main.oxi (fn main → 0), a.oxi (fn b → 1, mod c), c.oxi (fn d → 2, fn e → 3)
+    assert_eq!(main_mod.resolutions[&b_sym].best_binding().def_id, DefId(1));
+    assert_eq!(main_mod.resolutions[&d_sym].best_binding().def_id, DefId(2));
+    assert_eq!(main_mod.resolutions[&e_sym].best_binding().def_id, DefId(3));
+}
+
+#[test]
+fn pub_nested_import_creates_public_bindings() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; pub import foo::{bar, baz}; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let baz_sym = intern("baz");
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().visibility,
+        Visibility::Public,
+        "pub nested import should give `bar` public visibility"
+    );
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().visibility,
+        Visibility::Public,
+        "pub nested import should give `baz` public visibility"
+    );
+}
+
+#[test]
+fn nested_re_export_through_module() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod a; import a::{bar, baz}; fn main() void { bar(); baz(); }",
+        ),
+        ("a.oxi", "pub mod b; pub import b::{bar, baz};"),
+        ("b.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let baz_sym = intern("baz");
+    assert!(
+        main_mod.resolutions.contains_key(&bar_sym),
+        "`bar` re-exported through nested import should resolve"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&baz_sym),
+        "`baz` re-exported through nested import should resolve"
+    );
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1),
+    );
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().def_id,
+        DefId(2),
+    );
+    let found_bar = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(1))));
+    let found_baz = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(2))));
+    assert!(found_bar, "bar() call should resolve to DefId(1)");
+    assert!(found_baz, "baz() call should resolve to DefId(2)");
+}
+
+#[test]
+fn nested_import_private_item_errors() {
+    use oxic::errors::ErrorLevel;
+
+    let _outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; import foo::{bar, baz}; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {} fn baz() void {}"),
+    ]);
+    with_ctx(|ctx| {
+        let has_error = ctx.errors.has_errors_above_level(ErrorLevel::Warning);
+        assert!(
+            has_error,
+            "Should error when nested importing a private item"
+        );
+    });
+}
+
+#[test]
+fn nested_import_items_resolve_in_body() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; import foo::{bar, baz}; fn main() void { bar(); baz(); }",
+        ),
+        ("foo.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let found_bar = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(1))));
+    let found_baz = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(2))));
+    assert!(found_bar, "bar() call should resolve to DefId(1)");
+    assert!(found_baz, "baz() call should resolve to DefId(2)");
+}
+
+// ---------------------------------------------------------------------------
 // Module tree module count
 // ---------------------------------------------------------------------------
 

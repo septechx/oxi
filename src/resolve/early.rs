@@ -3,7 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
     AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Stmt, Type, Visibility,
+    NodeId, Path, Stmt, Type, Visibility,
 };
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
@@ -11,6 +11,7 @@ use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::path::PathError;
 use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver};
+use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
@@ -161,7 +162,8 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         match &pi.import_item.kind {
             ImportTreeKind::Simple(_) => self.resolve_simple_import(idx),
             ImportTreeKind::Glob => self.resolve_glob_import(idx),
-            ImportTreeKind::Nested { .. } => todo!(),
+            // Nested imports are flattened during the build_graph() stage
+            ImportTreeKind::Nested { .. } => unreachable!(),
         }
     }
 
@@ -435,6 +437,48 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     }
 }
 
+fn flatten_import_tree(tree: &ImportTree) -> Vec<ImportTree> {
+    match &tree.kind {
+        ImportTreeKind::Simple(_) | ImportTreeKind::Glob => {
+            vec![tree.clone()]
+        }
+        ImportTreeKind::Nested { items, .. } => items
+            .iter()
+            .flat_map(|item| flatten_nested_item(&tree.prefix, item))
+            .collect(),
+    }
+}
+
+fn flatten_nested_item(parent_prefix: &Path, tree: &ImportTree) -> Vec<ImportTree> {
+    match &tree.kind {
+        ImportTreeKind::Simple(_) | ImportTreeKind::Glob => {
+            let mut segments = parent_prefix.segments.clone();
+            segments.extend(tree.prefix.segments.clone());
+            let new_prefix = Path {
+                segments,
+                span: Span::new(parent_prefix.span.start(), tree.prefix.span.end()),
+            };
+            vec![ImportTree {
+                prefix: new_prefix,
+                kind: tree.kind.clone(),
+                span: tree.span,
+            }]
+        }
+        ImportTreeKind::Nested { items, .. } => {
+            let mut segments = parent_prefix.segments.clone();
+            segments.extend(tree.prefix.segments.clone());
+            let extended_prefix = Path {
+                segments,
+                span: Span::new(parent_prefix.span.start(), tree.prefix.span.end()),
+            };
+            items
+                .iter()
+                .flat_map(|item| flatten_nested_item(&extended_prefix, item))
+                .collect()
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ImportCollector<'a, 'res, 'ctx> {
     resolver: &'a mut Resolver<'res, 'ctx>,
@@ -449,7 +493,10 @@ impl<'a, 'res, 'ctx> ImportCollector<'a, 'res, 'ctx> {
 impl<'a, 'res, 'ctx> Visitor for ImportCollector<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         if let ItemKind::Import(tree) = &item.kind {
-            self.resolver.register_import(tree.clone(), item.visibility);
+            let trees = flatten_import_tree(tree);
+            for tree in trees {
+                self.resolver.register_import(tree, item.visibility);
+            }
         }
         VisitAction::SkipChildren
     }
