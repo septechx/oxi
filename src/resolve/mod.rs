@@ -14,6 +14,7 @@ pub use mod_tree::build_module_tree;
 mod early;
 mod late;
 mod mod_tree;
+mod path;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DefKind {

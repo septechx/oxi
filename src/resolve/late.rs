@@ -10,6 +10,7 @@ use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
+use crate::resolve::path::PathError;
 use crate::resolve::{PrimTy, Res, Resolver};
 use crate::span::Span;
 
@@ -135,84 +136,43 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 
             Res::Err
         } else {
-            // Multi-segment path: walk the module tree
-            let tree = &self.resolver.module_tree;
-            let current = self.resolver.module_idx;
-            let mut module_node_idx = current;
-
-            // Resolve all segments except the last one as module path
-            for seg in segments[..segments.len() - 1].iter() {
-                let name = seg.value.as_ref();
-                match name {
-                    "crate" => module_node_idx = 0,
-                    "super" => {
-                        if let Some(parent) = tree.nodes[module_node_idx].parent {
-                            module_node_idx = parent;
-                        } else {
-                            // Error
-                            let module_id = ModuleId(self.resolver.module_idx as u32);
-                            let loc_widget = LocationWidget::new_with_ctx(
-                                seg.span,
-                                module_id,
-                                self.resolver.ctx,
-                            )
-                            .expect("failed to create error");
-                            let code_widget = CodeWidget::new_with_ctx(
-                                seg.span,
-                                module_id,
-                                HighlightType::Error,
-                                self.resolver.ctx,
-                            )
-                            .expect("failed to create error");
-                            let enable_printing = self.resolver.ctx.enable_printing;
-                            self.resolver.ctx.errors.add(
-                                builders::error("No parent module for `super`")
-                                    .add_widget(loc_widget)
-                                    .add_widget(code_widget),
-                                enable_printing,
-                            );
-
-                            return Res::Err;
+            // Multi-segment path: walk the module tree using shared path resolution
+            let module_prefix = &segments[..segments.len() - 1];
+            let module_node_idx = match self
+                .resolver
+                .resolve_module_path(self.resolver.module_idx, module_prefix)
+            {
+                Ok(idx) => idx,
+                Err(err) => {
+                    let (span, msg) = match err {
+                        PathError::NoParentForSuper { span } => {
+                            (span, "No parent module for `super`".into())
                         }
-                    }
-                    "self" => {}
-                    _ => {
-                        let child = tree.nodes[module_node_idx]
-                            .children
-                            .iter()
-                            .find(|&&c| tree.nodes[c].name == name)
-                            .copied();
-                        match child {
-                            Some(c) => module_node_idx = c,
-                            None => {
-                                // Error
-                                let module_id = ModuleId(self.resolver.module_idx as u32);
-                                let loc_widget = LocationWidget::new_with_ctx(
-                                    seg.span,
-                                    module_id,
-                                    self.resolver.ctx,
-                                )
-                                .expect("failed to create error");
-                                let code_widget = CodeWidget::new_with_ctx(
-                                    seg.span,
-                                    module_id,
-                                    HighlightType::Error,
-                                    self.resolver.ctx,
-                                )
-                                .expect("failed to create error");
-                                let enable_printing = self.resolver.ctx.enable_printing;
-                                self.resolver.ctx.errors.add(
-                                    builders::error(format!("Module `{}` not found", seg.value))
-                                        .add_widget(loc_widget)
-                                        .add_widget(code_widget),
-                                    enable_printing,
-                                );
-                                return Res::Err;
-                            }
+                        PathError::ModuleNotFound { name, span } => {
+                            (span, format!("Module `{name}` not found"))
                         }
-                    }
+                    };
+                    let module_id = ModuleId(self.resolver.module_idx as u32);
+                    let loc_widget =
+                        LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
+                            .expect("failed to create error");
+                    let code_widget = CodeWidget::new_with_ctx(
+                        span,
+                        module_id,
+                        HighlightType::Error,
+                        self.resolver.ctx,
+                    )
+                    .expect("failed to create error");
+                    let enable_printing = self.resolver.ctx.enable_printing;
+                    self.resolver.ctx.errors.add(
+                        builders::error(msg)
+                            .add_widget(loc_widget)
+                            .add_widget(code_widget),
+                        enable_printing,
+                    );
+                    return Res::Err;
                 }
-            }
+            };
 
             // Last segment: look up in the target module's resolutions
             let last = &segments[segments.len() - 1];

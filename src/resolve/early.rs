@@ -2,12 +2,14 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Stmt, Type, Visibility,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, ImportTree, ImportTreeKind, Item, ItemKind, NodeId,
+    Stmt, Type, Visibility,
 };
-use crate::error_at;
+use crate::errors::builders;
+use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
+use crate::resolve::path::PathError;
 use crate::resolve::{Def, DefKind, NameResolution, PendingImport, Resolver};
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
@@ -115,18 +117,37 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         if !self.pending_imports.is_empty() {
             for pi in &self.pending_imports {
-                let segments: ThinVec<String> = pi
-                    .import_item
-                    .prefix
-                    .segments
+                let last_seg = pi.import_item.prefix.segments.last().expect("non-empty");
+                let module_prefix =
+                    &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
+                let module_path: String = module_prefix
                     .iter()
-                    .map(|ident| ident.value.to_string())
-                    .collect();
-                let path = segments.join("::");
-                error_at!(
-                    pi.import_item.span,
-                    ModuleId(pi.module.0),
-                    format!("Could not resolve import `{}`", path)
+                    .map(|s| s.value.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                let msg = if module_path.is_empty() {
+                    format!("`{}` was not found", last_seg.value)
+                } else {
+                    format!(
+                        "`{}` was not found in module `{}`",
+                        last_seg.value, module_path
+                    )
+                };
+                let loc_widget = LocationWidget::new_with_ctx(last_seg.span, pi.module, self.ctx)
+                    .expect("failed to create error");
+                let code_widget = CodeWidget::new_with_ctx(
+                    last_seg.span,
+                    pi.module,
+                    HighlightType::Error,
+                    self.ctx,
+                )
+                .expect("failed to create error");
+                let enable_printing = self.ctx.enable_printing;
+                self.ctx.errors.add(
+                    builders::error(msg)
+                        .add_widget(loc_widget)
+                        .add_widget(code_widget),
+                    enable_printing,
                 );
             }
         }
@@ -150,10 +171,21 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         };
 
         if segments.len() < 2 {
-            error_at!(
+            let loc_widget = LocationWidget::new_with_ctx(pi.import_item.span, pi.module, self.ctx)
+                .expect("failed to create error");
+            let code_widget = CodeWidget::new_with_ctx(
                 pi.import_item.span,
-                ModuleId(pi.module.0),
-                "Cannot import module"
+                pi.module,
+                HighlightType::Error,
+                self.ctx,
+            )
+            .expect("failed to create error");
+            let enable_printing = self.ctx.enable_printing;
+            self.ctx.errors.add(
+                builders::error("Cannot import a path with 1 segment")
+                    .add_widget(loc_widget)
+                    .add_widget(code_widget),
+                enable_printing,
             );
             return ResolutionStatus::Failed;
         }
@@ -171,9 +203,31 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         // Walk path segments (excluding last which is the symbol name) to find target module
         let module_prefix = &segments[..segments.len() - 1];
-        let module_node_idx = self.resolve_module_path(current_module, module_prefix);
-        let Some(module_node_idx) = module_node_idx else {
-            return ResolutionStatus::Pending;
+        let module_node_idx = match self.resolve_module_path(current_module, module_prefix) {
+            Ok(idx) => idx,
+            Err(err) => {
+                let (span, msg) = match err {
+                    PathError::NoParentForSuper { span } => {
+                        (span, "No parent module for `super`".into())
+                    }
+                    PathError::ModuleNotFound { name, span } => {
+                        (span, format!("Module `{name}` not found"))
+                    }
+                };
+                let loc_widget = LocationWidget::new_with_ctx(span, pi.module, self.ctx)
+                    .expect("failed to create error");
+                let code_widget =
+                    CodeWidget::new_with_ctx(span, pi.module, HighlightType::Error, self.ctx)
+                        .expect("failed to create error");
+                let enable_printing = self.ctx.enable_printing;
+                self.ctx.errors.add(
+                    builders::error(msg)
+                        .add_widget(loc_widget)
+                        .add_widget(code_widget),
+                    enable_printing,
+                );
+                return ResolutionStatus::Failed;
+            }
         };
 
         let target = self.modules[module_node_idx]
@@ -186,10 +240,21 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         let target_def = self.defs[target.best_binding().0 as usize];
         if target_def.visibility != Visibility::Public {
-            error_at!(
+            let loc_widget = LocationWidget::new_with_ctx(pi.import_item.span, pi.module, self.ctx)
+                .expect("failed to create error");
+            let code_widget = CodeWidget::new_with_ctx(
                 pi.import_item.span,
-                ModuleId(pi.module.0),
-                "Cannot import private item"
+                pi.module,
+                HighlightType::Error,
+                self.ctx,
+            )
+            .expect("failed to create error");
+            let enable_printing = self.ctx.enable_printing;
+            self.ctx.errors.add(
+                builders::error("Cannot import a private item")
+                    .add_widget(loc_widget)
+                    .add_widget(code_widget),
+                enable_printing,
             );
             return ResolutionStatus::Failed;
         }
@@ -204,33 +269,6 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             .insert(local_sym, target);
 
         ResolutionStatus::Resolved
-    }
-
-    fn resolve_module_path(&self, from_node: usize, segments: &[Ident]) -> Option<usize> {
-        let mut current = from_node;
-
-        for seg in segments.iter() {
-            let name = seg.value.as_ref();
-            match name {
-                "crate" => {
-                    current = 0;
-                }
-                "super" => {
-                    current = self.module_tree.nodes[current].parent?;
-                }
-                "self" => {}
-                _ => {
-                    let child = self.module_tree.nodes[current]
-                        .children
-                        .iter()
-                        .find(|&&child| self.module_tree.nodes[child].name == name)
-                        .copied();
-                    current = child?;
-                }
-            }
-        }
-
-        Some(current)
     }
 }
 
