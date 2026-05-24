@@ -2,11 +2,11 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Expr, Fn, ImportTree, ImportTreeKind, Item, ItemKind, NodeId,
-    Stmt, Type, Visibility,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
+    NodeId, Stmt, Type, Visibility,
 };
-use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
+use crate::errors::{CompilationError, builders};
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::path::PathError;
@@ -160,8 +160,41 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         match &pi.import_item.kind {
             ImportTreeKind::Simple(_) => self.resolve_simple_import(idx),
-            _ => todo!(),
+            ImportTreeKind::Glob => self.resolve_glob_import(idx),
+            ImportTreeKind::Nested { .. } => todo!(),
         }
+    }
+
+    fn resolve_glob_import(&mut self, idx: usize) -> ResolutionStatus {
+        let pi = &self.pending_imports[idx];
+        let prefix = &pi.import_item.prefix;
+        let segments = &prefix.segments;
+
+        let current_module = pi.module.0 as usize;
+        let module_node_idx = match self.get_module_node_idx(current_module, segments, pi) {
+            Ok(idx) => idx,
+            Err((res_status, err)) => {
+                self.ctx.errors.add(err, self.ctx.enable_printing);
+                return res_status;
+            }
+        };
+
+        self.module_idx = current_module;
+        // If this fell back to glob import when best_binding() is private, it could cause weird
+        // behaviour, so always choose the best_binding(), even if it's private
+        let public_bindings: Vec<_> = self.modules[module_node_idx]
+            .resolutions
+            .iter()
+            .map(|(&sym, res)| (sym, res.best_binding()))
+            .filter(|(_, binding)| binding.visibility == Visibility::Public)
+            .collect();
+        for (sym, binding) in public_bindings {
+            self.current_module_mut()
+                .resolutions
+                .insert(sym, NameResolution::glob_import(binding));
+        }
+
+        ResolutionStatus::Resolved
     }
 
     fn resolve_simple_import(&mut self, idx: usize) -> ResolutionStatus {
@@ -182,12 +215,11 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 self.ctx,
             )
             .expect("failed to create error");
-            let enable_printing = self.ctx.enable_printing;
             self.ctx.errors.add(
                 builders::error("Cannot import a path with 1 segment")
                     .add_widget(loc_widget)
                     .add_widget(code_widget),
-                enable_printing,
+                self.ctx.enable_printing,
             );
             return ResolutionStatus::Failed;
         }
@@ -205,30 +237,11 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         // Walk path segments (excluding last which is the symbol name) to find target module
         let module_prefix = &segments[..segments.len() - 1];
-        let module_node_idx = match self.resolve_module_path(current_module, module_prefix) {
+        let module_node_idx = match self.get_module_node_idx(current_module, module_prefix, pi) {
             Ok(idx) => idx,
-            Err(err) => {
-                let (span, msg) = match err {
-                    PathError::NoParentForSuper { span } => {
-                        (span, "No parent module for `super`".into())
-                    }
-                    PathError::ModuleNotFound { name, span } => {
-                        (span, format!("Module `{name}` not found"))
-                    }
-                };
-                let loc_widget = LocationWidget::new_with_ctx(span, pi.module, self.ctx)
-                    .expect("failed to create error");
-                let code_widget =
-                    CodeWidget::new_with_ctx(span, pi.module, HighlightType::Error, self.ctx)
-                        .expect("failed to create error");
-                let enable_printing = self.ctx.enable_printing;
-                self.ctx.errors.add(
-                    builders::error(msg)
-                        .add_widget(loc_widget)
-                        .add_widget(code_widget),
-                    enable_printing,
-                );
-                return ResolutionStatus::Failed;
+            Err((res_status, err)) => {
+                self.ctx.errors.add(err, self.ctx.enable_printing);
+                return res_status;
             }
         };
 
@@ -251,12 +264,11 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 self.ctx,
             )
             .expect("failed to create error");
-            let enable_printing = self.ctx.enable_printing;
             self.ctx.errors.add(
                 builders::error("Cannot import a private item")
                     .add_widget(loc_widget)
                     .add_widget(code_widget),
-                enable_printing,
+                self.ctx.enable_printing,
             );
             return ResolutionStatus::Failed;
         }
@@ -272,6 +284,39 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             .insert(local_sym, NameResolution::non_glob_import(binding));
 
         ResolutionStatus::Resolved
+    }
+
+    fn get_module_node_idx(
+        &self,
+        current_module: usize,
+        segments: &[Ident],
+        pi: &PendingImport,
+    ) -> Result<usize, (ResolutionStatus, CompilationError)> {
+        match self.resolve_module_path(current_module, segments) {
+            Ok(idx) => Ok(idx),
+            Err(err) => {
+                let (span, msg) = match err {
+                    PathError::NoParentForSuper { span } => {
+                        (span, "No parent module for `super`".into())
+                    }
+                    PathError::ModuleNotFound { name, span } => {
+                        (span, format!("Module `{name}` not found"))
+                    }
+                };
+                let loc_widget = LocationWidget::new_with_ctx(span, pi.module, self.ctx)
+                    .expect("failed to create error");
+                let code_widget =
+                    CodeWidget::new_with_ctx(span, pi.module, HighlightType::Error, self.ctx)
+                        .expect("failed to create error");
+
+                Err((
+                    ResolutionStatus::Failed,
+                    builders::error(msg)
+                        .add_widget(loc_widget)
+                        .add_widget(code_widget),
+                ))
+            }
+        }
     }
 }
 

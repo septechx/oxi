@@ -682,6 +682,161 @@ fn re_export_chain() {
 }
 
 // ---------------------------------------------------------------------------
+// Glob import tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn glob_import_brings_in_public_items() {
+    let outputs = resolve_outputs(&[
+        ("main.oxi", "mod foo; import foo::*; fn main() void {}"),
+        ("foo.oxi", "pub fn bar() void {} pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let baz_sym = intern("baz");
+    assert!(
+        main_mod.resolutions.contains_key(&bar_sym),
+        "glob-imported `bar` should appear in main module"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&baz_sym),
+        "glob-imported `baz` should appear in main module"
+    );
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1),
+    );
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().def_id,
+        DefId(2),
+    );
+}
+
+#[test]
+fn glob_import_skips_private_items() {
+    let outputs = resolve_outputs(&[
+        ("main.oxi", "mod foo; import foo::*; fn main() void {}"),
+        ("foo.oxi", "pub fn bar() void {} fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let baz_sym = intern("baz");
+    assert!(
+        main_mod.resolutions.contains_key(&bar_sym),
+        "public `bar` should be glob-imported"
+    );
+    assert!(
+        !main_mod.resolutions.contains_key(&baz_sym),
+        "private `baz` should NOT be glob-imported"
+    );
+}
+
+#[test]
+fn glob_import_from_inline_module() {
+    let outputs = resolve_outputs(&[(
+        "main.oxi",
+        r#"
+        mod math {
+            pub fn add(a: i32, b: i32) i32 { return a + b; }
+            pub fn sub(a: i32, b: i32) i32 { return a - b; }
+        }
+        import math::*;
+        fn main() void {}
+        "#,
+    )]);
+    let main_mod = &outputs.modules[0];
+    let add_sym = intern("add");
+    let sub_sym = intern("sub");
+    assert!(
+        main_mod.resolutions.contains_key(&add_sym),
+        "glob-imported `add` should appear in main module"
+    );
+    assert!(
+        main_mod.resolutions.contains_key(&sub_sym),
+        "glob-imported `sub` should appear in main module"
+    );
+    assert_eq!(
+        main_mod.resolutions[&add_sym].best_binding().def_id,
+        DefId(1),
+    );
+    assert_eq!(
+        main_mod.resolutions[&sub_sym].best_binding().def_id,
+        DefId(2),
+    );
+}
+
+#[test]
+fn glob_imported_item_resolves_in_body() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; import foo::*; fn main() void { bar(); }",
+        ),
+        ("foo.oxi", "pub fn bar() void {}"),
+    ]);
+    let found = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(1))));
+    assert!(
+        found,
+        "res_map should contain `bar` → DefId(1) from the call"
+    );
+}
+
+#[test]
+fn non_glob_import_shadows_glob_import() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; mod bar; import foo::*; import bar::baz; fn main() void { baz(); other(); }",
+        ),
+        ("foo.oxi", "pub fn baz() void {} pub fn other() void {}"),
+        ("bar.oxi", "pub fn baz() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let baz_sym = intern("baz");
+    let other_sym = intern("other");
+
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().def_id,
+        DefId(3),
+        "non-glob import (bar::baz) should shadow glob import (foo::baz)"
+    );
+
+    assert_eq!(
+        main_mod.resolutions[&other_sym].best_binding().def_id,
+        DefId(2),
+        "glob-imported `other` should resolve to foo::other"
+    );
+
+    let found = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(3))));
+    assert!(found, "baz() call should resolve to bar::baz (DefId(3))");
+}
+
+#[test]
+fn glob_import_uses_glob_slot() {
+    let outputs = resolve_outputs(&[
+        ("main.oxi", "mod foo; import foo::*; fn main() void {}"),
+        ("foo.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let bar_res = &main_mod.resolutions[&bar_sym];
+    assert!(
+        bar_res.non_glob_import.is_none(),
+        "glob-imported item should not have a non_glob_import slot"
+    );
+    assert!(
+        bar_res.glob_import.is_some(),
+        "glob-imported item should use the glob_import slot"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Module tree module count
 // ---------------------------------------------------------------------------
 
