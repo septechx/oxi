@@ -5,10 +5,13 @@ use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, NodeId, Path, Stmt, StmtKind,
     Type, TypeKind,
 };
+use crate::errors::builders;
+use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
-use crate::hir::DefId;
 use crate::hir::interner::Symbol;
+use crate::hir::{DefId, ModuleId};
 use crate::resolve::{PrimTy, Res, Resolver};
+use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub(super) fn late_resolve(&mut self) {
@@ -111,8 +114,24 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 return res;
             };
 
-            // TODO: Use better error manager
-            println!("ERROR: Couldn't resolve path `{path}`");
+            // Not found, emit error
+            let module_id = ModuleId(self.resolver.module_idx as u32);
+            let loc_widget = LocationWidget::new_with_ctx(path.span, module_id, self.resolver.ctx)
+                .expect("failed to create error");
+            let code_widget = CodeWidget::new_with_ctx(
+                path.span,
+                module_id,
+                HighlightType::Error,
+                self.resolver.ctx,
+            )
+            .expect("failed to create error");
+            let enable_printing = self.resolver.ctx.enable_printing;
+            self.resolver.ctx.errors.add(
+                builders::error("Failed to resolve path")
+                    .add_widget(loc_widget)
+                    .add_widget(code_widget),
+                enable_printing,
+            );
 
             Res::Err
         } else {
@@ -130,7 +149,29 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                         if let Some(parent) = tree.nodes[module_node_idx].parent {
                             module_node_idx = parent;
                         } else {
-                            println!("ERROR: No parent module for `super`");
+                            // Error
+                            let module_id = ModuleId(self.resolver.module_idx as u32);
+                            let loc_widget = LocationWidget::new_with_ctx(
+                                seg.span,
+                                module_id,
+                                self.resolver.ctx,
+                            )
+                            .expect("failed to create error");
+                            let code_widget = CodeWidget::new_with_ctx(
+                                seg.span,
+                                module_id,
+                                HighlightType::Error,
+                                self.resolver.ctx,
+                            )
+                            .expect("failed to create error");
+                            let enable_printing = self.resolver.ctx.enable_printing;
+                            self.resolver.ctx.errors.add(
+                                builders::error("No parent module for `super`")
+                                    .add_widget(loc_widget)
+                                    .add_widget(code_widget),
+                                enable_printing,
+                            );
+
                             return Res::Err;
                         }
                     }
@@ -144,7 +185,28 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                         match child {
                             Some(c) => module_node_idx = c,
                             None => {
-                                println!("ERROR: Module `{}` not found in path `{path}`", name);
+                                // Error
+                                let module_id = ModuleId(self.resolver.module_idx as u32);
+                                let loc_widget = LocationWidget::new_with_ctx(
+                                    seg.span,
+                                    module_id,
+                                    self.resolver.ctx,
+                                )
+                                .expect("failed to create error");
+                                let code_widget = CodeWidget::new_with_ctx(
+                                    seg.span,
+                                    module_id,
+                                    HighlightType::Error,
+                                    self.resolver.ctx,
+                                )
+                                .expect("failed to create error");
+                                let enable_printing = self.resolver.ctx.enable_printing;
+                                self.resolver.ctx.errors.add(
+                                    builders::error(format!("Module `{}` not found", seg.value))
+                                        .add_widget(loc_widget)
+                                        .add_widget(code_widget),
+                                    enable_printing,
+                                );
                                 return Res::Err;
                             }
                         }
@@ -162,7 +224,32 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 return res;
             };
 
-            println!("ERROR: Couldn't resolve path `{path}`");
+            // Error
+            let module_id = ModuleId(self.resolver.module_idx as u32);
+            let loc_widget = LocationWidget::new_with_ctx(last.span, module_id, self.resolver.ctx)
+                .expect("failed to create error");
+            let code_widget = CodeWidget::new_with_ctx(
+                last.span,
+                module_id,
+                HighlightType::Error,
+                self.resolver.ctx,
+            )
+            .expect("failed to create error");
+            let enable_printing = self.resolver.ctx.enable_printing;
+            self.resolver.ctx.errors.add(
+                builders::error(format!(
+                    "Failed to resolve `{}` in module `{}`",
+                    last.value,
+                    Path {
+                        span: Span::new(0, 0),
+                        segments: segments[..segments.len() - 1].into()
+                    }
+                ))
+                .add_widget(loc_widget)
+                .add_widget(code_widget),
+                enable_printing,
+            );
+
             Res::Err
         }
     }

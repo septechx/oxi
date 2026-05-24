@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use colored::Colorize;
 
+use crate::context::Ctx;
 use crate::hir::ModuleId;
 use crate::span::Span;
 
@@ -104,6 +105,34 @@ impl CodeWidget {
         })
     }
 
+    pub fn new_with_ctx(
+        span: Span,
+        module_id: ModuleId,
+        highlight_type: HighlightType,
+        ctx: &Ctx,
+    ) -> Result<Self> {
+        let (_, line, column, length) = ctx
+            .source_maps
+            .get_source(module_id)
+            .map(|sm| sm.span_to_source_location(&span))
+            .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
+
+        let code = ctx
+            .source_maps
+            .get_source(module_id)
+            .and_then(|sm| sm.get_line(line))
+            .unwrap_or("<failed to get line>")
+            .to_string();
+
+        Ok(Self {
+            line,
+            column,
+            length,
+            highlight_type,
+            code: code.into(),
+        })
+    }
+
     pub fn from_raw(
         line: usize,
         column: usize,
@@ -179,6 +208,16 @@ impl LocationWidget {
         Ok(Self { line, column, file })
     }
 
+    pub fn new_with_ctx(span: Span, module_id: ModuleId, ctx: &Ctx) -> Result<Self> {
+        let (file, line, column, _) = ctx
+            .source_maps
+            .get_source(module_id)
+            .map(|sm| sm.span_to_source_location(&span))
+            .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
+
+        Ok(Self { line, column, file })
+    }
+
     pub fn from_raw(line: usize, column: usize, file: PathBuf) -> Self {
         Self { line, column, file }
     }
@@ -213,6 +252,24 @@ impl InfoWidget {
                 .map(|sm| sm.span_to_source_location(&span))
                 .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
         })?;
+
+        Ok(Self {
+            line,
+            content: content.into(),
+        })
+    }
+
+    pub fn new_with_ctx(
+        span: Span,
+        module_id: ModuleId,
+        content: impl Into<Box<str>>,
+        ctx: &Ctx,
+    ) -> Result<Self> {
+        let (_, line, ..) = ctx
+            .source_maps
+            .get_source(module_id)
+            .map(|sm| sm.span_to_source_location(&span))
+            .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
 
         Ok(Self {
             line,
