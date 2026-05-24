@@ -3,8 +3,9 @@ use std::ops::{Index, IndexMut};
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
+use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::interner::{Interner, Symbol};
+use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId, PrimTy};
 use crate::resolve::mod_tree::ModuleTree;
 
@@ -133,11 +134,12 @@ pub struct ResolverOutputs {
 }
 
 #[derive(Debug)]
-pub struct Resolver<'a> {
+pub struct Resolver<'a, 'ctx> {
+    ctx: &'ctx mut Ctx,
+
     asts: &'a ThinVec<Ast>,
     module_tree: &'a ModuleTree,
     module_idx: usize,
-    interner: &'a mut Interner,
 
     // Early res
     pending_imports: ThinVec<PendingImport>,
@@ -151,12 +153,8 @@ pub struct Resolver<'a> {
     res_map: NodeMap<Res>,
 }
 
-impl<'a> Resolver<'a> {
-    pub fn new(
-        asts: &'a ThinVec<Ast>,
-        module_tree: &'a ModuleTree,
-        interner: &'a mut Interner,
-    ) -> Self {
+impl<'a, 'ctx> Resolver<'a, 'ctx> {
+    pub fn new(asts: &'a ThinVec<Ast>, module_tree: &'a ModuleTree, ctx: &'ctx mut Ctx) -> Self {
         let node_count = module_tree.nodes.len();
         let mut modules: PerModule<ModuleData> = PerModule::new(node_count);
 
@@ -169,8 +167,8 @@ impl<'a> Resolver<'a> {
         }
 
         Self {
+            ctx,
             asts,
-            interner,
             module_idx: 0,
             module_tree,
             pending_imports: ThinVec::new(),

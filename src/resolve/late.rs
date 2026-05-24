@@ -10,7 +10,7 @@ use crate::hir::DefId;
 use crate::hir::interner::Symbol;
 use crate::resolve::{PrimTy, Res, Resolver};
 
-impl<'a> Resolver<'a> {
+impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub(super) fn late_resolve(&mut self) {
         self.traverse_tree(|this, node_idx, items| {
             this.module_idx = node_idx;
@@ -38,13 +38,13 @@ enum RibKind {
 }
 
 #[derive(Debug)]
-struct LateResolutionVisitor<'a, 'res> {
-    resolver: &'a mut Resolver<'res>,
+struct LateResolutionVisitor<'a, 'res, 'ctx> {
+    resolver: &'a mut Resolver<'res, 'ctx>,
     ribs: ThinVec<Rib>,
 }
 
-impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
-    pub fn new(resolver: &'a mut Resolver<'res>) -> Self {
+impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
+    pub fn new(resolver: &'a mut Resolver<'res, 'ctx>) -> Self {
         Self {
             resolver,
             ribs: ThinVec::new(),
@@ -62,7 +62,7 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
             for arg in &fun.parameters {
                 arg.1.visit(this);
 
-                let sym = this.resolver.interner.intern(&arg.0.value);
+                let sym = this.resolver.ctx.interner.intern(&arg.0.value);
                 let rib = this.ribs.last_mut().expect("rib exists");
                 rib.bindings.insert(sym, Res::Local(arg.2));
             }
@@ -85,14 +85,16 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
         let segments = &path.segments;
         if segments.len() == 1 {
             let value = &segments[0].value;
-            let sym = self.resolver.interner.intern(value);
+            let sym = self.resolver.ctx.interner.intern(value);
 
+            // 1st check if path is a primitive type
             if let Some(prim) = PrimTy::from_name(sym) {
                 let res = Res::PrimTy(prim);
                 self.resolver.res_map.insert(node_id, res);
                 return res;
             }
 
+            // 2nd check in ribs of path is a local
             let mut depth = 1;
             while depth <= self.ribs.len() {
                 if let Some(&res) = self.ribs[self.ribs.len() - depth].bindings.get(&sym) {
@@ -102,6 +104,7 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
                 depth += 1;
             }
 
+            // 3rd check if path is a module level item
             if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
                 let res = Res::Def(res.best_binding());
                 self.resolver.res_map.insert(node_id, res);
@@ -151,7 +154,7 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
 
             // Last segment: look up in the target module's resolutions
             let last = &segments[segments.len() - 1];
-            let sym = self.resolver.interner.intern(&last.value);
+            let sym = self.resolver.ctx.interner.intern(&last.value);
 
             if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
                 let res = Res::Def(res.best_binding());
@@ -170,14 +173,14 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
     }
 
     fn inject_self_ty_from_def_id(&mut self, def_id: DefId) {
-        let self_sym = self.resolver.interner.intern("Self");
+        let self_sym = self.resolver.ctx.interner.intern("Self");
         let rib = self.ribs.last_mut().expect("rib exists");
         rib.bindings
             .insert(self_sym, Res::SelfTyAlias { alias_to: def_id });
     }
 }
 
-impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
+impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
             ItemKind::Import(_) => {}
@@ -242,7 +245,7 @@ impl<'a, 'res> Visitor for LateResolutionVisitor<'a, 'res> {
                     value.visit(self);
                 }
 
-                let sym = self.resolver.interner.intern(&name.value);
+                let sym = self.resolver.ctx.interner.intern(&name.value);
                 let rib = self.ribs.last_mut().expect("rib exists");
                 rib.bindings.insert(sym, Res::Local(stmt.node_id));
             }

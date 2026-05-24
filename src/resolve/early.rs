@@ -10,7 +10,7 @@ use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::{Def, DefKind, NameResolution, PendingImport, Resolver};
 
-impl<'a> Resolver<'a> {
+impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
         let mut ass = NodeIdAssigner::new();
         for ast in asts.iter_mut() {
@@ -162,10 +162,10 @@ impl<'a> Resolver<'a> {
             .as_ref()
             .map(|r| r.value.as_ref())
             .unwrap_or(unsafe { segments.last().unwrap_unchecked().value.as_ref() });
-        let local_sym = self.interner.intern(local_name);
+        let local_sym = self.ctx.interner.intern(local_name);
 
         let target_def_name = &segments[segments.len() - 1].value;
-        let target_sym = self.interner.intern(target_def_name);
+        let target_sym = self.ctx.interner.intern(target_def_name);
 
         let current_module = pi.module.0 as usize;
 
@@ -310,36 +310,36 @@ impl VisitorMut for NodeIdAssigner {
 }
 
 #[derive(Debug)]
-struct DefCollector<'a, 'res> {
-    resolver: &'a mut Resolver<'res>,
+struct DefCollector<'a, 'res, 'ctx> {
+    resolver: &'a mut Resolver<'res, 'ctx>,
 }
 
-impl<'a, 'res> DefCollector<'a, 'res> {
-    pub fn new(resolver: &'a mut Resolver<'res>) -> Self {
+impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
+    pub fn new(resolver: &'a mut Resolver<'res, 'ctx>) -> Self {
         Self { resolver }
     }
 }
 
-impl<'a, 'res> Visitor for DefCollector<'a, 'res> {
+impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
             ItemKind::Const { name, .. } => {
-                let sym = self.resolver.interner.intern(&name.value);
+                let sym = self.resolver.ctx.interner.intern(&name.value);
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Const, item.visibility);
             }
             ItemKind::Struct { name, .. } => {
-                let sym = self.resolver.interner.intern(&name.value);
+                let sym = self.resolver.ctx.interner.intern(&name.value);
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
             }
             ItemKind::Interface { name, .. } => {
-                let sym = self.resolver.interner.intern(&name.value);
+                let sym = self.resolver.ctx.interner.intern(&name.value);
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
             }
             ItemKind::Fn(f) => {
-                let sym = self.resolver.interner.intern(&f.name.value);
+                let sym = self.resolver.ctx.interner.intern(&f.name.value);
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Function, item.visibility);
             }
@@ -350,17 +350,17 @@ impl<'a, 'res> Visitor for DefCollector<'a, 'res> {
 }
 
 #[derive(Debug)]
-struct ImportCollector<'a, 'res> {
-    resolver: &'a mut Resolver<'res>,
+struct ImportCollector<'a, 'res, 'ctx> {
+    resolver: &'a mut Resolver<'res, 'ctx>,
 }
 
-impl<'a, 'res> ImportCollector<'a, 'res> {
-    pub fn new(resolver: &'a mut Resolver<'res>) -> Self {
+impl<'a, 'res, 'ctx> ImportCollector<'a, 'res, 'ctx> {
+    pub fn new(resolver: &'a mut Resolver<'res, 'ctx>) -> Self {
         Self { resolver }
     }
 }
 
-impl<'a, 'res> Visitor for ImportCollector<'a, 'res> {
+impl<'a, 'res, 'ctx> Visitor for ImportCollector<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         if let ItemKind::Import(tree) = &item.kind {
             self.resolver.register_import(tree.clone(), item.visibility);
