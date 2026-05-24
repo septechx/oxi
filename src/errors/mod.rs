@@ -174,6 +174,11 @@ impl Default for ErrorCollector {
 }
 
 pub mod builders {
+    use crate::context::Ctx;
+    use crate::hir::ModuleId;
+    use crate::span::Span;
+
+    use super::widgets::*;
     use super::*;
 
     pub fn warning(message: impl Into<String>) -> CompilationError {
@@ -186,6 +191,51 @@ pub mod builders {
 
     pub fn fatal(message: impl Into<String>) -> CompilationError {
         CompilationError::new(ErrorLevel::Fatal, message.into())
+    }
+
+    pub fn warning_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        warning(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
+    }
+
+    pub fn error_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        error(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
+    }
+
+    pub fn fatal_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        fatal(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
     }
 }
 
