@@ -19,3 +19,4 @@ install PREFIX="/usr": (build "release")
 
 lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
+    cargo fmt -- --check

@@ -110,7 +110,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 
             // 3rd check if path is a module level item
             if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
-                let res = Res::Def(res.best_binding());
+                let res = Res::Def(res.best_binding().def_id);
                 self.resolver.res_map.insert(node_id, res);
                 return res;
             };
@@ -179,7 +179,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             let sym = self.resolver.ctx.interner.intern(&last.value);
 
             if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
-                let res = Res::Def(res.best_binding());
+                let res = Res::Def(res.best_binding().def_id);
                 self.resolver.res_map.insert(node_id, res);
                 return res;
             };

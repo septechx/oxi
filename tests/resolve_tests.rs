@@ -178,8 +178,14 @@ fn module_resolutions_contain_top_level_items() {
     let bar_sym = intern("Bar");
     assert!(main_mod.resolutions.contains_key(&foo_sym));
     assert!(main_mod.resolutions.contains_key(&bar_sym));
-    assert_eq!(main_mod.resolutions[&foo_sym].best_binding(), DefId(0));
-    assert_eq!(main_mod.resolutions[&bar_sym].best_binding(), DefId(1));
+    assert_eq!(
+        main_mod.resolutions[&foo_sym].best_binding().def_id,
+        DefId(0)
+    );
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +321,10 @@ fn child_module_contains_its_own_item_resolutions() {
     let foo_mod = &outputs.modules[1];
     let bar_sym = intern("bar");
     assert!(foo_mod.resolutions.contains_key(&bar_sym));
-    assert_eq!(foo_mod.resolutions[&bar_sym].best_binding(), DefId(1));
+    assert_eq!(
+        foo_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +346,10 @@ fn import_adds_entry_to_module_resolutions() {
         main_mod.resolutions.contains_key(&bar_sym),
         "imported `bar` should appear in main module resolutions"
     );
-    assert_eq!(main_mod.resolutions[&bar_sym].best_binding(), DefId(1));
+    assert_eq!(
+        main_mod.resolutions[&bar_sym].best_binding().def_id,
+        DefId(1)
+    );
     // The call to `bar()` should resolve to bar's DefId(1)
     let found = outputs
         .res_map
@@ -366,7 +378,10 @@ fn import_rename_uses_new_name() {
         !main_mod.resolutions.contains_key(&bar_sym),
         "original name `bar` should NOT be in main module"
     );
-    assert_eq!(main_mod.resolutions[&baz_sym].best_binding(), DefId(1));
+    assert_eq!(
+        main_mod.resolutions[&baz_sym].best_binding().def_id,
+        DefId(1)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +550,135 @@ fn struct_name_does_not_resolve_to_prim_ty() {
         found_def,
         "Foo struct instantiation should resolve to Def(DefId(0))"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Re-export (pub import) tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pub_import_creates_public_binding() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; pub import foo::bar; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let binding = main_mod.resolutions[&bar_sym].best_binding();
+    assert_eq!(binding.visibility, Visibility::Public);
+    assert_eq!(binding.def_id, DefId(1));
+}
+
+#[test]
+fn private_import_creates_private_binding() {
+    let outputs = resolve_outputs(&[
+        ("main.oxi", "mod foo; import foo::bar; fn main() void {}"),
+        ("foo.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let binding = main_mod.resolutions[&bar_sym].best_binding();
+    assert_eq!(binding.visibility, Visibility::Private);
+    assert_eq!(binding.def_id, DefId(1));
+}
+
+#[test]
+fn re_exported_name_resolves_from_downstream_module() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod a; import a::bar; fn main() void { bar(); }",
+        ),
+        ("a.oxi", "mod b; pub import b::bar;"),
+        ("b.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let binding = main_mod.resolutions[&bar_sym].best_binding();
+    assert_eq!(binding.def_id, DefId(1));
+    // The call `bar()` should resolve in res_map
+    let found = outputs
+        .res_map
+        .values()
+        .any(|res| matches!(res, Res::Def(DefId(1))));
+    assert!(found, "bar() call should resolve to DefId(1)");
+}
+
+#[test]
+fn private_import_not_visible_to_downstream() {
+    use oxic::errors::ErrorLevel;
+
+    let _outputs = resolve_outputs(&[
+        ("main.oxi", "mod a; import a::bar; fn main() void {}"),
+        ("a.oxi", "mod b; import b::bar;"),
+        ("b.oxi", "pub fn bar() void {}"),
+    ]);
+    with_ctx(|ctx| {
+        let has_error = ctx.errors.has_errors_above_level(ErrorLevel::Warning);
+        assert!(
+            has_error,
+            "Should error when importing through a private import"
+        );
+    });
+}
+
+#[test]
+fn re_export_with_rename() {
+    let outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; pub import foo::bar as baz; fn main() void {}",
+        ),
+        ("foo.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let baz_sym = intern("baz");
+    let bar_sym = intern("bar");
+    let binding = main_mod.resolutions[&baz_sym].best_binding();
+    assert_eq!(binding.def_id, DefId(1));
+    assert_eq!(binding.visibility, Visibility::Public);
+    assert!(
+        !main_mod.resolutions.contains_key(&bar_sym),
+        "original name `bar` should NOT be in main module"
+    );
+}
+
+#[test]
+fn cannot_re_export_private_item() {
+    use oxic::errors::ErrorLevel;
+
+    let _outputs = resolve_outputs(&[
+        (
+            "main.oxi",
+            "mod foo; pub import foo::bar; fn main() void {}",
+        ),
+        ("foo.oxi", "fn bar() void {}"),
+    ]);
+    with_ctx(|ctx| {
+        let has_error = ctx.errors.has_errors_above_level(ErrorLevel::Warning);
+        assert!(
+            has_error,
+            "Should error when trying to pub import a private item"
+        );
+    });
+}
+
+#[test]
+fn re_export_chain() {
+    let outputs = resolve_outputs(&[
+        ("main.oxi", "mod a; pub import a::bar; fn main() void {}"),
+        ("a.oxi", "mod b; pub import b::bar;"),
+        ("b.oxi", "mod c; pub import c::bar;"),
+        ("c.oxi", "pub fn bar() void {}"),
+    ]);
+    let main_mod = &outputs.modules[0];
+    let bar_sym = intern("bar");
+    let binding = main_mod.resolutions[&bar_sym].best_binding();
+    assert_eq!(binding.def_id, DefId(1));
+    assert_eq!(binding.visibility, Visibility::Public);
 }
 
 // ---------------------------------------------------------------------------

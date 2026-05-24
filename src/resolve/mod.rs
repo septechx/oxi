@@ -85,6 +85,12 @@ impl<T: Clone + Default> IndexMut<usize> for PerModule<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct NameBinding {
+    pub def_id: DefId,
+    pub visibility: Visibility,
+}
+
 // Non glob imports can shadow glob imports, so this cannot be an enum
 #[derive(Debug, Clone, Copy)]
 pub struct NameResolution {
@@ -94,32 +100,32 @@ pub struct NameResolution {
     /// // or
     /// struct MyStruct {}
     /// ````
-    pub non_glob_import: Option<DefId>,
+    pub non_glob_import: Option<NameBinding>,
     /// Name coming from a glob import. e.g.
     /// ```ignore
     /// import my_module::*;
     /// ````
-    pub glob_import: Option<DefId>,
+    pub glob_import: Option<NameBinding>,
 }
 
 impl NameResolution {
-    pub fn best_binding(&self) -> DefId {
+    pub fn best_binding(&self) -> NameBinding {
         self.non_glob_import
             .or(self.glob_import)
             .expect("If a resolution exists, it must be a non glob import or a glob import")
     }
 
-    pub fn non_glob_import(res: DefId) -> Self {
+    pub fn non_glob_import(binding: NameBinding) -> Self {
         Self {
-            non_glob_import: Some(res),
+            non_glob_import: Some(binding),
             glob_import: None,
         }
     }
 
-    pub fn glob_import(res: DefId) -> Self {
+    pub fn glob_import(binding: NameBinding) -> Self {
         Self {
             non_glob_import: None,
-            glob_import: Some(res),
+            glob_import: Some(binding),
         }
     }
 }

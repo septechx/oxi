@@ -10,7 +10,7 @@ use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
 use crate::resolve::path::PathError;
-use crate::resolve::{Def, DefKind, NameResolution, PendingImport, Resolver};
+use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver};
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
@@ -22,15 +22,17 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
     fn create_def(&mut self, id: NodeId, name: Symbol, kind: DefKind, visibility: Visibility) {
         let idx = self.defs.len() as u32;
+        let def_id = DefId(idx);
         self.defs.push(Def {
             name,
             kind,
             visibility,
         });
-        self.def_map.insert(id, DefId(idx));
+        self.def_map.insert(id, def_id);
+        let binding = NameBinding { def_id, visibility };
         self.current_module_mut()
             .resolutions
-            .insert(name, NameResolution::non_glob_import(DefId(idx)));
+            .insert(name, NameResolution::non_glob_import(binding));
     }
 
     fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
@@ -230,16 +232,16 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             }
         };
 
-        let target = self.modules[module_node_idx]
+        let target_res = self.modules[module_node_idx]
             .resolutions
             .get(&target_sym)
             .copied();
-        let Some(target) = target else {
+        let Some(target_res) = target_res else {
             return ResolutionStatus::Pending;
         };
 
-        let target_def = self.defs[target.best_binding().0 as usize];
-        if target_def.visibility != Visibility::Public {
+        let target_binding = target_res.best_binding();
+        if target_binding.visibility != Visibility::Public {
             let loc_widget = LocationWidget::new_with_ctx(pi.import_item.span, pi.module, self.ctx)
                 .expect("failed to create error");
             let code_widget = CodeWidget::new_with_ctx(
@@ -259,14 +261,15 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             return ResolutionStatus::Failed;
         }
 
-        if pi.visibility == Visibility::Public {
-            todo!("Implement re-exporting imports");
-        }
+        let binding = NameBinding {
+            def_id: target_binding.def_id,
+            visibility: pi.visibility,
+        };
 
         self.module_idx = current_module;
         self.current_module_mut()
             .resolutions
-            .insert(local_sym, target);
+            .insert(local_sym, NameResolution::non_glob_import(binding));
 
         ResolutionStatus::Resolved
     }
