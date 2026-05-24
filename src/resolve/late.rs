@@ -88,7 +88,9 @@ impl<'a, 'res> LateResolutionVisitor<'a, 'res> {
             let sym = self.resolver.interner.intern(value);
 
             if let Some(prim) = PrimTy::from_name(sym) {
-                return Res::PrimTy(prim);
+                let res = Res::PrimTy(prim);
+                self.resolver.res_map.insert(node_id, res);
+                return res;
             }
 
             let mut depth = 1;

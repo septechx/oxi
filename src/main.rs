@@ -114,11 +114,13 @@ fn build_file(cli: Cli) -> Result<()> {
     check_for_errors();
 
     Resolver::assign_node_ids(&mut asts);
-    with_ctx_mut(|ctx| {
-        let mut resolver = Resolver::new(&asts, module_tree, &mut ctx.interner);
+    let resolver_outputs = with_ctx_mut(|ctx| {
+        let mut resolver = Resolver::new(&asts, &module_tree, &mut ctx.interner);
         resolver.resolve();
-        println!("resolver = {resolver:#?}")
+        resolver.into_resolver_outputs()
     });
+
+    dbg!(resolver_outputs);
 
     println!("Module resolution completed successfully.");
 

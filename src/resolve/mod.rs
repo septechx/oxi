@@ -122,9 +122,20 @@ pub struct ModuleData {
 }
 
 #[derive(Debug)]
+pub struct ResolverOutputs {
+    /// maps (path node id) -> (res)
+    pub res_map: NodeMap<Res>,
+    /// maps (def node id) -> (def id)
+    pub def_map: NodeMap<DefId>,
+    /// Arena\[DefId] -> Def
+    pub defs: ThinVec<Def>,
+    pub modules: PerModule<ModuleData>,
+}
+
+#[derive(Debug)]
 pub struct Resolver<'a> {
-    pub asts: &'a ThinVec<Ast>,
-    module_tree: ModuleTree,
+    asts: &'a ThinVec<Ast>,
+    module_tree: &'a ModuleTree,
     module_idx: usize,
     interner: &'a mut Interner,
 
@@ -133,17 +144,17 @@ pub struct Resolver<'a> {
     modules: PerModule<ModuleData>,
     def_map: NodeMap<DefId>,
     /// Arena\[DefId] -> Def
-    pub defs: ThinVec<Def>,
+    defs: ThinVec<Def>,
 
     // Late res
     /// maps (path node id) -> (res)
-    pub res_map: NodeMap<Res>,
+    res_map: NodeMap<Res>,
 }
 
 impl<'a> Resolver<'a> {
     pub fn new(
         asts: &'a ThinVec<Ast>,
-        module_tree: ModuleTree,
+        module_tree: &'a ModuleTree,
         interner: &'a mut Interner,
     ) -> Self {
         let node_count = module_tree.nodes.len();
@@ -152,9 +163,6 @@ impl<'a> Resolver<'a> {
         for (i, node) in module_tree.nodes.iter().enumerate() {
             modules[i].parent = node.parent;
             modules[i].qualified_name = node.qualified_name.clone();
-        }
-
-        for (i, node) in module_tree.nodes.iter().enumerate() {
             for &child in &node.children {
                 modules[i].children.push(child);
             }
@@ -180,19 +188,24 @@ impl<'a> Resolver<'a> {
         self.late_resolve();
     }
 
-    pub fn current_module(&self) -> &ModuleData {
+    pub fn into_resolver_outputs(self) -> ResolverOutputs {
+        ResolverOutputs {
+            res_map: self.res_map,
+            def_map: self.def_map,
+            defs: self.defs,
+            modules: self.modules,
+        }
+    }
+
+    fn current_module(&self) -> &ModuleData {
         &self.modules[self.module_idx]
     }
 
-    pub fn current_module_mut(&mut self) -> &mut ModuleData {
+    fn current_module_mut(&mut self) -> &mut ModuleData {
         &mut self.modules[self.module_idx]
     }
 
-    pub fn def_id_for_node(&self, node_id: NodeId) -> Option<DefId> {
+    fn def_id_for_node(&self, node_id: NodeId) -> Option<DefId> {
         self.def_map.get(&node_id).copied()
-    }
-
-    pub fn get_def(&self, def_id: DefId) -> &Def {
-        &self.defs[def_id.0 as usize]
     }
 }

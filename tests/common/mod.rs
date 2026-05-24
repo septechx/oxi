@@ -170,7 +170,7 @@ impl Drop for Test {
         // Phase 3: Run name resolution
         Resolver::assign_node_ids(&mut asts);
         with_ctx_mut(|ctx| {
-            let mut resolver = Resolver::new(&asts, module_tree, &mut ctx.interner);
+            let mut resolver = Resolver::new(&asts, &module_tree, &mut ctx.interner);
             resolver.resolve();
         });
 
