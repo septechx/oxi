@@ -6,7 +6,8 @@ use crate::{
         AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
         Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
     },
-    error_at, get_modifiers,
+    errors::builders,
+    get_modifiers,
     lexer::token::TokenKind,
     no_attributes, no_modifiers,
     parser::{
@@ -19,7 +20,6 @@ use crate::{
         utils::{parse_body, parse_path, parse_rename, unexpected_token},
     },
     span::Span,
-    warning_at,
 };
 
 pub fn parse_item(parser: &mut Parser) -> Result<Item> {
@@ -32,14 +32,20 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
     if let Some(item_fn) = item_fn {
         item_fn(parser, attributes, modifiers)
     } else {
-        error_at!(
-            parser.current_token().span,
-            parser.current_token().module_id,
-            format!(
-                "Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.",
-                parser.current_token().kind
-            )
-        );
+        let tok = parser.current_token();
+        crate::with_ctx_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors.add(
+                builders::error_at(
+                    format!("Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.", tok.kind), 
+                    tok.module_id,
+                    tok.span,
+                    ctx
+                ),
+                enable_printing,
+            );
+        });
+
         unreachable!()
     }
 }
@@ -122,11 +128,18 @@ pub fn parse_struct_decl_item(
             let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
             if let ItemKind::Fn(fn_decl) = stmt.kind {
                 if fn_decl.body.is_none() {
-                    error_at!(
-                        fn_decl.name.span,
-                        parser.current_token().module_id,
-                        "Struct methods must have a body"
-                    );
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Struct methods must have a body",
+                                parser.current_token().module_id,
+                                fn_decl.name.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 items.push(AssocItem {
                     kind: AssocItemKind::Fn(Fn {
@@ -155,14 +168,21 @@ pub fn parse_struct_decl_item(
             }
 
             if fields.iter().any(|arg| arg.0.value == property_name.value) {
-                error_at!(
-                    property_name.span,
-                    parser.current_token().module_id,
-                    format!(
-                        "Property {} has already been defined in struct",
-                        property_name.value
-                    )
-                );
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            format!(
+                                "Property {} has already been defined in struct",
+                                property_name.value
+                            ),
+                            parser.current_token().module_id,
+                            property_name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
                 continue;
             }
 
@@ -232,11 +252,18 @@ pub fn parse_interface_decl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_some() {
-                error_at!(
-                    stmt.span,
-                    parser.current_token().module_id,
-                    "Expected interface method to not have a body"
-                );
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Expected interface method to not have a body",
+                            parser.current_token().module_id,
+                            stmt.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
 
             items.push(AssocItem {
@@ -334,11 +361,19 @@ pub fn parse_fn_decl_item(
                 end_span = parser.peek().span;
             }
             _ => {
-                error_at!(
-                    parser.current_token().span,
-                    parser.current_token().module_id,
-                    "Expected function body or terminator after signature"
-                );
+                let tok = parser.current_token();
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Expected function body or terminator after signature",
+                            tok.module_id,
+                            tok.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
         }
     }
@@ -389,11 +424,18 @@ pub fn parse_impl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_none() {
-                error_at!(
-                    fn_decl.name.span,
-                    parser.current_token().module_id,
-                    "Impl methods must have a body"
-                );
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Impl methods must have a body",
+                            parser.current_token().module_id,
+                            fn_decl.name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
@@ -576,11 +618,18 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
     let span = Span::new(let_token.span.start(), end_span.end());
 
     if assigned_value.is_none() && is_constant {
-        warning_at!(
-            span,
-            parser.current_token().module_id,
-            "Declared constant without providing a value"
-        );
+        crate::with_ctx_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors.add(
+                builders::warning_at(
+                    "Declared constant without providing a value",
+                    parser.current_token().module_id,
+                    span,
+                    ctx,
+                ),
+                enable_printing,
+            );
+        });
     }
 
     let mutability = if is_constant {

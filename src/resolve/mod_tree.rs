@@ -5,9 +5,10 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Item, ItemKind},
+    errors::builders,
     hashmap::FxHashMap,
+    hir::ModuleId,
     span::Span,
-    warning_at,
 };
 
 #[derive(Debug)]
@@ -63,14 +64,21 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
 
     for (ast_idx, _) in file_paths.iter().enumerate() {
         if !claimed_files.contains_key(&ast_idx) {
-            warning_at!(
-                Span::new(0, 0),
-                crate::hir::ModuleId(ast_idx as u32),
-                format!(
-                    "Provided file `{}` is not referenced by any `mod` declaration",
-                    file_paths[ast_idx].display()
-                )
-            );
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::warning_at(
+                        format!(
+                            "Provided file `{}` is not referenced by any `mod` declaration",
+                            file_paths[ast_idx].display()
+                        ),
+                        ModuleId(ast_idx as u32),
+                        Span::new(0, 0),
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
     }
 

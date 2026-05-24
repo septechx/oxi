@@ -9,7 +9,7 @@ mod utils;
 
 use crate::{
     ast::{Ast, Ident, Item},
-    fatal_at,
+    errors::builders,
     lexer::token::{Token, TokenKind, TokenStream},
     parser::{lookups::create_token_lookups, stmt::parse_item, types::create_token_type_lookups},
 };
@@ -81,14 +81,23 @@ impl Parser {
         let token = self.current_token();
 
         if token.kind != expected_kind {
-            fatal_at!(
-                token.span,
-                token.module_id,
-                err.unwrap_or_else(|| format!(
-                    "Syntax error: Expected {} but received {} instead.",
-                    expected_kind, token.kind
-                ))
-            );
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::error_at(
+                        err.unwrap_or_else(|| {
+                            format!(
+                                "Syntax error: Expected {} but received {} instead.",
+                                expected_kind, token.kind
+                            )
+                        }),
+                        token.module_id,
+                        token.span,
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
 
         Ok(self.advance())

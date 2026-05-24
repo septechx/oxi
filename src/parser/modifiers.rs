@@ -68,7 +68,7 @@ macro_rules! no_modifiers {
         let modifiers = $modifiers;
 
         if !modifiers.is_empty() {
-            error_at!(
+            $crate::error_at!(
                 modifiers[0].span,
                 parser.current_token().module_id,
                 "Modifier not allowed here"

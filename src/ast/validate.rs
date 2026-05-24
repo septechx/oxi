@@ -3,7 +3,6 @@ use crate::{
         AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
         visit::{VisitAction, Visitable, Visitor},
     },
-    error_at,
     errors::{
         builders,
         widgets::{CodeWidget, HighlightType, InfoWidget, LocationWidget},
@@ -69,18 +68,32 @@ impl AstValidator {
 
         if f.is_extern {
             if f.body.is_some() {
-                error_at!(
-                    f.name.span,
-                    self.module_id,
-                    "Extern functions cannot have a body"
-                )
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Extern functions cannot have a body",
+                            self.module_id,
+                            f.name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
         } else if f.body.is_none() && !self.in_interface {
-            error_at!(
-                f.name.span,
-                self.module_id,
-                "Non-extern function must have a body"
-            )
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::error_at(
+                        "Non-extern function must have a body",
+                        self.module_id,
+                        f.name.span,
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
 
         if let Some(body) = &f.body {
@@ -261,17 +274,35 @@ impl Visitor for AstValidator {
             }
             ExprKind::Break(_) => {
                 if !self.in_loop {
-                    error_at!(expr.span, self.module_id, "Break statement outside of loop")
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Break statement outside of loop",
+                                self.module_id,
+                                expr.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 VisitAction::Continue
             }
             ExprKind::Return(_) => {
                 if !self.in_function {
-                    error_at!(
-                        expr.span,
-                        self.module_id,
-                        "Return statement outside of function"
-                    )
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Return statement outside of function",
+                                self.module_id,
+                                expr.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 VisitAction::Continue
             }

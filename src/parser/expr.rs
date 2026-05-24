@@ -3,7 +3,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Block, Expr, ExprKind, Ident, Literal, NodeId, Path},
-    fatal_at,
+    errors::builders,
     lexer::token::TokenKind,
     parser::{
         Parser,
@@ -351,15 +351,23 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
     while parser.current_token().kind != TokenKind::CloseParen {
         elements.push(parse_expr(parser, BindingPower::DefaultBp)?);
 
-        if parser.current_token().kind == TokenKind::Comma {
+        let tok = parser.current_token();
+        if tok.kind == TokenKind::Comma {
             has_comma = true;
             parser.advance();
-        } else if parser.current_token().kind != TokenKind::CloseParen {
-            fatal_at!(
-                parser.current_token().span,
-                parser.current_token().module_id,
-                "Expected comma or closing parenthesis in expression"
-            );
+        } else if tok.kind != TokenKind::CloseParen {
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::error_at(
+                        "Expected comma or closing parenthesis in expression",
+                        tok.module_id,
+                        tok.span,
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
     }
     let close_token = parser.expect(TokenKind::CloseParen)?;

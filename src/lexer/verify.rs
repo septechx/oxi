@@ -1,13 +1,22 @@
-use crate::{
-    fatal_at,
-    lexer::token::{TokenKind, TokenStream},
-};
+use crate::errors::builders;
+use crate::lexer::token::{TokenKind, TokenStream};
 
 pub fn verify_tokens(tokens: &TokenStream) {
     for token in &tokens.0 {
         if let TokenKind::Illegal = &token.kind {
             let c = token.value.chars().next().unwrap_or('\0');
-            fatal_at!(token.span, token.module_id, format!("Illegal token: {c}"));
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::error_at(
+                        format!("Illegal token: {c}"),
+                        token.module_id,
+                        token.span,
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
     }
 }

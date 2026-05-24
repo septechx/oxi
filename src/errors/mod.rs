@@ -2,11 +2,10 @@ pub mod widgets;
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::hashmap::FxHashMap;
-
 use colored::Colorize;
 
 use crate::errors::widgets::Widget;
+use crate::hashmap::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorLevel {
