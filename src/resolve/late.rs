@@ -350,23 +350,35 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     elem.visit(self);
                 }
             }
-            ExprKind::Block(b) => b.visit(self),
+            ExprKind::Block(b) => {
+                self.with_rib(Rib::default(), |this| {
+                    b.visit(this);
+                });
+            }
             ExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
                 condition.visit(self);
-                then_branch.visit(self);
+                self.with_rib(Rib::default(), |this| {
+                    then_branch.visit(this);
+                });
                 if let Some(else_expr) = else_branch {
                     else_expr.visit(self);
                 }
             }
             ExprKind::While { condition, body } => {
                 condition.visit(self);
-                body.visit(self);
+                self.with_rib(Rib::default(), |this| {
+                    body.visit(this);
+                });
             }
-            ExprKind::Loop(b) => b.visit(self),
+            ExprKind::Loop(b) => {
+                self.with_rib(Rib::default(), |this| {
+                    b.visit(this);
+                });
+            }
             ExprKind::Break(val) => {
                 if let Some(expr) = val {
                     expr.visit(self);
