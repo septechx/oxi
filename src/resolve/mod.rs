@@ -16,7 +16,7 @@ mod late;
 mod mod_tree;
 mod path;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefKind {
     Function,
     Struct,
@@ -24,12 +24,11 @@ pub enum DefKind {
     Const,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Def {
-    name: Symbol,
-    kind: DefKind,
-    visibility: Visibility,
+    pub name: Symbol,
+    pub kind: DefKind,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -62,6 +61,16 @@ impl<T: Clone + Default> PerModule<T> {
     }
 }
 
+impl<T: Clone + Default> PerModule<T> {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl<T: Clone + Default> Index<usize> for PerModule<T> {
     type Output = T;
 
@@ -85,12 +94,12 @@ pub struct NameResolution {
     /// // or
     /// struct MyStruct {}
     /// ````
-    non_glob_import: Option<DefId>,
+    pub non_glob_import: Option<DefId>,
     /// Name coming from a glob import. e.g.
     /// ```ignore
     /// import my_module::*;
     /// ````
-    glob_import: Option<DefId>,
+    pub glob_import: Option<DefId>,
 }
 
 impl NameResolution {
