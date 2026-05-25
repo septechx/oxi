@@ -117,7 +117,7 @@ fn compile_oxi_module<'ctx>(
     };
 
     let (tokens, module_id) = tokenize(file, &module_path)?;
-    let ast = parse(tokens, &module_name)?;
+    let ast = parse(tokens, &module_path)?;
 
     let mut mod_compilation_context = CompilationContext::new(module_path, module_id);
 

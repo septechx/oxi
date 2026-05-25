@@ -4,7 +4,7 @@ use colored::Colorize;
 
 use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
-    ItemKind, Literal, Mutability, Stmt, StmtKind, Type, TypeKind, Visibility,
+    ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +84,16 @@ fn punct_with_color(s: &str, color: bool) -> String {
     }
 }
 
+fn format_path(path: &Path, color: bool) -> String {
+    let segments: Vec<String> = path.segments.iter().map(|s| s.value.to_string()).collect();
+    let path_str = segments.join("::");
+    if color {
+        path_str.magenta().to_string()
+    } else {
+        path_str
+    }
+}
+
 fn write_expr_inline_or_nested(
     out: &mut String,
     label: &str,
@@ -149,7 +159,7 @@ fn escape_string(s: &str) -> String {
 
 pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::fmt::Result {
     match &item.kind {
-        ItemKind::Static { value, name, ty } => {
+        ItemKind::Const { value, name, ty } => {
             let mut modifiers = Vec::new();
             if item.visibility == Visibility::Public {
                 modifiers.push("pub");
@@ -158,7 +168,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
             write!(
                 out,
                 "{} {}{}{}{}: ",
-                "Static".with_color(ctx.color),
+                "Const".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
                 name.value,
@@ -254,9 +264,9 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 out,
                 "{} {} {} {}",
                 "Impl".with_color(ctx.color),
-                write_type(self_ty, ctx),
-                punct_with_color(":", ctx.color),
-                interface.value
+                format_path(&interface.0, ctx.color),
+                punct_with_color("for", ctx.color),
+                format_path(&self_ty.0, ctx.color),
             )?;
             if items.is_empty() {
                 write!(out, ": (empty)")?;
@@ -327,6 +337,37 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 modifiers_with_color(&modifiers, ctx.color)
             )?;
             write_import_tree(out, i, ctx)?;
+        }
+        ItemKind::Module { name, body } => {
+            let mut modifiers = Vec::new();
+            if item.visibility == Visibility::Public {
+                modifiers.push("pub");
+            }
+            let modifiers = format_modifiers(&modifiers);
+            write!(
+                out,
+                "{} {}{}{}{}",
+                "Module".with_color(ctx.color),
+                modifiers_with_color(&modifiers, ctx.color),
+                punct_with_color("\"", ctx.color),
+                name.value,
+                punct_with_color("\"", ctx.color)
+            )?;
+            match body {
+                None => write!(out, ": (file)")?,
+                Some(items) if items.is_empty() => write!(out, ": (empty)")?,
+                Some(items) => {
+                    writeln!(out, ":")?;
+                    let body_ctx = ctx.indented();
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 {
+                            writeln!(out)?;
+                        }
+                        write!(out, "{}", body_ctx.indent_str())?;
+                        write_item(out, item, &body_ctx)?;
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -426,9 +467,6 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
             if item.visibility == Visibility::Public {
                 modifiers.push("pub");
             }
-            if item.is_static {
-                modifiers.push("static");
-            }
             let modifiers = format_modifiers(&modifiers);
             write!(
                 out,
@@ -451,7 +489,7 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
             } else {
                 writeln!(out)?;
                 let arg_ctx = sub_ctx.indented();
-                for (name, ty) in &f.parameters {
+                for (name, ty, _) in &f.parameters {
                     writeln!(
                         out,
                         "{}FnArg \"{}\": {}",
@@ -528,7 +566,7 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 "{} {}{}{}",
                 "Symbol".with_color(ctx.color),
                 punct_with_color("\"", ctx.color),
-                s.value,
+                format_path(s, false),
                 punct_with_color("\"", ctx.color)
             )?;
         }
@@ -695,9 +733,9 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             write!(out, "{}", expr_ctx.indent_str())?;
             write_expr(out, value, &expr_ctx)?;
         }
-        ExprKind::StructInstantiation { name, fields } => {
+        ExprKind::StructInstantiation { path, fields } => {
             write!(out, "{}", "StructInstantiation".with_color(ctx.color),)?;
-            write!(out, " \"{}\"", name.value)?;
+            write!(out, " \"{}\"", format_path(path, false))?;
             if fields.is_empty() {
                 write!(out, ": (empty)")?;
             } else {
@@ -760,28 +798,12 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 }
             }
         }
-        ExprKind::MemberAccess {
-            base,
-            member,
-            operator,
-        } => {
+        ExprKind::MemberAccess { base, member } => {
             writeln!(out, "{}", "MemberAccess".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
             write_expr_inline_or_nested(out, "Base: ", base, &expr_ctx)?;
             writeln!(out)?;
-            write!(
-                out,
-                "{}Operator: {}",
-                expr_ctx.indent_str(),
-                punct_with_color(&operator.value, ctx.color)
-            )?;
-            writeln!(out)?;
             write!(out, "{}Member: \"{}\"", expr_ctx.indent_str(), member.value)?;
-        }
-        ExprKind::Type(t) => {
-            write!(out, "{}", "Type".with_color(ctx.color),)?;
-            write!(out, ": ")?;
-            write!(out, "{}", write_type(t, ctx))?;
         }
         ExprKind::As { expr, ty } => {
             writeln!(out, "{}", "As".with_color(ctx.color),)?;
@@ -816,30 +838,30 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
 
 fn write_type(ty: &Type, ctx: &DisplayContext) -> String {
     match &ty.kind {
-        TypeKind::Symbol(s) => type_with_color(&s.name.value, ctx.color),
-        TypeKind::Pointer(p) => {
-            let inner = write_type(p.underlying.as_ref(), ctx);
-            if p.mutability == Mutability::Mutable {
+        TypeKind::Symbol(s) => format_path(s, ctx.color),
+        TypeKind::Pointer(ty, mutability) => {
+            let inner = write_type(ty.as_ref(), ctx);
+            if *mutability == Mutability::Mutable {
                 format!("&mut {}", inner)
             } else {
                 format!("&{}", inner)
             }
         }
-        TypeKind::Slice(s) => {
-            let inner = write_type(s.underlying.as_ref(), ctx);
+        TypeKind::Slice(ty) => {
+            let inner = write_type(ty.as_ref(), ctx);
             format!("[]{}", inner)
         }
-        TypeKind::FixedArray(f) => {
-            let inner = write_type(f.underlying.as_ref(), ctx);
-            format!("[{}]{}", f.length, inner)
+        TypeKind::FixedArray(ty, length) => {
+            let inner = write_type(ty.as_ref(), ctx);
+            format!("[{}]{}", length, inner)
         }
-        TypeKind::Function(ft) => {
-            let params: Vec<String> = ft.parameters.iter().map(|p| write_type(p, ctx)).collect();
-            let ret = write_type(ft.return_type.as_ref(), ctx);
+        TypeKind::Function { params, ret } => {
+            let params: Vec<String> = params.iter().map(|p| write_type(p, ctx)).collect();
+            let ret = write_type(ret.as_ref(), ctx);
             format!("({}) -> {}", params.join(", "), ret)
         }
-        TypeKind::Tuple(t) => {
-            let elems: Vec<String> = t.elements.iter().map(|e| write_type(e, ctx)).collect();
+        TypeKind::Tuple(elements) => {
+            let elems: Vec<String> = elements.iter().map(|e| write_type(e, ctx)).collect();
             format!("({})", elems.join(", "))
         }
         TypeKind::Infer => type_with_color("_", ctx.color),
@@ -852,13 +874,7 @@ fn write_import_tree(
     tree: &ImportTree,
     ctx: &DisplayContext,
 ) -> std::fmt::Result {
-    let path: Vec<String> = tree
-        .prefix
-        .segments
-        .iter()
-        .map(|s| s.value.to_string())
-        .collect();
-    let path_str = path.join("::");
+    let path_str = format_path(&tree.prefix, false);
     match &tree.kind {
         ImportTreeKind::Simple(rename) => {
             if let Some(r) = rename {

@@ -2,24 +2,18 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
     ast::{
-        AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, ItemKind, Stmt, StmtKind, Type,
-        TypeKind, Visibility,
+        AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, ItemKind, Path, Stmt, StmtKind,
+        Type, TypeKind, Visibility,
     },
     hashmap::FxHashMap,
     hir::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
         HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Impl, ImplItem, ImplItemId,
         ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,
-        ModuleInfo, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
+        ModuleInfo, PrimTy, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
     },
-    lexer::token::TokenKind,
     span::Span,
 };
-
-const BUILTIN_TYPES: [&str; 15] = [
-    "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64", "f128",
-    "bool", "void",
-];
 
 #[derive(Debug, Default)]
 pub struct LoweringContext {
@@ -137,7 +131,6 @@ impl LoweringContext {
                                 method_sym,
                                 MethodMeta {
                                     def: method_defid,
-                                    is_static: item.is_static,
                                     visibility: item.visibility,
                                 },
                             );
@@ -167,7 +160,7 @@ impl LoweringContext {
                         );
                         self.krate.modules[mid].items.push(defid);
                     }
-                    ItemKind::Static { name, .. } => {
+                    ItemKind::Const { name, .. } => {
                         let sym = self.krate.interner.intern(&name.value);
                         let defid = self.alloc_item_placeholder(item.span);
                         self.krate.modules[mid].exports.insert(
@@ -181,6 +174,7 @@ impl LoweringContext {
                     }
                     ItemKind::Impl { .. } => {} // Processed in lowering pass 3
                     ItemKind::Import(_) => {}   // Processed in lowering pass 2
+                    ItemKind::Module { .. } => {} // Processed during module tree building
                 }
             }
         }
@@ -206,11 +200,12 @@ impl LoweringContext {
                         self_ty,
                         interface,
                         items,
-                    } => self.lower_impl_stmt(self_ty, interface, items),
-                    ItemKind::Static { name, ty, value } => {
-                        self.lower_static_item(name, ty, value, span)
+                    } => self.lower_impl_stmt(self_ty.0, interface.0, items),
+                    ItemKind::Const { name, ty, value } => {
+                        self.lower_const_item(name, ty, value, span)
                     }
                     ItemKind::Import(_) => {} // Processed in lowering pass 2
+                    ItemKind::Module { .. } => {} // Processed during module tree building
                 }
             }
         }
@@ -265,14 +260,14 @@ impl LoweringContext {
         id
     }
 
-    fn lower_fn_impl(&mut self, f: Fn, defid: DefId, associated: Option<DefId>, is_static: bool) {
+    fn lower_fn_impl(&mut self, f: Fn, defid: DefId, associated: Option<DefId>) {
         let sym = self.krate.interner.intern(&f.name.value);
         let modid = self.current_module.expect("current module set");
 
         let params = f
             .parameters
             .into_iter()
-            .map(|(pname, pty)| {
+            .map(|(pname, pty, _)| {
                 (
                     self.krate.interner.intern(&pname.value),
                     self.lower_type(pty),
@@ -289,14 +284,13 @@ impl LoweringContext {
             body: None,
             module: modid,
             associated,
-            static_method: is_static,
         };
 
         let param_names: ThinVec<Symbol> = func.params.iter().map(|(name, _)| *name).collect();
 
         // Store the function in the item with the owner set to itself
         self.with_owner(defid, |ctx| {
-            ctx.krate.items[defid.0 as usize].kind = HirItemKind::Function(func);
+            ctx.krate.mut_item(defid).kind = HirItemKind::Function(func);
 
             if let Some(body) = f.body {
                 ctx.local_stack.push(FxHashMap::default());
@@ -316,9 +310,11 @@ impl LoweringContext {
                     .collect();
 
                 let body_id = ctx.alloc_body(Body { stmts: stmt_ids });
-                if let HirItemKind::Function(func) = &mut ctx.krate.items[defid.0 as usize].kind {
-                    func.body = Some(body_id);
-                }
+                let HirItemKind::Function(func) = &mut ctx.krate.mut_item(defid).kind else {
+                    unreachable!()
+                };
+                func.body = Some(body_id);
+
                 ctx.local_stack.pop();
             }
         });
@@ -327,7 +323,7 @@ impl LoweringContext {
     fn lower_fn_decl(&mut self, f: Fn) {
         let sym = self.krate.interner.intern(&f.name.value);
         let defid = self.lookup_in_current_module(sym).expect("def must exist");
-        self.lower_fn_impl(f, defid, None, false);
+        self.lower_fn_impl(f, defid, None);
     }
 
     fn lower_struct_decl(
@@ -355,7 +351,7 @@ impl LoweringContext {
             fields,
             module: modid,
         };
-        let item = &mut self.krate.items[defid.0 as usize];
+        let item = &mut self.krate.mut_item(defid);
         item.kind = HirItemKind::Struct(st);
         item.span = span;
 
@@ -376,12 +372,12 @@ impl LoweringContext {
 
                 let method_defid = meta.def;
 
-                method_fns.push((fn_decl, method_defid, defid, item.is_static));
+                method_fns.push((fn_decl, method_defid, defid));
             }
         }
 
-        for (fn_decl, method_defid, defid, is_static) in method_fns {
-            self.lower_fn_impl(fn_decl, method_defid, Some(defid), is_static);
+        for (fn_decl, method_defid, defid) in method_fns {
+            self.lower_fn_impl(fn_decl, method_defid, Some(defid));
         }
 
         self.current_struct = prev_struct;
@@ -433,66 +429,51 @@ impl LoweringContext {
             module: modid,
             methods,
         };
-        self.krate.items[defid.0 as usize].kind = HirItemKind::Interface(iface);
-        self.krate.items[defid.0 as usize].span = span;
+        let item = self.krate.mut_item(defid);
+        item.kind = HirItemKind::Interface(iface);
+        item.span = span;
     }
 
-    fn lower_impl_stmt(&mut self, self_ty: Type, iface: Ident, items: ThinVec<AssocItem>) {
-        let interface_sym = self.krate.interner.intern(&iface.value);
-        let interface_def = match self.lookup_in_current_module(interface_sym) {
+    fn lower_impl_stmt(&mut self, self_ty: Path, iface: Path, items: ThinVec<AssocItem>) {
+        let interface_def = match self.resolve_path(&iface) {
             Some(def) => def,
             None => {
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown interface `{}`", iface.value));
+                    .push(format!("Unknown interface `{iface}`"));
                 return;
             }
         };
 
-        match &self.krate.items[interface_def.0 as usize].kind {
-            HirItemKind::Interface(_) => {}
-            _ => {
-                self.krate
-                    .diagnostics
-                    .push(format!("`{}` is not an interface", iface.value));
-                return;
-            }
+        if !matches!(
+            &self.krate.item(interface_def).kind,
+            HirItemKind::Interface(_)
+        ) {
+            self.krate
+                .diagnostics
+                .push(format!("`{iface}` is not an interface"));
+            return;
         }
 
-        let self_defid = match &self_ty.kind {
-            TypeKind::Symbol(s) => {
-                let sym = self.krate.interner.intern(&s.name.value);
-                match self.lookup_in_current_module(sym) {
-                    Some(def) => def,
-                    None => {
-                        self.krate
-                            .diagnostics
-                            .push(format!("Unknown type `{}` in impl", s.name.value));
-                        return;
-                    }
-                }
-            }
-            _ => {
+        let self_defid = match self.resolve_path(&self_ty) {
+            Some(def) => def,
+            None => {
                 self.krate
                     .diagnostics
-                    .push("Impl target must be a named type".to_string());
+                    .push(format!("Unknown type `{self_ty}` in impl"));
                 return;
             }
         };
 
         let modid = self.current_module.expect("current module set");
-        match &self.krate.items[self_defid.0 as usize].kind {
-            HirItemKind::Struct(_) => {}
-            _ => {
-                self.krate
-                    .diagnostics
-                    .push("Impl target is not a struct".to_string());
-                return;
-            }
+        if !matches!(&self.krate.item(self_defid).kind, HirItemKind::Struct(_)) {
+            self.krate
+                .diagnostics
+                .push("Impl target is not a struct".to_string());
+            return;
         }
 
         let impl_defid = self.alloc_item_placeholder(self_ty.span);
-        let self_ty_id = self.lower_type(self_ty);
 
         let mut impl_item_ids = ThinVec::with_capacity(items.len());
 
@@ -505,13 +486,13 @@ impl LoweringContext {
             let param_names: ThinVec<Symbol> = fn_decl
                 .parameters
                 .iter()
-                .map(|(pname, _)| self.krate.interner.intern(&pname.value))
+                .map(|(pname, _, _)| self.krate.interner.intern(&pname.value))
                 .collect();
 
             let params = fn_decl
                 .parameters
                 .into_iter()
-                .map(|(pname, pty)| {
+                .map(|(pname, pty, _)| {
                     (
                         self.krate.interner.intern(&pname.value),
                         self.lower_type(pty),
@@ -528,14 +509,13 @@ impl LoweringContext {
                 body: None,
                 module: modid,
                 associated: Some(self_defid),
-                static_method: item.is_static,
             };
 
             let impl_item_id = self.alloc_impl_item(ImplItemKind::Fn(func.clone()), item.span);
             impl_item_ids.push(impl_item_id);
 
-            let method_defid = self.krate.impl_items[impl_item_id.0 as usize].defid;
-            self.krate.items[method_defid.0 as usize].kind = HirItemKind::Function(func);
+            let method_defid = self.krate.impl_item(impl_item_id).defid;
+            self.krate.mut_item(method_defid).kind = HirItemKind::Function(func);
             let method_map = &mut self.krate.modules[modid.0 as usize]
                 .struct_methods
                 .entry(self_defid)
@@ -544,7 +524,6 @@ impl LoweringContext {
                 method_sym,
                 MethodMeta {
                     def: method_defid,
-                    is_static: item.is_static,
                     visibility: item.visibility,
                 },
             );
@@ -568,14 +547,14 @@ impl LoweringContext {
                         .collect();
 
                     let body_id = ctx.alloc_body(Body { stmts: stmt_ids });
-                    let ImplItemKind::Fn(func) =
-                        &mut ctx.krate.impl_items[impl_item_id.0 as usize].kind;
+                    let ImplItemKind::Fn(func) = &mut ctx.krate.mut_impl_item(impl_item_id).kind;
                     func.body = Some(body_id);
-                    if let HirItemKind::Function(item_func) =
-                        &mut ctx.krate.items[method_defid.0 as usize].kind
-                    {
-                        item_func.body = Some(body_id);
-                    }
+                    let HirItemKind::Function(item_func) =
+                        &mut ctx.krate.mut_item(method_defid).kind
+                    else {
+                        unreachable!()
+                    };
+                    item_func.body = Some(body_id);
                     ctx.local_stack.pop();
                 });
             }
@@ -583,13 +562,13 @@ impl LoweringContext {
         self.current_struct = prev_struct;
 
         let impl_item = Impl {
-            self_ty: self_ty_id,
+            self_ty: self_defid,
             of_interface: interface_def,
             items: impl_item_ids,
             module: modid,
         };
 
-        self.krate.items[impl_defid.0 as usize].kind = HirItemKind::Impl(impl_item);
+        self.krate.mut_item(impl_defid).kind = HirItemKind::Impl(impl_item);
 
         self.krate.modules[modid.0 as usize]
             .struct_impls
@@ -604,7 +583,7 @@ impl LoweringContext {
             .push(impl_defid);
     }
 
-    fn lower_static_item(&mut self, sname: Ident, sty: Type, svalue: Expr, span: Span) {
+    fn lower_const_item(&mut self, sname: Ident, sty: Type, svalue: Expr, span: Span) {
         let sym = self.krate.interner.intern(&sname.value);
         let modid = self.current_module.expect("current module set");
         let defid = self.lookup_in_current_module(sym).expect("def must exist");
@@ -615,7 +594,7 @@ impl LoweringContext {
             Some(self.lower_type(sty))
         };
 
-        // Lower the init expression with the owner set to the static item itself
+        // Lower the init expression with the owner set to the const item itself
         let init = self.with_owner(defid, |ctx| Some(ctx.lower_expr(svalue)));
 
         let var = Variable {
@@ -624,8 +603,9 @@ impl LoweringContext {
             init,
             module: modid,
         };
-        self.krate.items[defid.0 as usize].kind = HirItemKind::Variable(var);
-        self.krate.items[defid.0 as usize].span = span;
+        let item = self.krate.mut_item(defid);
+        item.kind = HirItemKind::Variable(var);
+        item.span = span;
     }
 
     fn lower_expr(&mut self, expr: Expr) -> ExprId {
@@ -633,34 +613,30 @@ impl LoweringContext {
         let span = expr.span;
         match expr.kind {
             ExprKind::Literal(l) => self.alloc_expr(HirExprKind::Literal(l), span),
-            ExprKind::Symbol(s) => {
-                let sym = self.krate.interner.intern(&s.value);
-
-                for scope in self.local_stack.iter().rev() {
-                    if let Some(local) = scope.get(&sym) {
-                        return self.alloc_expr(HirExprKind::Local(*local), span);
+            ExprKind::Symbol(path) => {
+                if path.is_single() {
+                    let sym = self.krate.interner.intern(path.to_string());
+                    for scope in self.local_stack.iter().rev() {
+                        if let Some(local) = scope.get(&sym) {
+                            return self.alloc_expr(HirExprKind::Local(*local), span);
+                        }
                     }
                 }
 
-                if let Some(defid) = self.lookup_in_current_module(sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     return self.alloc_expr(HirExprKind::Global(defid), span);
                 }
 
                 self.krate
                     .diagnostics
-                    .push(format!("Unknown symbol {}", s.value));
+                    .push(format!("Unknown symbol `{path}`"));
                 self.alloc_expr(HirExprKind::Error, span)
             }
             ExprKind::FunctionCall { callee, parameters } => match *callee {
                 Expr {
-                    kind:
-                        ExprKind::MemberAccess {
-                            base,
-                            member,
-                            operator,
-                        },
+                    kind: ExprKind::MemberAccess { base, member },
                     ..
-                } if operator.kind == TokenKind::Dot => {
+                } => {
                     let base_id = self.lower_expr(*base);
                     let method_sym = self.krate.interner.intern(&member.value);
                     let args = parameters.into_iter().map(|a| self.lower_expr(a)).collect();
@@ -686,11 +662,10 @@ impl LoweringContext {
                 }
             },
             ExprKind::StructInstantiation {
-                name,
+                path,
                 fields: expr_fields,
             } => {
-                let def_sym = self.krate.interner.intern(&name.value);
-                if let Some(defid) = self.lookup_in_current_module(def_sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     let mut fields = ThinVec::with_capacity(expr_fields.len());
                     for (ident, val) in expr_fields.into_iter() {
                         let fsym = self.krate.interner.intern(&ident.value);
@@ -701,60 +676,20 @@ impl LoweringContext {
                 } else {
                     self.krate
                         .diagnostics
-                        .push(format!("Unknown struct name: {}", name.value));
+                        .push(format!("Unknown struct `{path}`"));
                     self.alloc_expr(HirExprKind::Error, span)
                 }
             }
-            ExprKind::MemberAccess {
-                base,
-                member,
-                operator,
-            } => {
-                if operator.kind == TokenKind::ColonColon {
-                    let base_id = self.lower_expr(*base);
-                    let member_sym = self.krate.interner.intern(&member.value);
-
-                    if let HirExprKind::Global(defid) = &self.krate.exprs[base_id.0 as usize].kind {
-                        let defid = *defid;
-                        let struct_mod = self.krate.items[defid.0 as usize].kind.module();
-
-                        if let Some(methods) = self.krate.modules[struct_mod.0 as usize]
-                            .struct_methods
-                            .get(&defid)
-                            && let Some(meta) = methods.get(&member_sym)
-                        {
-                            if meta.visibility == Visibility::Private {
-                                let allowed = self.current_struct == Some(defid);
-
-                                if !allowed {
-                                    self.krate.diagnostics.push(format!(
-                                        "Cannot access private associated item `{}`",
-                                        member.value
-                                    ));
-                                }
-                            }
-                            return self.alloc_expr(HirExprKind::Global(meta.def), span);
-                        }
-
-                        // Also could be a module, but we don't have good module-as-value yet in HIR.
-                        // Assuming simple associated item access for now.
-                    }
-
-                    self.krate
-                        .diagnostics
-                        .push(format!("Cannot resolve associated item `{}`", member.value));
-                    self.alloc_expr(HirExprKind::Error, span)
-                } else {
-                    let base_id = self.lower_expr(*base);
-                    let field_sym = self.krate.interner.intern(&member.value);
-                    self.alloc_expr(
-                        HirExprKind::Field {
-                            base: base_id,
-                            field: field_sym,
-                        },
-                        span,
-                    )
-                }
+            ExprKind::MemberAccess { base, member } => {
+                let base_id = self.lower_expr(*base);
+                let field_sym = self.krate.interner.intern(&member.value);
+                self.alloc_expr(
+                    HirExprKind::Field {
+                        base: base_id,
+                        field: field_sym,
+                    },
+                    span,
+                )
             }
             ExprKind::Binary {
                 left,
@@ -781,6 +716,7 @@ impl LoweringContext {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let cond = self.lower_expr(*condition);
 
@@ -924,27 +860,24 @@ impl LoweringContext {
 
     fn lower_type(&mut self, ty: Type) -> TypeId {
         match ty.kind {
-            TypeKind::Symbol(s) => {
-                let name = s.name.value;
+            TypeKind::Symbol(path) => {
+                let s = path.to_string();
+                let sym = self.krate.interner.intern(&s);
 
-                if BUILTIN_TYPES.contains(&name.as_ref()) {
-                    return self.alloc_type(HirType::Builtin(name.into()));
+                if let Some(prim) = PrimTy::from_name(sym) {
+                    return self.alloc_type(HirType::PrimTy(prim));
                 }
 
-                let sym = self.krate.interner.intern(&name);
-                if let Some(defid) = self.lookup_in_current_module(sym) {
+                if let Some(defid) = self.resolve_path(&path) {
                     return self.alloc_type(HirType::Adt(defid));
                 }
 
-                self.krate
-                    .diagnostics
-                    .push(format!("Unknown type: {}", name));
+                self.krate.diagnostics.push(format!("Unknown type `{s}`"));
                 self.alloc_type(HirType::Error)
             }
-            TypeKind::Pointer(p) => {
-                let inner = *p.underlying;
-                let tid = self.lower_type(inner);
-                self.alloc_type(HirType::Pointer(tid, p.mutability))
+            TypeKind::Pointer(ty, mutability) => {
+                let tid = self.lower_type(*ty);
+                self.alloc_type(HirType::Pointer(tid, mutability))
             }
             _ => todo!("Lowering of {:?} not implemented", ty.kind),
         }

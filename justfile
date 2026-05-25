@@ -2,7 +2,7 @@ build MODE="release":
     cargo build {{ if MODE == "release" { "--release" } else { "" } }}
 
 run *ARGS:
-    env OXI_ROOT="$(pwd)" cargo run -- {{ARGS}}
+    env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- {{ARGS}}
 
 test FILTER="":
     env OXI_ROOT="$(pwd)" cargo test {{FILTER}}
@@ -19,3 +19,4 @@ install PREFIX="/usr": (build "release")
 
 lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
+    cargo fmt -- --check

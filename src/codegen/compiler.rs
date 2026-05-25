@@ -25,7 +25,7 @@ use crate::{
         pointer::SmartValue,
     },
     hashmap::{FxHashMap, FxHashSet},
-    span::ModuleId,
+    hir::ModuleId,
 };
 
 pub type FunctionTable<'ctx> = FxHashMap<Box<str>, FunctionTableEntry<'ctx>>;
@@ -172,7 +172,7 @@ pub fn compile_items<'a, 'ctx>(
                     )?;
                 }
             }
-            ItemKind::Static { name, ty, value } => {
+            ItemKind::Const { name, ty, value } => {
                 compile_static_item(
                     context,
                     module,
@@ -188,6 +188,7 @@ pub fn compile_items<'a, 'ctx>(
             ItemKind::Interface { .. } => todo!(),
             ItemKind::Impl { .. } => todo!(),
             ItemKind::Import(_) => todo!(),
+            ItemKind::Module { .. } => {}
         }
     }
 

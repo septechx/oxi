@@ -16,7 +16,7 @@ macro_rules! struct_fields {
 #[macro_export]
 macro_rules! logln {
     ($fmt:expr $(, $($arg:tt)*)?) => {
-        if $crate::ENABLE_PRINTING.with(|e| e.get()) {
+        if $crate::CTX.with(|ctx| ctx.borrow().enable_printing) {
             println!($fmt $(, $($arg)*)?);
         }
     };
@@ -25,7 +25,7 @@ macro_rules! logln {
 #[macro_export]
 macro_rules! log {
     ($fmt:expr $(, $($arg:tt)*)?) => {
-        if $crate::ENABLE_PRINTING.with(|e| e.get()) {
+        if $crate::CTX.with(|ctx| ctx.borrow().enable_printing) {
             print!($fmt $(, $($arg)*)?);
         }
     };
@@ -34,7 +34,7 @@ macro_rules! log {
 #[macro_export]
 macro_rules! elogln {
     ($fmt:expr $(, $($arg:tt)*)?) => {
-        if $crate::ENABLE_PRINTING.with(|e| e.get()) {
+        if $crate::CTX.with(|ctx| ctx.borrow().enable_printing) {
             eprintln!($fmt $(, $($arg)*)?);
         }
     };
@@ -43,7 +43,7 @@ macro_rules! elogln {
 #[macro_export]
 macro_rules! elog {
     ($fmt:expr $(, $($arg:tt)*)?) => {
-        if $crate::ENABLE_PRINTING.with(|e| e.get()) {
+        if $crate::CTX.with(|ctx| ctx.borrow().enable_printing) {
             eprint!($fmt $(, $($arg)*)?);
         }
     };
@@ -52,27 +52,28 @@ macro_rules! elog {
 #[macro_export]
 macro_rules! emit_at {
     ($builder:expr, $span:expr, $module_id:expr, $msg:expr, $info:expr, $highlight:expr) => {
-        $crate::ERRORS.with(|e| -> anyhow::Result<()> {
+        (|| -> anyhow::Result<()> {
             let span = $span;
             let module_id = $module_id;
             let msg = $msg;
-            let builder = $builder(msg)
-                .add_widget($crate::errors::widgets::LocationWidget::new(
-                    span, module_id,
-                )?)
-                .add_widget($crate::errors::widgets::CodeWidget::new(
-                    span, module_id, $highlight,
-                )?);
+            let loc_widget = $crate::errors::widgets::LocationWidget::new(span, module_id)?;
+            let code_widget =
+                $crate::errors::widgets::CodeWidget::new(span, module_id, $highlight)?;
+            let builder = $builder(msg).add_widget(loc_widget).add_widget(code_widget);
             let builder = if let Some(info) = $info {
-                builder.add_widget($crate::errors::widgets::InfoWidget::new(
-                    span, module_id, info,
-                )?)
+                let info_widget = $crate::errors::widgets::InfoWidget::new(span, module_id, info)?;
+                builder.add_widget(info_widget)
             } else {
                 builder
             };
-            e.borrow_mut().add(builder);
+
+            $crate::CTX.with_borrow_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(builder, enable_printing);
+            });
+
             Ok(())
-        })
+        })()
     };
 }
 
@@ -87,6 +88,7 @@ macro_rules! error_at {
             None::<Box<str>>,
             $crate::errors::widgets::HighlightType::Error
         )
+        .expect("failed to emit error")
     };
     ($token:expr, $msg:expr $(,)?) => {{
         let token = $token;
@@ -105,6 +107,7 @@ macro_rules! warning_at {
             None::<Box<str>>,
             $crate::errors::widgets::HighlightType::Warning
         )
+        .expect("failed to emit warning")
     };
     ($token:expr, $msg:expr $(,)?) => {{
         let token = $token;
@@ -191,8 +194,10 @@ macro_rules! fatal_at_with_info {
 #[macro_export]
 macro_rules! error {
     ($msg:expr $(,)?) => {
-        $crate::ERRORS.with(|e| {
-            e.borrow_mut().add($crate::errors::builders::error($msg));
+        $crate::CTX.with_borrow_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors
+                .add($crate::errors::builders::error($msg), enable_printing);
         })
     };
 }
@@ -200,8 +205,10 @@ macro_rules! error {
 #[macro_export]
 macro_rules! warning {
     ($msg:expr $(,)?) => {
-        $crate::ERRORS.with(|e| {
-            e.borrow_mut().add($crate::errors::builders::warning($msg));
+        $crate::CTX.with_borrow_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors
+                .add($crate::errors::builders::warning($msg), enable_printing);
         })
     };
 }
@@ -209,8 +216,10 @@ macro_rules! warning {
 #[macro_export]
 macro_rules! fatal {
     ($msg:expr $(,)?) => {{
-        $crate::ERRORS.with(|e| {
-            e.borrow_mut().add($crate::errors::builders::fatal($msg));
+        $crate::CTX.with_borrow_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors
+                .add($crate::errors::builders::fatal($msg), enable_printing);
         });
         unreachable!()
     }};

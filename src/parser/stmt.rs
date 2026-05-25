@@ -4,9 +4,10 @@ use thin_vec::ThinVec;
 use crate::{
     ast::{
         AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
-        Item, ItemKind, Mutability, Stmt, StmtKind, Type, TypeKind, Visibility,
+        Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
     },
-    error_at, get_modifiers,
+    errors::builders,
+    get_modifiers,
     lexer::token::TokenKind,
     no_attributes, no_modifiers,
     parser::{
@@ -19,7 +20,6 @@ use crate::{
         utils::{parse_body, parse_path, parse_rename, unexpected_token},
     },
     span::Span,
-    warning_at,
 };
 
 pub fn parse_item(parser: &mut Parser) -> Result<Item> {
@@ -32,19 +32,25 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
     if let Some(item_fn) = item_fn {
         item_fn(parser, attributes, modifiers)
     } else {
-        error_at!(
-            parser.current_token().span,
-            parser.current_token().module_id,
-            format!(
-                "Expected top-level item (static, struct, interface, impl, fn, import), but found {} instead.",
-                parser.current_token().kind
-            )
-        )?;
+        let tok = parser.current_token();
+        crate::with_ctx_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors.add(
+                builders::fatal_at(
+                    format!("Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.", tok.kind), 
+                    tok.module_id,
+                    tok.span,
+                    ctx
+                ),
+                enable_printing,
+            );
+        });
+
         unreachable!()
     }
 }
 
-pub fn parse_static_item(
+pub fn parse_const_item(
     parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
@@ -82,7 +88,8 @@ pub fn parse_static_item(
     };
 
     Ok(Item {
-        kind: ItemKind::Static { name, ty, value },
+        kind: ItemKind::Const { name, ty, value },
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -111,11 +118,6 @@ pub fn parse_struct_decl_item(
             parser.advance();
         }
 
-        let is_static = parser.current_token().kind == TokenKind::Static;
-        if is_static {
-            parser.advance();
-        }
-
         let visibility = if is_public {
             Visibility::Public
         } else {
@@ -126,11 +128,18 @@ pub fn parse_struct_decl_item(
             let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
             if let ItemKind::Fn(fn_decl) = stmt.kind {
                 if fn_decl.body.is_none() {
-                    error_at!(
-                        fn_decl.name.span,
-                        parser.current_token().module_id,
-                        "Struct methods must have a body"
-                    )?;
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Struct methods must have a body",
+                                parser.current_token().module_id,
+                                fn_decl.name.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 items.push(AssocItem {
                     kind: AssocItemKind::Fn(Fn {
@@ -138,19 +147,10 @@ pub fn parse_struct_decl_item(
                         ..fn_decl
                     }),
                     span: stmt.span,
-                    is_static,
                     visibility,
                 })
             };
             continue;
-        }
-
-        if is_static {
-            error_at!(
-                parser.current_token().span,
-                parser.current_token().module_id,
-                "Only struct methods are allowed to be static"
-            )?;
         }
 
         if parser.current_token().kind == TokenKind::Identifier {
@@ -168,14 +168,21 @@ pub fn parse_struct_decl_item(
             }
 
             if fields.iter().any(|arg| arg.0.value == property_name.value) {
-                error_at!(
-                    property_name.span,
-                    parser.current_token().module_id,
-                    format!(
-                        "Property {} has already been defined in struct",
-                        property_name.value
-                    )
-                )?;
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            format!(
+                                "Property {} has already been defined in struct",
+                                property_name.value
+                            ),
+                            parser.current_token().module_id,
+                            property_name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
                 continue;
             }
 
@@ -220,6 +227,7 @@ pub fn parse_struct_decl_item(
             fields,
             items,
         },
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -244,17 +252,23 @@ pub fn parse_interface_decl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_some() {
-                error_at!(
-                    stmt.span,
-                    parser.current_token().module_id,
-                    "Expected interface method to not have a body"
-                )?;
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Expected interface method to not have a body",
+                            parser.current_token().module_id,
+                            stmt.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
 
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
-                is_static: false,
                 span: stmt.span,
             });
 
@@ -284,6 +298,7 @@ pub fn parse_interface_decl_item(
 
     Ok(Item {
         kind: ItemKind::Interface { items, name },
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -307,7 +322,7 @@ pub fn parse_fn_decl_item(
     let name = parser.expect_identifier()?;
 
     parser.expect(TokenKind::OpenParen)?;
-    let mut parameters: ThinVec<(Ident, Type)> = ThinVec::new();
+    let mut parameters: ThinVec<(Ident, Type, NodeId)> = ThinVec::new();
 
     loop {
         if parser.current_token().kind == TokenKind::CloseParen {
@@ -319,7 +334,7 @@ pub fn parse_fn_decl_item(
         parser.expect(TokenKind::Colon)?;
         let type_ = parse_type(parser, BindingPower::DefaultBp)?;
 
-        parameters.push((arg_name, type_));
+        parameters.push((arg_name, type_, NodeId::default()));
 
         if parser.current_token().kind == TokenKind::Comma {
             parser.advance();
@@ -346,11 +361,19 @@ pub fn parse_fn_decl_item(
                 end_span = parser.peek().span;
             }
             _ => {
-                error_at!(
-                    parser.current_token().span,
-                    parser.current_token().module_id,
-                    "Expected function body or terminator after signature"
-                )?;
+                let tok = parser.current_token();
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Expected function body or terminator after signature",
+                            tok.module_id,
+                            tok.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
         }
     }
@@ -371,6 +394,7 @@ pub fn parse_fn_decl_item(
             return_type,
             is_extern: extern_mod.is_some(),
         }),
+        node_id: NodeId::default(),
         attributes,
         span,
         visibility,
@@ -386,9 +410,9 @@ pub fn parse_impl_item(
     no_modifiers!(&parser, &modifiers);
 
     let start_span = parser.expect(TokenKind::Impl)?.span;
-    let interface = parser.expect_identifier()?;
-    parser.expect(TokenKind::Colon)?;
-    let self_ty = parse_type(parser, BindingPower::DefaultBp)?;
+    let interface = parse_path(parser)?;
+    parser.expect(TokenKind::For)?;
+    let self_ty = parse_path(parser)?;
 
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     parser.expect(TokenKind::OpenCurly)?;
@@ -400,16 +424,22 @@ pub fn parse_impl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_none() {
-                error_at!(
-                    fn_decl.name.span,
-                    parser.current_token().module_id,
-                    "Impl methods must have a body"
-                )?;
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Impl methods must have a body",
+                            parser.current_token().module_id,
+                            fn_decl.name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Public,
-                is_static: false,
                 span: stmt.span,
             });
         }
@@ -419,9 +449,10 @@ pub fn parse_impl_item(
     Ok(Item {
         kind: ItemKind::Impl {
             items,
-            self_ty,
-            interface,
+            self_ty: (self_ty, NodeId::default()),
+            interface: (interface, NodeId::default()),
         },
+        node_id: NodeId::default(),
         attributes,
         span: Span::new(start_span.start(), end_span.end()),
         // Impl blocks do not have visibility modifiers in the source grammar, so we use
@@ -452,8 +483,48 @@ pub fn parse_import_item(
 
     Ok(Item {
         kind: ItemKind::Import(tree),
+        node_id: NodeId::default(),
         attributes,
         span,
+        visibility,
+    })
+}
+
+pub fn parse_module_item(
+    parser: &mut Parser,
+    attributes: ThinVec<Attribute>,
+    modifiers: ThinVec<Modifier>,
+) -> Result<Item> {
+    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+
+    let start_span = parser.expect(TokenKind::Mod)?.span;
+    let name = parser.expect_identifier()?;
+
+    let end_span: Span;
+    let body = if parser.current_token().kind == TokenKind::Semicolon {
+        end_span = parser.advance().span;
+        None
+    } else {
+        parser.expect(TokenKind::OpenCurly)?;
+        let mut items = ThinVec::new();
+        while parser.has_tokens() && parser.current_token().kind != TokenKind::CloseCurly {
+            items.push(parse_item(parser)?);
+        }
+        end_span = parser.expect(TokenKind::CloseCurly)?.span;
+        Some(items)
+    };
+
+    let visibility = if pub_mod.is_some() {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
+
+    Ok(Item {
+        kind: ItemKind::Module { name, body },
+        node_id: NodeId::default(),
+        attributes,
+        span: Span::new(start_span.start(), end_span.end()),
         visibility,
     })
 }
@@ -521,6 +592,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
     let mut type_ = Type {
         kind: TypeKind::Infer,
         span: Span::new(let_token.span.end(), let_token.span.end()),
+        node_id: NodeId::default(),
     };
     let mut assigned_value: Option<Expr> = None;
 
@@ -546,11 +618,18 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
     let span = Span::new(let_token.span.start(), end_span.end());
 
     if assigned_value.is_none() && is_constant {
-        warning_at!(
-            span,
-            parser.current_token().module_id,
-            "Declared constant without providing a value"
-        )?;
+        crate::with_ctx_mut(|ctx| {
+            let enable_printing = ctx.enable_printing;
+            ctx.errors.add(
+                builders::warning_at(
+                    "Declared constant without providing a value",
+                    parser.current_token().module_id,
+                    span,
+                    ctx,
+                ),
+                enable_printing,
+            );
+        });
     }
 
     let mutability = if is_constant {
@@ -566,6 +645,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
             value: assigned_value,
             mutability,
         },
+        node_id: NodeId::default(),
         span,
     })
 }
@@ -588,5 +668,9 @@ fn parse_expr_stmt(parser: &mut Parser) -> Result<Stmt> {
         StmtKind::Expr(expr)
     };
 
-    Ok(Stmt { kind, span })
+    Ok(Stmt {
+        kind,
+        span,
+        node_id: NodeId::default(),
+    })
 }

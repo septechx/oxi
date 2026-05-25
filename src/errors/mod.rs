@@ -2,11 +2,10 @@ pub mod widgets;
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::{elog, elogln, hashmap::FxHashMap};
-
 use colored::Colorize;
 
 use crate::errors::widgets::Widget;
+use crate::hashmap::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorLevel {
@@ -93,20 +92,24 @@ impl ErrorCollector {
         self
     }
 
-    pub fn add(&mut self, error: CompilationError) {
+    pub fn add(&mut self, error: CompilationError, enable_printing: bool) {
         if error.level == ErrorLevel::Fatal && self.should_panic_on_fatal {
-            elogln!("{}", error);
+            if enable_printing {
+                eprintln!("{}", error);
+            }
             std::process::exit(1);
         }
 
         self.errors.push(error);
 
         if self.errors.len() >= self.max_errors {
-            let max_error = builders::fatal(format!(
-                "Too many errors ({}), stopping compilation",
-                self.max_errors
-            ));
-            elogln!("{}", max_error);
+            if enable_printing {
+                let max_error = builders::fatal(format!(
+                    "Too many errors ({}), stopping compilation",
+                    self.max_errors
+                ));
+                eprintln!("{}", max_error);
+            }
             std::process::exit(1);
         }
     }
@@ -136,13 +139,13 @@ impl ErrorCollector {
 
     pub fn print_all(&self) {
         for error in &self.errors {
-            elog!("{}", error);
+            eprint!("{}", error);
         }
     }
 
     pub fn print_errors(&self, min_level: ErrorLevel) {
         for error in self.get_errors(min_level) {
-            elog!("{}", error);
+            eprint!("{}", error);
         }
     }
 
@@ -170,6 +173,11 @@ impl Default for ErrorCollector {
 }
 
 pub mod builders {
+    use crate::context::Ctx;
+    use crate::hir::ModuleId;
+    use crate::span::Span;
+
+    use super::widgets::*;
     use super::*;
 
     pub fn warning(message: impl Into<String>) -> CompilationError {
@@ -182,6 +190,51 @@ pub mod builders {
 
     pub fn fatal(message: impl Into<String>) -> CompilationError {
         CompilationError::new(ErrorLevel::Fatal, message.into())
+    }
+
+    pub fn warning_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        warning(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
+    }
+
+    pub fn error_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        error(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
+    }
+
+    pub fn fatal_at(
+        message: impl Into<String>,
+        module_id: ModuleId,
+        span: Span,
+        ctx: &Ctx,
+    ) -> CompilationError {
+        let loc_widget =
+            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+            .expect("failed to create error");
+        fatal(message)
+            .add_widget(loc_widget)
+            .add_widget(code_widget)
     }
 }
 
@@ -199,14 +252,14 @@ mod tests {
     fn test_error_collector() {
         let mut collector = ErrorCollector::new();
 
-        collector.add(CompilationError::new(
-            ErrorLevel::Warning,
-            "Warning message".to_string(),
-        ));
-        collector.add(CompilationError::new(
-            ErrorLevel::Error,
-            "Error message".to_string(),
-        ));
+        collector.add(
+            CompilationError::new(ErrorLevel::Warning, "Warning message".to_string()),
+            true,
+        );
+        collector.add(
+            CompilationError::new(ErrorLevel::Error, "Error message".to_string()),
+            true,
+        );
 
         assert_eq!(collector.get_all_errors().len(), 2);
         assert!(collector.has_errors());

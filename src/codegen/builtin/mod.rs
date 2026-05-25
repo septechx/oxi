@@ -1,6 +1,5 @@
 mod asm;
 mod import;
-mod sizeof;
 mod slice;
 
 use anyhow::Result;
@@ -115,7 +114,6 @@ macro_rules! define_builtins {
 define_builtins! {
     functions {
         Asm => asm::AsmBuiltin => "asm",
-        SizeOf => sizeof::SizeofBuiltin => "sizeof",
         Import => import::ImportBuiltin => "import",
     }
     structs {

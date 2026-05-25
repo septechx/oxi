@@ -1,13 +1,17 @@
 pub mod display;
-pub mod types;
+mod node_id;
 pub mod validate;
 pub mod visit;
 
+pub use node_id::*;
+
+use std::{fmt::Display, path::PathBuf};
+
 use anyhow::bail;
-use thin_vec::ThinVec;
+use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
-    ast::{display::DisplayContext, types::*},
+    hir::path_to_mod,
     lexer::token::{Token, TokenKind},
     span::Span,
 };
@@ -19,8 +23,15 @@ pub struct Ast {
 }
 
 impl Ast {
+    pub fn new(items: ThinVec<Item>, path: &PathBuf) -> Self {
+        Self {
+            name: path_to_mod(path).into(),
+            items,
+        }
+    }
+
     pub fn display(&self, color: bool) -> Result<String, std::fmt::Error> {
-        let ctx = DisplayContext::new(color);
+        let ctx = display::DisplayContext::new(color);
         let mut output = String::new();
         for (i, item) in self.items.iter().enumerate() {
             if i > 0 {
@@ -37,6 +48,7 @@ pub struct Item {
     pub kind: ItemKind,
     pub span: Span,
     pub attributes: ThinVec<Attribute>,
+    pub node_id: NodeId,
     /// Visibility modifier for this item.
     ///
     /// For most item kinds (static, struct, interface, function, import), this is the visibility
@@ -51,7 +63,7 @@ pub struct Item {
 
 #[derive(Debug, Clone)]
 pub enum ItemKind {
-    Static {
+    Const {
         name: Ident,
         value: Expr,
         ty: Type,
@@ -66,18 +78,23 @@ pub enum ItemKind {
         items: ThinVec<AssocItem>,
     },
     Impl {
-        self_ty: Type,
-        interface: Ident,
+        self_ty: (Path, NodeId),
+        interface: (Path, NodeId),
         items: ThinVec<AssocItem>,
     },
     Fn(Fn),
     Import(ImportTree),
+    Module {
+        name: Ident,
+        body: Option<ThinVec<Item>>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -98,7 +115,6 @@ pub enum StmtKind {
 pub struct AssocItem {
     pub kind: AssocItemKind,
     pub visibility: Visibility,
-    pub is_static: bool,
     pub span: Span,
 }
 
@@ -110,7 +126,7 @@ pub enum AssocItemKind {
 #[derive(Debug, Clone)]
 pub struct Fn {
     pub name: Ident,
-    pub parameters: ThinVec<(Ident, Type)>,
+    pub parameters: ThinVec<(Ident, Type, NodeId)>,
     pub body: Option<Block>,
     pub return_type: Type,
     pub is_extern: bool,
@@ -120,12 +136,13 @@ pub struct Fn {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Literal(Literal),
-    Symbol(Ident),
+    Symbol(Path),
     Binary {
         left: Box<Expr>,
         operator: Token,
@@ -145,7 +162,7 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     StructInstantiation {
-        name: Ident,
+        path: Path,
         fields: ThinVec<(Ident, Expr)>,
     },
     ArrayLiteral {
@@ -159,9 +176,7 @@ pub enum ExprKind {
     MemberAccess {
         base: Box<Expr>,
         member: Ident,
-        operator: Token,
     },
-    Type(Type),
     As {
         expr: Box<Expr>,
         ty: Type,
@@ -196,17 +211,21 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Type {
     pub kind: TypeKind,
+    pub node_id: NodeId,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    Symbol(SymbolType),
-    Pointer(PointerType),
-    Slice(SliceType),
-    FixedArray(FixedArrayType),
-    Function(FunctionType),
-    Tuple(TupleType),
+    Symbol(Path),
+    Pointer(Box<Type>, Mutability),
+    Slice(Box<Type>),
+    FixedArray(Box<Type>, usize),
+    Function {
+        params: ThinVec<Type>,
+        ret: Box<Type>,
+    },
+    Tuple(ThinVec<Type>),
     Infer,
     Never,
 }
@@ -254,6 +273,37 @@ pub struct Path {
     pub segments: ThinVec<Ident>,
 }
 
+impl Path {
+    pub fn from_ident(id: Ident) -> Self {
+        Path {
+            span: id.span,
+            segments: thin_vec![id],
+        }
+    }
+
+    pub fn last_ident(&self) -> Option<&Ident> {
+        self.segments.last()
+    }
+
+    pub fn is_single(&self) -> bool {
+        self.segments.len() == 1
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self
+            .segments
+            .iter()
+            .map(|s| s.value.as_ref())
+            .collect::<Vec<_>>()
+            .join("::");
+        write!(f, "{s}")?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     pub name: Ident,
@@ -294,13 +344,7 @@ impl ImportTree {
     pub fn ident(&self) -> Option<Ident> {
         match &self.kind {
             ImportTreeKind::Simple(Some(rename)) => Some(rename.clone()),
-            ImportTreeKind::Simple(None) => Some(
-                self.prefix
-                    .segments
-                    .last()
-                    .expect("empty prefix in a simple import")
-                    .clone(),
-            ),
+            ImportTreeKind::Simple(None) => self.prefix.segments.last().cloned(),
             _ => None,
         }
     }

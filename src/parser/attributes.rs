@@ -1,6 +1,7 @@
-use crate::{ast::Attribute, lexer::token::TokenKind, parser::Parser, span::Span};
 use anyhow::Result;
 use thin_vec::ThinVec;
+
+use crate::{ast::Attribute, lexer::token::TokenKind, parser::Parser, span::Span};
 
 pub fn parse_attributes(parser: &mut Parser) -> Result<ThinVec<Attribute>> {
     let mut attributes = ThinVec::new();
@@ -50,11 +51,11 @@ macro_rules! no_attributes {
         let attributes = $modifiers;
 
         if !attributes.is_empty() {
-            error_at!(
+            $crate::error_at!(
                 attributes[0].span,
                 parser.current_token().module_id,
                 "Attribute not allowed here"
-            )?;
+            );
         }
     }};
 }

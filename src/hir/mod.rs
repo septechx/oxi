@@ -4,18 +4,21 @@ use crate::{
     ast::{Ast, Literal, Mutability, Visibility},
     hashmap::FxHashMap,
     hir::{
-        interner::{Interner, Symbol},
+        interner::{Interner, Symbol, sym},
         lower::LoweringContext,
     },
     lexer::token::TokenKind,
     span::Span,
 };
 
-mod interner;
+pub use resolve::path_to_mod;
+
+pub mod interner;
 mod lower;
 mod resolve;
 
-pub fn lower_ast(asts: ThinVec<Ast>) -> HirCrate {
+#[allow(unreachable_code)]
+pub fn lower_crate(asts: ThinVec<Ast>) -> HirCrate {
     let mut ctx = LoweringContext::new();
     ctx.lower_crate(asts);
     for diag in &ctx.krate.diagnostics {
@@ -45,8 +48,14 @@ pub struct LocalId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StmtId(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ModuleId(pub u32);
+
+impl std::fmt::Display for ModuleId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BodyId(pub u32);
@@ -92,6 +101,92 @@ impl From<u32> for BodyId {
 impl From<u32> for ImplItemId {
     fn from(v: u32) -> Self {
         ImplItemId(v)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntTy {
+    Isize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UintTy {
+    Usize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatTy {
+    F16,
+    F32,
+    F64,
+    F128,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimTy {
+    Int(IntTy),
+    Uint(UintTy),
+    Float(FloatTy),
+    Bool,
+    Void,
+}
+
+impl PrimTy {
+    pub fn from_name(s: Symbol) -> Option<Self> {
+        Some(match s {
+            sym::i8 => Self::Int(IntTy::I8),
+            sym::i16 => Self::Int(IntTy::I16),
+            sym::i32 => Self::Int(IntTy::I32),
+            sym::i64 => Self::Int(IntTy::I64),
+            sym::i128 => Self::Int(IntTy::I128),
+            sym::isize => Self::Int(IntTy::Isize),
+            sym::u8 => Self::Uint(UintTy::U8),
+            sym::u16 => Self::Uint(UintTy::U16),
+            sym::u32 => Self::Uint(UintTy::U32),
+            sym::u64 => Self::Uint(UintTy::U64),
+            sym::u128 => Self::Uint(UintTy::U128),
+            sym::usize => Self::Uint(UintTy::Usize),
+            sym::f16 => Self::Float(FloatTy::F16),
+            sym::f32 => Self::Float(FloatTy::F32),
+            sym::f64 => Self::Float(FloatTy::F64),
+            sym::f128 => Self::Float(FloatTy::F128),
+            sym::bool => Self::Bool,
+            sym::void => Self::Void,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> Symbol {
+        match self {
+            PrimTy::Int(IntTy::I8) => sym::i8,
+            PrimTy::Int(IntTy::I16) => sym::i16,
+            PrimTy::Int(IntTy::I32) => sym::i32,
+            PrimTy::Int(IntTy::I64) => sym::i64,
+            PrimTy::Int(IntTy::I128) => sym::i128,
+            PrimTy::Int(IntTy::Isize) => sym::isize,
+            PrimTy::Uint(UintTy::U8) => sym::u8,
+            PrimTy::Uint(UintTy::U16) => sym::u16,
+            PrimTy::Uint(UintTy::U32) => sym::u32,
+            PrimTy::Uint(UintTy::U64) => sym::u64,
+            PrimTy::Uint(UintTy::U128) => sym::u128,
+            PrimTy::Uint(UintTy::Usize) => sym::usize,
+            PrimTy::Float(FloatTy::F16) => sym::f16,
+            PrimTy::Float(FloatTy::F32) => sym::f32,
+            PrimTy::Float(FloatTy::F64) => sym::f64,
+            PrimTy::Float(FloatTy::F128) => sym::f128,
+            PrimTy::Bool => sym::bool,
+            PrimTy::Void => sym::void,
+        }
     }
 }
 
@@ -168,6 +263,66 @@ impl HirCrate {
         );
         &self.impl_items[id.0 as usize]
     }
+
+    pub fn mut_item(&mut self, id: DefId) -> &mut HirItem {
+        debug_assert!(
+            (id.0 as usize) < self.items.len(),
+            "DefId({}) out of bounds (len={})",
+            id.0,
+            self.items.len()
+        );
+        &mut self.items[id.0 as usize]
+    }
+
+    pub fn mut_expr(&mut self, id: ExprId) -> &mut HirExpr {
+        debug_assert!(
+            (id.0 as usize) < self.exprs.len(),
+            "ExprId({}) out of bounds (len={})",
+            id.0,
+            self.exprs.len()
+        );
+        &mut self.exprs[id.0 as usize]
+    }
+
+    pub fn mut_stmt(&mut self, id: StmtId) -> &mut HirStmt {
+        debug_assert!(
+            (id.0 as usize) < self.stmts.len(),
+            "StmtId({}) out of bounds (len={})",
+            id.0,
+            self.stmts.len()
+        );
+        &mut self.stmts[id.0 as usize]
+    }
+
+    pub fn mut_body(&mut self, id: BodyId) -> &mut Body {
+        debug_assert!(
+            (id.0 as usize) < self.bodies.len(),
+            "BodyId({}) out of bounds (len={})",
+            id.0,
+            self.bodies.len()
+        );
+        &mut self.bodies[id.0 as usize]
+    }
+
+    pub fn mut_ty(&mut self, id: TypeId) -> &mut HirType {
+        debug_assert!(
+            (id.0 as usize) < self.types.len(),
+            "TypeId({}) out of bounds (len={})",
+            id.0,
+            self.types.len()
+        );
+        &mut self.types[id.0 as usize]
+    }
+
+    pub fn mut_impl_item(&mut self, id: ImplItemId) -> &mut ImplItem {
+        debug_assert!(
+            (id.0 as usize) < self.impl_items.len(),
+            "ImplItemId({}) out of bounds (len={})",
+            id.0,
+            self.impl_items.len()
+        );
+        &mut self.impl_items[id.0 as usize]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +391,6 @@ pub struct Function {
     pub module: ModuleId,
     /// struct defid if this is a method
     pub associated: Option<DefId>,
-    pub static_method: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -270,7 +424,7 @@ pub struct Struct {
 
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub self_ty: TypeId,
+    pub self_ty: DefId,
     pub of_interface: DefId,
     pub items: ThinVec<ImplItemId>,
     pub module: ModuleId,
@@ -301,7 +455,6 @@ pub struct Variable {
 #[derive(Debug, Clone)]
 pub struct MethodMeta {
     pub def: DefId,
-    pub is_static: bool,
     pub visibility: Visibility,
 }
 
@@ -403,7 +556,7 @@ pub enum HirStmtKind {
 #[derive(Debug, Clone)]
 pub enum HirType {
     Error,
-    Builtin(String),
+    PrimTy(PrimTy),
     Adt(DefId),
     Pointer(TypeId, Mutability),
 }

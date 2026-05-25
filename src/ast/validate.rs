@@ -3,13 +3,12 @@ use crate::{
         AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
         visit::{VisitAction, Visitable, Visitor},
     },
-    error_at,
     errors::{
         builders,
         widgets::{CodeWidget, HighlightType, InfoWidget, LocationWidget},
     },
     hashmap::FxHashMap,
-    span::ModuleId,
+    hir::ModuleId,
 };
 
 struct AstValidator {
@@ -29,31 +28,37 @@ impl AstValidator {
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                 let msg = format!("Duplicate definition of `{}` in {}", ident.value, context);
-                crate::ERRORS
-                    .with(|e| -> anyhow::Result<()> {
-                        let err = builders::error(msg)
-                            .add_widget(LocationWidget::new(ident.span, self.module_id)?)
-                            .add_widget(CodeWidget::new(
-                                ident.span,
-                                self.module_id,
-                                HighlightType::Error,
-                            )?)
-                            .add_widget(InfoWidget::new(
-                                first_span,
-                                self.module_id,
-                                format!("First definition of `{}` here", ident.value),
-                            )?)
-                            .add_widget(LocationWidget::new(first_span, self.module_id)?)
-                            .add_widget(CodeWidget::new(
-                                first_span,
-                                self.module_id,
-                                HighlightType::Info,
-                            )?);
 
-                        e.borrow_mut().add(err);
-                        Ok(())
-                    })
-                    .expect("failed to emit error");
+                let err = {
+                    let loc_widget = LocationWidget::new(ident.span, self.module_id)
+                        .expect("failed to get source location");
+                    let code_widget =
+                        CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
+                            .expect("failed to get source location");
+                    let info_widget = InfoWidget::new(
+                        first_span,
+                        self.module_id,
+                        format!("First definition of `{}` here", ident.value),
+                    )
+                    .expect("failed to get source location");
+                    let first_loc_widget = LocationWidget::new(first_span, self.module_id)
+                        .expect("failed to get source location");
+                    let first_code_widget =
+                        CodeWidget::new(first_span, self.module_id, HighlightType::Info)
+                            .expect("failed to get source location");
+
+                    builders::error(msg)
+                        .add_widget(loc_widget)
+                        .add_widget(code_widget)
+                        .add_widget(info_widget)
+                        .add_widget(first_loc_widget)
+                        .add_widget(first_code_widget)
+                };
+
+                crate::CTX.with_borrow_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(err, enable_printing);
+                });
             }
         }
     }
@@ -63,20 +68,32 @@ impl AstValidator {
 
         if f.is_extern {
             if f.body.is_some() {
-                error_at!(
-                    f.name.span,
-                    self.module_id,
-                    "Extern functions cannot have a body"
-                )
-                .expect("failed to emit error");
+                crate::with_ctx_mut(|ctx| {
+                    let enable_printing = ctx.enable_printing;
+                    ctx.errors.add(
+                        builders::error_at(
+                            "Extern functions cannot have a body",
+                            self.module_id,
+                            f.name.span,
+                            ctx,
+                        ),
+                        enable_printing,
+                    );
+                });
             }
         } else if f.body.is_none() && !self.in_interface {
-            error_at!(
-                f.name.span,
-                self.module_id,
-                "Non-extern function must have a body"
-            )
-            .expect("failed to emit error");
+            crate::with_ctx_mut(|ctx| {
+                let enable_printing = ctx.enable_printing;
+                ctx.errors.add(
+                    builders::error_at(
+                        "Non-extern function must have a body",
+                        self.module_id,
+                        f.name.span,
+                        ctx,
+                    ),
+                    enable_printing,
+                );
+            });
         }
 
         if let Some(body) = &f.body {
@@ -151,8 +168,32 @@ impl Visitor for AstValidator {
 
                 VisitAction::SkipChildren
             }
-            ItemKind::Static { .. } => VisitAction::Continue,
+            ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
+            ItemKind::Module { body, .. } => {
+                if let Some(items) = body {
+                    let mut names = Vec::new();
+                    for item in items.iter() {
+                        match &item.kind {
+                            ItemKind::Fn(f) => names.push(&f.name),
+                            ItemKind::Struct { name, .. } => names.push(name),
+                            ItemKind::Interface { name, .. } => names.push(name),
+                            ItemKind::Const { name, .. } => names.push(name),
+                            ItemKind::Module { name, .. } => names.push(name),
+                            ItemKind::Impl { .. } | ItemKind::Import(_) => {}
+                        }
+                    }
+                    self.check_duplicate_names(names, "module scope");
+
+                    let old_top_level = self.is_top_level;
+                    self.is_top_level = true;
+                    body.visit(self);
+                    self.is_top_level = old_top_level;
+                    VisitAction::SkipChildren
+                } else {
+                    VisitAction::SkipChildren
+                }
+            }
         }
     }
 
@@ -176,36 +217,43 @@ impl Visitor for AstValidator {
 
     fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
         match &expr.kind {
-            ExprKind::StructInstantiation { name: _, fields } => {
+            ExprKind::StructInstantiation { path: _, fields } => {
                 let mut seen = FxHashMap::default();
                 for (ident, val) in fields.iter() {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
                         let msg =
                             format!("Duplicate field `{}` in struct instantiation", ident.value);
-                        crate::ERRORS
-                            .with(|e| -> anyhow::Result<()> {
-                                let err = builders::error(msg)
-                                    .add_widget(LocationWidget::new(ident.span, self.module_id)?)
-                                    .add_widget(CodeWidget::new(
-                                        ident.span,
-                                        self.module_id,
-                                        HighlightType::Error,
-                                    )?)
-                                    .add_widget(InfoWidget::new(
-                                        first_span,
-                                        self.module_id,
-                                        format!("First initialization of `{}` here", ident.value),
-                                    )?)
-                                    .add_widget(LocationWidget::new(first_span, self.module_id)?)
-                                    .add_widget(CodeWidget::new(
-                                        first_span,
-                                        self.module_id,
-                                        HighlightType::Info,
-                                    )?);
-                                e.borrow_mut().add(err);
-                                Ok(())
-                            })
-                            .expect("failed to emit error");
+
+                        let err = {
+                            let loc_widget = LocationWidget::new(ident.span, self.module_id)
+                                .expect("failed to get source location");
+                            let code_widget =
+                                CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
+                                    .expect("failed to get source location");
+                            let info_widget = InfoWidget::new(
+                                first_span,
+                                self.module_id,
+                                format!("First initialization of `{}` here", ident.value),
+                            )
+                            .expect("failed to get source location");
+                            let first_loc_widget = LocationWidget::new(first_span, self.module_id)
+                                .expect("failed to get source location");
+                            let first_code_widget =
+                                CodeWidget::new(first_span, self.module_id, HighlightType::Info)
+                                    .expect("failed to get source location");
+
+                            builders::error(msg)
+                                .add_widget(loc_widget)
+                                .add_widget(code_widget)
+                                .add_widget(info_widget)
+                                .add_widget(first_loc_widget)
+                                .add_widget(first_code_widget)
+                        };
+
+                        crate::CTX.with_borrow_mut(|ctx| {
+                            let enable_printing = ctx.enable_printing;
+                            ctx.errors.add(err, enable_printing);
+                        });
                     }
                     val.visit(self);
                 }
@@ -239,19 +287,35 @@ impl Visitor for AstValidator {
             }
             ExprKind::Break(_) => {
                 if !self.in_loop {
-                    error_at!(expr.span, self.module_id, "Break statement outside of loop")
-                        .expect("failed to emit error");
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Break statement outside of loop",
+                                self.module_id,
+                                expr.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 VisitAction::Continue
             }
             ExprKind::Return(_) => {
                 if !self.in_function {
-                    error_at!(
-                        expr.span,
-                        self.module_id,
-                        "Return statement outside of function"
-                    )
-                    .expect("failed to emit error");
+                    crate::with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Return statement outside of function",
+                                self.module_id,
+                                expr.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
                 }
                 VisitAction::Continue
             }
@@ -276,7 +340,8 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
             ItemKind::Fn(f) => top_level_names.push(&f.name),
             ItemKind::Struct { name, .. } => top_level_names.push(name),
             ItemKind::Interface { name, .. } => top_level_names.push(name),
-            ItemKind::Static { name, .. } => top_level_names.push(name),
+            ItemKind::Const { name, .. } => top_level_names.push(name),
+            ItemKind::Module { name, .. } => top_level_names.push(name),
             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
         }
     }

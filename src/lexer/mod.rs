@@ -3,17 +3,15 @@ pub mod verify;
 
 use std::{path::Path, sync::OnceLock};
 
-use crate::{
-    lexer::{
-        token::{Token, TokenKind, TokenStream, lookup_reserved},
-        verify::verify_tokens,
-    },
-    span::{ModuleId, Span},
-};
 use anyhow::Result;
 use parking_lot::Once;
 use regex::Regex;
 use thin_vec::ThinVec;
+
+use crate::hir::ModuleId;
+use crate::lexer::token::{Token, TokenKind, TokenStream, lookup_reserved};
+use crate::lexer::verify::verify_tokens;
+use crate::span::Span;
 
 type TokenHandler = Box<dyn Fn(&str, Span, ModuleId) -> Result<Option<Token>> + Send + Sync>;
 
@@ -103,8 +101,8 @@ impl Lexer {
 pub fn tokenize(file: String, path: &Path) -> Result<(TokenStream, ModuleId)> {
     initialize_regexes();
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
+    let module_id = crate::CTX.with(|ctx| {
+        let maps = &mut ctx.borrow_mut().source_maps;
         maps.add_source(file.clone(), path.to_path_buf())
     });
 

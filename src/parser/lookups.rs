@@ -224,7 +224,6 @@ pub fn create_token_lookups() {
         nud(T::OpenCurly, parse_block_expr, &mut nud_lu);
         nud(T::Dash, parse_prefix_expr, &mut nud_lu);
         nud(T::Reference, parse_prefix_expr, &mut nud_lu);
-        nud(T::Dollar, parse_type_expr, &mut nud_lu);
 
         // Call & Member
         led(
@@ -262,13 +261,6 @@ pub fn create_token_lookups() {
             &mut bp_lu,
             &mut led_lu,
         );
-        led(
-            T::ColonColon,
-            BP::Member,
-            parse_member_access_expr,
-            &mut bp_lu,
-            &mut led_lu,
-        );
         nud(T::OpenBracket, parse_array_literal_expr, &mut nud_lu);
 
         nud(T::If, parse_if_expr, &mut nud_lu);
@@ -278,7 +270,7 @@ pub fn create_token_lookups() {
         nud(T::Return, parse_return_expr, &mut nud_lu);
 
         // Items (top-level definitions)
-        item(T::Static, parse_static_item, &mut bp_lu, &mut item_lu);
+        item(T::Const, parse_const_item, &mut bp_lu, &mut item_lu);
         item(T::Struct, parse_struct_decl_item, &mut bp_lu, &mut item_lu);
         item(
             T::Interface,
@@ -289,6 +281,7 @@ pub fn create_token_lookups() {
         item(T::Impl, parse_impl_item, &mut bp_lu, &mut item_lu);
         item(T::Fn, parse_fn_decl_item, &mut bp_lu, &mut item_lu);
         item(T::Import, parse_import_item, &mut bp_lu, &mut item_lu);
+        item(T::Mod, parse_module_item, &mut bp_lu, &mut item_lu);
 
         let _ = BP_LU.set(bp_lu);
         let _ = NUD_LU.set(nud_lu);

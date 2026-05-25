@@ -6,10 +6,7 @@ use thin_vec::ThinVec;
 use colored::Colorize;
 
 use crate::{
-    ast::{
-        Mutability, Type, TypeKind,
-        types::{FixedArrayType, FunctionType, PointerType, SliceType, SymbolType, TupleType},
-    },
+    ast::{Mutability, NodeId, Type, TypeKind},
     hashmap::FxHashMap,
     lexer::token::TokenKind::{self, self as T},
     parser::{
@@ -18,6 +15,7 @@ use crate::{
             BindingPower::{self, self as BP},
             BpLookup,
         },
+        utils::parse_path,
     },
     span::Span,
 };
@@ -67,25 +65,27 @@ pub fn create_token_type_lookups() {
 }
 
 fn parse_symbol_type(parser: &mut Parser) -> Result<Type> {
-    let ident = parser.expect_identifier()?;
-    let span = ident.span;
+    let path = parse_path(parser)?;
+    let span = path.span;
 
     Ok(Type {
-        kind: TypeKind::Symbol(SymbolType { name: ident }),
+        kind: TypeKind::Symbol(path),
+        node_id: NodeId::default(),
         span,
     })
 }
 
 fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
     let start_token = parser.expect(T::Reference)?;
-    let underlying = parse_type(parser, BindingPower::DefaultBp)?;
-    let end_span = underlying.span;
 
     let mut is_mutable = false;
     if parser.current_token().kind == TokenKind::Mut {
         parser.advance();
         is_mutable = true;
     }
+
+    let underlying = parse_type(parser, BindingPower::DefaultBp)?;
+    let end_span = underlying.span;
 
     let mutability = if is_mutable {
         Mutability::Mutable
@@ -94,11 +94,9 @@ fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
     };
 
     Ok(Type {
-        kind: TypeKind::Pointer(PointerType {
-            underlying: Box::new(underlying),
-            mutability,
-        }),
+        kind: TypeKind::Pointer(Box::new(underlying), mutability),
         span: Span::new(start_token.span.start(), end_span.end()),
+        node_id: NodeId::default(),
     })
 }
 
@@ -114,11 +112,9 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
             let end_span = underlying.span;
 
             Ok(Type {
-                kind: TypeKind::FixedArray(FixedArrayType {
-                    length,
-                    underlying: Box::new(underlying),
-                }),
+                kind: TypeKind::FixedArray(Box::new(underlying), length),
                 span: Span::new(start_token.span.start(), end_span.end()),
+                node_id: NodeId::default(),
             })
         }
         T::CloseBracket => {
@@ -127,10 +123,9 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
             let end_span = underlying.span;
 
             Ok(Type {
-                kind: TypeKind::Slice(SliceType {
-                    underlying: Box::new(underlying),
-                }),
+                kind: TypeKind::Slice(Box::new(underlying)),
                 span: Span::new(start_token.span.start(), end_span.end()),
+                node_id: NodeId::default(),
             })
         }
         _ => Err(anyhow!(
@@ -214,16 +209,18 @@ fn parse_parenthesis_type(parser: &mut Parser) -> Result<Type> {
         let end_span = return_type.span;
 
         Ok(Type {
-            kind: TypeKind::Function(FunctionType {
-                parameters: types,
-                return_type: Box::new(return_type),
-            }),
+            kind: TypeKind::Function {
+                params: types,
+                ret: Box::new(return_type),
+            },
             span: Span::new(start_token.span.start(), end_span.end()),
+            node_id: NodeId::default(),
         })
     } else {
         Ok(Type {
-            kind: TypeKind::Tuple(TupleType { elements: types }),
+            kind: TypeKind::Tuple(types),
             span: Span::new(start_token.span.start(), close_token.span.end()),
+            node_id: NodeId::default(),
         })
     }
 }

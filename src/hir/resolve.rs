@@ -1,8 +1,12 @@
+use std::{
+    ffi::OsString,
+    path::{self, Component},
+};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Visibility},
-    hir::{DefId, ExportEntry, interner::Symbol, lower::LoweringContext},
+    ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
+    hir::{DefId, ExportEntry, HirItemKind, interner::Symbol, lower::LoweringContext},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,22 +88,6 @@ impl LoweringContext {
                 ));
             }
         }
-    }
-
-    pub fn lookup_in_current_module(&self, sym: Symbol) -> Option<DefId> {
-        let modid = self.current_module?;
-        let module = &self.krate.modules[modid.0 as usize];
-
-        // Check local items before imports
-        if let Some(export_entry) = module.exports.get(&sym) {
-            return Some(export_entry.def);
-        }
-
-        if let Some(defid) = module.imports.get(&sym) {
-            return Some(*defid);
-        }
-
-        None
     }
 
     fn try_resolve_import(
@@ -241,5 +229,467 @@ impl LoweringContext {
                 ResolutionStatus::Failed
             }
         }
+    }
+
+    pub fn lookup_in_current_module(&self, sym: Symbol) -> Option<DefId> {
+        let modid = self.current_module?;
+        let module = &self.krate.modules[modid.0 as usize];
+
+        // Check local items before imports
+        if let Some(export_entry) = module.exports.get(&sym) {
+            return Some(export_entry.def);
+        }
+
+        if let Some(defid) = module.imports.get(&sym) {
+            return Some(*defid);
+        }
+
+        None
+    }
+
+    pub fn resolve_path(&mut self, path: &Path) -> Option<DefId> {
+        if path.segments.is_empty() {
+            return None;
+        }
+
+        if path.is_single() {
+            let name = path.segments[0].value.as_ref();
+            let sym = self.krate.interner.intern(name);
+            return self.lookup_in_current_module(sym);
+        }
+
+        let seg_count = path.segments.len();
+
+        // First, check if the first segment is a struct in current module
+        // and try to resolve methods from remaining segments
+        if let Some(curr) = self.current_module {
+            let first_name = path.segments[0].value.as_ref();
+            let first_sym = self.krate.interner.intern(first_name);
+            if let Some(export_entry) = self.krate.modules[curr.0 as usize].exports.get(&first_sym)
+            {
+                let def = export_entry.def;
+                if let Some(item) = self.krate.items.get(def.0 as usize)
+                    && matches!(item.kind, HirItemKind::Struct(_))
+                    && seg_count >= 2
+                {
+                    let method_name = path.segments[1].value.as_ref();
+                    if let Some(method_def) =
+                        self.try_resolve_struct_method(curr.0 as usize, def, method_name)
+                    {
+                        return Some(method_def);
+                    }
+                }
+            }
+        }
+
+        // Try longest possible module prefixes.
+        // For path segments s0, s1, ..., s(n-1) (n >= 2) attempt prefixes:
+        //  p = n-1: module_name = join(s0..s(p-1))  (length p), symbol = s[p]
+        //  p = n-2, ..., 1
+        for p in (1..seg_count).rev() {
+            let module_name = path.segments[..p]
+                .iter()
+                .map(|id| id.value.as_ref())
+                .collect::<Vec<_>>()
+                .join("::");
+
+            if let Some(target_idx) = self
+                .krate
+                .modules
+                .iter()
+                .position(|m| m.name.as_str() == module_name)
+            {
+                let symbol_name = path.segments[p].value.as_ref();
+                let sym = self.krate.interner.intern(symbol_name);
+
+                if let Some(export_entry) = self.krate.modules[target_idx].exports.get(&sym) {
+                    let curr = self.current_module?;
+                    if target_idx != curr.0 as usize
+                        && export_entry.visibility == Visibility::Private
+                    {
+                        return None;
+                    }
+
+                    let def = export_entry.def;
+
+                    // Check if this is a struct and try to resolve methods from remaining segments
+                    if let Some(item) = self.krate.items.get(def.0 as usize)
+                        && matches!(item.kind, HirItemKind::Struct(_))
+                        && p + 1 < seg_count
+                    {
+                        let method_name = path.segments[p + 1].value.as_ref();
+                        if let Some(method_def) =
+                            self.try_resolve_struct_method(target_idx, def, method_name)
+                        {
+                            return Some(method_def);
+                        }
+                        return None;
+                    }
+
+                    return Some(def);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn try_resolve_struct_method(
+        &mut self,
+        module_idx: usize,
+        struct_def: DefId,
+        method_name: &str,
+    ) -> Option<DefId> {
+        let item = self.krate.item(struct_def);
+        if !matches!(item.kind, HirItemKind::Struct(_)) {
+            return None;
+        }
+
+        let module = &self.krate.modules[module_idx];
+        let method_sym = self.krate.interner.intern(method_name);
+
+        let method_meta = module.struct_methods.get(&struct_def)?.get(&method_sym)?;
+
+        let curr = self.current_module?.0 as usize;
+        if module_idx != curr && method_meta.visibility == Visibility::Private {
+            return None;
+        }
+
+        Some(method_meta.def)
+    }
+}
+
+/// Convert a path like `a/b.oxi` into `a::b`.
+pub fn path_to_mod<P: AsRef<path::Path>>(p: P) -> String {
+    let path = p.as_ref();
+
+    let mut normals: Vec<OsString> = path
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(os) => Some(os.to_os_string()),
+            _ => None,
+        })
+        .collect();
+
+    if normals.is_empty() {
+        return String::new();
+    }
+
+    let last = normals.pop().expect("normals isn't empty");
+    let last_stem = path::Path::new(&last)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let mut parts: Vec<String> = normals
+        .into_iter()
+        .map(|os| os.to_string_lossy().into_owned())
+        .collect();
+
+    if !last_stem.is_empty() {
+        parts.push(last_stem);
+    }
+
+    parts.join("::")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::Ident;
+    use crate::hashmap::FxHashMap;
+    use crate::hir::{HirItem, MethodMeta, ModuleId, ModuleInfo, TypeId};
+    use crate::span::Span;
+
+    #[test]
+    fn simple() {
+        assert_eq!(path_to_mod("a/b.oxi"), "a::b");
+        assert_eq!(path_to_mod("a/b.test.oxi"), "a::b.test");
+        assert_eq!(path_to_mod("single.oxi"), "single");
+        assert_eq!(path_to_mod("single"), "single");
+        assert_eq!(path_to_mod("/usr/local/pkg.oxi"), "usr::local::pkg");
+    }
+
+    struct TestCtx {
+        ctx: LoweringContext,
+    }
+
+    impl TestCtx {
+        fn new() -> Self {
+            TestCtx {
+                ctx: LoweringContext::new(),
+            }
+        }
+
+        fn intern(&mut self, name: &str) -> Symbol {
+            self.ctx.krate.interner.intern(name)
+        }
+
+        fn add_module(&mut self, name: &str) -> usize {
+            let idx = self.ctx.krate.modules.len();
+            self.ctx.krate.modules.push(ModuleInfo {
+                name: name.to_string(),
+                exports: FxHashMap::default(),
+                items: ThinVec::new(),
+                imports: FxHashMap::default(),
+                struct_methods: FxHashMap::default(),
+                struct_fields: FxHashMap::default(),
+                struct_impls: FxHashMap::default(),
+                interface_impls: FxHashMap::default(),
+            });
+            idx
+        }
+
+        fn add_fn_to_module(
+            &mut self,
+            mod_idx: usize,
+            name: &str,
+            visibility: Visibility,
+        ) -> DefId {
+            let def_id = DefId(self.ctx.krate.items.len() as u32);
+            let sym = self.intern(name);
+
+            self.ctx.krate.items.push(HirItem {
+                defid: def_id,
+                kind: HirItemKind::Function(crate::hir::Function {
+                    name: sym,
+                    params: ThinVec::new(),
+                    ret: TypeId(0),
+                    body: None,
+                    module: ModuleId(mod_idx as u32),
+                    associated: None,
+                }),
+                span: Span::new(0, 0),
+            });
+
+            self.ctx.krate.modules[mod_idx].exports.insert(
+                sym,
+                ExportEntry {
+                    def: def_id,
+                    visibility,
+                },
+            );
+
+            def_id
+        }
+
+        fn add_struct_to_module(
+            &mut self,
+            mod_idx: usize,
+            name: &str,
+            visibility: Visibility,
+        ) -> DefId {
+            let def_id = DefId(self.ctx.krate.items.len() as u32);
+            let sym = self.intern(name);
+
+            self.ctx.krate.items.push(HirItem {
+                defid: def_id,
+                kind: HirItemKind::Struct(crate::hir::Struct {
+                    name: sym,
+                    fields: ThinVec::new(),
+                    module: ModuleId(mod_idx as u32),
+                }),
+                span: Span::new(0, 0),
+            });
+
+            self.ctx.krate.modules[mod_idx].exports.insert(
+                sym,
+                ExportEntry {
+                    def: def_id,
+                    visibility,
+                },
+            );
+
+            def_id
+        }
+
+        fn add_method_to_struct(
+            &mut self,
+            mod_idx: usize,
+            struct_def: DefId,
+            method_name: &str,
+            visibility: Visibility,
+        ) -> DefId {
+            let method_def = DefId(self.ctx.krate.items.len() as u32);
+            let method_sym = self.intern(method_name);
+
+            self.ctx.krate.items.push(HirItem {
+                defid: method_def,
+                kind: HirItemKind::Function(crate::hir::Function {
+                    name: method_sym,
+                    params: ThinVec::new(),
+                    ret: TypeId(0),
+                    body: None,
+                    module: ModuleId(mod_idx as u32),
+                    associated: Some(struct_def),
+                }),
+                span: Span::new(0, 0),
+            });
+
+            self.ctx.krate.modules[mod_idx]
+                .struct_methods
+                .entry(struct_def)
+                .or_default()
+                .insert(
+                    method_sym,
+                    MethodMeta {
+                        def: method_def,
+                        visibility,
+                    },
+                );
+
+            method_def
+        }
+
+        fn set_current_module(&mut self, idx: usize) {
+            self.ctx.current_module = Some(ModuleId(idx as u32));
+        }
+
+        fn path(&self, segments: &[&str]) -> Path {
+            Path {
+                span: Span::new(0, 0),
+                segments: segments
+                    .iter()
+                    .map(|s| Ident {
+                        value: (*s).into(),
+                        span: Span::new(0, 0),
+                    })
+                    .collect(),
+            }
+        }
+
+        fn resolve(&mut self, segments: &[&str]) -> Option<DefId> {
+            let path = self.path(segments);
+            self.ctx.resolve_path(&path)
+        }
+    }
+
+    #[test]
+    fn resolve_single_segment_local_fn() {
+        let mut t = TestCtx::new();
+        let mod_idx = t.add_module("foo");
+        let fn_def = t.add_fn_to_module(mod_idx, "bar", Visibility::Public);
+        t.set_current_module(mod_idx);
+
+        let result = t.resolve(&["bar"]);
+        assert_eq!(result, Some(fn_def));
+    }
+
+    #[test]
+    fn resolve_two_segment_module_fn() {
+        let mut t = TestCtx::new();
+        let mod_a = t.add_module("mod_a");
+        let mod_b = t.add_module("mod_b");
+        let fn_def = t.add_fn_to_module(mod_a, "func", Visibility::Public);
+        t.set_current_module(mod_b);
+
+        let result = t.resolve(&["mod_a", "func"]);
+        assert_eq!(result, Some(fn_def));
+    }
+
+    #[test]
+    fn resolve_three_segment_nested_fn() {
+        let mut t = TestCtx::new();
+        let mod_a = t.add_module("a");
+        let _mod_b = t.add_module("a::b");
+        let mod_c = t.add_module("a::b::c");
+        let fn_def = t.add_fn_to_module(mod_c, "deep_fn", Visibility::Public);
+        t.set_current_module(mod_a);
+
+        let result = t.resolve(&["a", "b", "c", "deep_fn"]);
+        assert_eq!(result, Some(fn_def));
+    }
+
+    #[test]
+    fn resolve_struct_not_method() {
+        let mut t = TestCtx::new();
+        let mod_idx = t.add_module("foo");
+        let struct_def = t.add_struct_to_module(mod_idx, "MyStruct", Visibility::Public);
+        t.set_current_module(mod_idx);
+
+        let result = t.resolve(&["MyStruct"]);
+        assert_eq!(result, Some(struct_def));
+    }
+
+    #[test]
+    fn resolve_struct_method_same_module() {
+        let mut t = TestCtx::new();
+        let mod_idx = t.add_module("foo");
+        let struct_def = t.add_struct_to_module(mod_idx, "MyStruct", Visibility::Public);
+        let method_def =
+            t.add_method_to_struct(mod_idx, struct_def, "my_method", Visibility::Public);
+        t.set_current_module(mod_idx);
+
+        let result = t.resolve(&["MyStruct", "my_method"]);
+        assert_eq!(result, Some(method_def));
+    }
+
+    #[test]
+    fn resolve_struct_method_other_module() {
+        let mut t = TestCtx::new();
+        let mod_a = t.add_module("mod_a");
+        let mod_b = t.add_module("mod_b");
+        let struct_def = t.add_struct_to_module(mod_a, "MyStruct", Visibility::Public);
+        let method_def = t.add_method_to_struct(mod_a, struct_def, "my_method", Visibility::Public);
+        t.set_current_module(mod_b);
+
+        let result = t.resolve(&["mod_a", "MyStruct", "my_method"]);
+        assert_eq!(result, Some(method_def));
+    }
+
+    #[test]
+    fn resolve_fails_private_from_other_module() {
+        let mut t = TestCtx::new();
+        let mod_a = t.add_module("mod_a");
+        let mod_b = t.add_module("mod_b");
+        t.add_fn_to_module(mod_a, "private_func", Visibility::Private);
+        t.set_current_module(mod_b);
+
+        let result = t.resolve(&["mod_a", "private_func"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn resolve_fails_nonexistent() {
+        let mut t = TestCtx::new();
+        let mod_idx = t.add_module("foo");
+        t.set_current_module(mod_idx);
+
+        let result = t.resolve(&["nonexistent"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn resolve_fails_nonexistent_in_module() {
+        let mut t = TestCtx::new();
+        let _mod_a = t.add_module("mod_a");
+        let mod_b = t.add_module("mod_b");
+        t.set_current_module(mod_b);
+
+        let result = t.resolve(&["mod_a", "nonexistent"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn resolve_fails_private_method_from_other_module() {
+        let mut t = TestCtx::new();
+        let mod_a = t.add_module("mod_a");
+        let mod_b = t.add_module("mod_b");
+        let struct_def = t.add_struct_to_module(mod_a, "MyStruct", Visibility::Public);
+        t.add_method_to_struct(mod_a, struct_def, "private_method", Visibility::Private);
+        t.set_current_module(mod_b);
+
+        let result = t.resolve(&["mod_a", "MyStruct", "private_method"]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn resolve_fails_empty_path() {
+        let mut t = TestCtx::new();
+        let mod_idx = t.add_module("foo");
+        t.set_current_module(mod_idx);
+
+        let result = t.resolve(&[]);
+        assert_eq!(result, None);
     }
 }

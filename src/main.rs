@@ -5,67 +5,71 @@ pub mod backend;
 pub mod bindings;
 pub mod cli;
 pub mod codegen;
+pub mod context;
 pub mod errors;
 pub mod hashmap;
 pub mod hir;
 pub mod lexer;
 pub mod macros;
 pub mod parser;
+pub mod resolve;
 pub mod span;
 pub mod utils;
 
-use std::{
-    cell::{Cell, RefCell},
-    fs,
-    io::IsTerminal,
-};
+use std::cell::RefCell;
+use std::fs;
+use std::io::IsTerminal;
 
 use anyhow::Result;
 use clap::Parser;
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::validate::validate_ast, cli::Cli, errors::ErrorCollector, hir::lower_ast, lexer::tokenize,
-    parser::parse, span::sourcemaps::SourceMapManager,
-};
+use crate::ast::validate::validate_ast;
+use crate::cli::Cli;
+use crate::context::{Ctx, with_ctx_mut};
+use crate::lexer::tokenize;
+use crate::parser::parse;
+use crate::resolve::{Resolver, build_module_tree};
 
 pub static DEFAULT_ROOT: &str = "..";
 
+// TODO: Make this not global
 thread_local! {
-    pub static ERRORS: RefCell<ErrorCollector> = RefCell::new(ErrorCollector::new());
-    pub static SOURCE_MAPS: RefCell<SourceMapManager> = RefCell::new(SourceMapManager::default());
-    pub static ENABLE_PRINTING: Cell<bool> = const { Cell::new(true) };
+    pub static CTX: RefCell<Ctx> = RefCell::new(Ctx::new());
 }
 
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.quiet {
-        ENABLE_PRINTING.with(|e| e.set(false));
+        CTX.with(|ctx| {
+            ctx.borrow_mut().enable_printing = false;
+        });
     }
 
     build_file(cli)?;
 
-    ERRORS.with(|e| {
-        e.borrow().print_all();
+    CTX.with(|ctx| {
+        ctx.borrow().errors.print_all();
     });
 
     Ok(())
 }
 
 fn check_for_errors() {
-    if ERRORS.with(|e| e.borrow().has_errors()) {
-        ERRORS.with(|e| {
-            e.borrow().print_all();
-        });
-        std::process::exit(1);
-    }
+    CTX.with(|ctx| {
+        let e = &ctx.borrow().errors;
+        if e.has_errors() {
+            e.print_all();
+            std::process::exit(1);
+        }
+    });
 }
 
 fn build_file(cli: Cli) -> Result<()> {
     let mut asts = ThinVec::with_capacity(cli.input.len());
-    for file_path in cli.input {
-        let source_text = match fs::read_to_string(&file_path) {
+    for file_path in &cli.input {
+        let source_text = match fs::read_to_string(file_path) {
             Err(err) => fatal!(format!(
                 "Source file `{}` not found: {}",
                 file_path.display(),
@@ -74,17 +78,10 @@ fn build_file(cli: Cli) -> Result<()> {
             Ok(source_text) => source_text,
         };
 
-        let (tokens, module_id) = tokenize(source_text, &file_path)?;
+        let (tokens, module_id) = tokenize(source_text, file_path)?;
         check_for_errors();
 
-        let ast = parse(
-            tokens,
-            file_path
-                .file_stem()
-                .expect("file has stem")
-                .to_str()
-                .expect("name is valid UTF-8"),
-        )?;
+        let ast = parse(tokens, file_path)?;
         check_for_errors();
 
         if cli.print_ast {
@@ -109,9 +106,23 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let hir = lower_ast(asts);
+    let file_paths: Vec<_> = cli.input.clone();
+    let module_tree = match build_module_tree(&asts, &file_paths) {
+        Ok(tree) => tree,
+        Err(e) => fatal!(e.to_string()),
+    };
+    check_for_errors();
 
-    println!("{:#?}", hir);
+    Resolver::assign_node_ids(&mut asts);
+    let resolver_outputs = with_ctx_mut(|ctx| {
+        let mut resolver = Resolver::new(&asts, &module_tree, ctx);
+        resolver.resolve();
+        resolver.into_resolver_outputs()
+    });
+
+    dbg!(resolver_outputs);
+
+    println!("Module resolution completed successfully.");
 
     Ok(())
 }

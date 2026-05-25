@@ -4,13 +4,14 @@ use inkwell::{builder::Builder, context::Context, module::Module};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, Fn, Ident, Item, ItemKind, Type, TypeKind, Visibility, types::SymbolType},
+    ast::{Ast, Fn, Ident, Item, ItemKind, NodeId, Path, Type, TypeKind, Visibility},
     codegen::{
         builtin::import::create_module,
         compiler::{self, CompilationContext},
         pointer::SmartValue,
     },
-    span::{ModuleId, Span},
+    hir::ModuleId,
+    span::Span,
 };
 use std::fs;
 
@@ -50,6 +51,7 @@ pub fn compile_header<'ctx>(
                                 span: arg.span,
                             },
                             arg,
+                            NodeId::default(),
                         )
                     })
                     .collect::<ThinVec<_>>();
@@ -65,6 +67,7 @@ pub fn compile_header<'ctx>(
                     return_type: ty.0,
                     is_extern: true,
                 }),
+                node_id: NodeId::default(),
                 span,
                 attributes: ThinVec::new(),
                 visibility: Visibility::Public,
@@ -79,9 +82,11 @@ pub fn compile_header<'ctx>(
         items,
     };
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
-        maps.next_id()
+    let header_source = fs::read_to_string(&module_path)?;
+    let module_id = crate::CTX.with(|ctx| {
+        ctx.borrow_mut()
+            .source_maps
+            .add_source(header_source, module_path.clone())
     });
 
     let mut mod_compilation_context = CompilationContext::new(module_path, module_id);
@@ -135,12 +140,11 @@ fn parse_type(ty: &str, span: Span) -> Type {
     let ty = map_c_type(ty);
 
     Type {
-        kind: TypeKind::Symbol(SymbolType {
-            name: Ident {
-                value: ty.into(),
-                span,
-            },
-        }),
+        kind: TypeKind::Symbol(Path::from_ident(Ident {
+            value: ty.into(),
+            span,
+        })),
+        node_id: NodeId::default(),
         span,
     }
 }
@@ -170,8 +174,8 @@ fn convert_clang_location(location: SourceLocation) -> (Span, ModuleId) {
     let clang_file = loc.file.expect("file location has no file").get_path();
     let file_path = clang_file.clone();
 
-    let module_id = crate::SOURCE_MAPS.with(|sm| {
-        let mut maps = sm.borrow_mut();
+    let module_id = crate::CTX.with(|ctx| {
+        let maps = &mut ctx.borrow_mut().source_maps;
         if let Ok(content) = fs::read_to_string(&file_path) {
             maps.add_source(content, file_path)
         } else {
