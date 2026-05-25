@@ -8,8 +8,8 @@ use crate::ast::{
 use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
+use crate::hir::DefId;
 use crate::hir::interner::Symbol;
-use crate::hir::{DefId, ModuleId};
 use crate::resolve::path::PathError;
 use crate::resolve::{PrimTy, Res, Resolver};
 use crate::span::Span;
@@ -146,7 +146,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             };
 
             // Not found, emit error
-            let module_id = ModuleId(self.resolver.module_idx as u32);
+            let module_id = self.resolver.source_module_id();
             let loc_widget = LocationWidget::new_with_ctx(path.span, module_id, self.resolver.ctx)
                 .expect("failed to create error");
             let code_widget = CodeWidget::new_with_ctx(
@@ -182,7 +182,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                             (span, format!("Module `{name}` not found"))
                         }
                     };
-                    let module_id = ModuleId(self.resolver.module_idx as u32);
+                    let module_id = self.resolver.source_module_id();
                     let loc_widget =
                         LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
                             .expect("failed to create error");
@@ -215,7 +215,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             };
 
             // Error
-            let module_id = ModuleId(self.resolver.module_idx as u32);
+            let module_id = self.resolver.source_module_id();
             let loc_widget = LocationWidget::new_with_ctx(last.span, module_id, self.resolver.ctx)
                 .expect("failed to create error");
             let code_widget = CodeWidget::new_with_ctx(
@@ -260,7 +260,8 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
-            ItemKind::Import(_) => {}
+            // Already resolved in a past stage
+            ItemKind::Import(_) | ItemKind::Module { .. } => {}
             ItemKind::Const { value, ty, .. } => {
                 value.visit(self);
                 ty.visit(self);
@@ -291,20 +292,11 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
                 self.resolve_path(&interface.0, interface.1);
 
-                self.with_rib(RibKind::Item, |this| {
-                    let Res::Def(def_id) = self_ty_res else {
-                        // Name resolution probably failed and self_ty_res is Res::Err
-                        todo!("Handle name resolution failure in impl self_ty")
-                    };
-                    this.inject_self_ty_from_def_id(def_id);
-                    this.resolve_assoc_items(items);
-                });
-            }
-            ItemKind::Module { body, .. } => {
-                if let Some(items) = body {
-                    for item in items {
-                        item.visit(self);
-                    }
+                if let Res::Def(def_id) = self_ty_res {
+                    self.with_rib(RibKind::Item, |this| {
+                        this.inject_self_ty_from_def_id(def_id);
+                        this.resolve_assoc_items(items);
+                    });
                 }
             }
         }

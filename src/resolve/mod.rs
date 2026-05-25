@@ -222,4 +222,21 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     fn def_id_for_node(&self, node_id: NodeId) -> Option<DefId> {
         self.def_map.get(&node_id).copied()
     }
+
+    /// Returns the `ModuleId` of the actual source file backing the current module.
+    /// For file-backed modules this is `ModuleId(ast_idx)`. For inline modules
+    /// it walks up to the nearest file-backed ancestor.
+    fn source_module_id(&self) -> ModuleId {
+        let mut idx = self.module_idx;
+        loop {
+            let node = &self.module_tree.nodes[idx];
+            if let Some(ast_idx) = node.ast_idx {
+                return ModuleId(ast_idx as u32);
+            }
+            match node.parent {
+                Some(parent) => idx = parent,
+                None => unreachable!(),
+            }
+        }
+    }
 }
