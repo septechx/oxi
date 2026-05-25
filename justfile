@@ -1,3 +1,5 @@
+export RUSTFLAGS := "-Clinker=clang -Clink-args=--ld-path=mold"
+
 build MODE="release":
     cargo build {{ if MODE == "release" { "--release" } else { "" } }}
 
