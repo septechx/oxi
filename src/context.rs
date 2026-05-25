@@ -1,5 +1,5 @@
 use crate::errors::ErrorCollector;
-use crate::hir::interner::Interner;
+use crate::interner::Interner;
 use crate::span::sourcemaps::SourceMapManager;
 
 #[derive(Debug)]

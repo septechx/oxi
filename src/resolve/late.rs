@@ -9,7 +9,7 @@ use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::DefId;
-use crate::hir::interner::Symbol;
+use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{PrimTy, Res, Resolver};
 use crate::span::Span;
@@ -89,7 +89,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             for arg in &fun.parameters {
                 arg.1.visit(this);
 
-                let sym = this.resolver.ctx.interner.intern(&arg.0.value);
+                let sym = arg.0.value;
                 let rib = this.ribs.last_mut().expect("rib exists");
                 rib.bindings.insert(sym, Res::Local(arg.2));
             }
@@ -111,8 +111,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
     fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> Res {
         let segments = &path.segments;
         if segments.len() == 1 {
-            let value = &segments[0].value;
-            let sym = self.resolver.ctx.interner.intern(value);
+            let sym = segments[0].value;
 
             // 1st check if path is a primitive type
             if let Some(prim) = PrimTy::from_name(sym) {
@@ -206,7 +205,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 
             // Last segment: look up in the target module's resolutions
             let last = &segments[segments.len() - 1];
-            let sym = self.resolver.ctx.interner.intern(&last.value);
+            let sym = last.value;
 
             if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
                 let res = Res::Def(res.best_binding().def_id);
@@ -226,17 +225,19 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             )
             .expect("failed to create error");
             let enable_printing = self.resolver.ctx.enable_printing;
+            let err_str = format!(
+                "Failed to resolve `{}` in module `{}`",
+                self.resolver.ctx.interner.lookup(last.value),
+                Path {
+                    segments: segments[..segments.len() - 1].into(),
+                    span: Span::new(0, 0),
+                }
+                .display(self.resolver.ctx)
+            );
             self.resolver.ctx.errors.add(
-                builders::error(format!(
-                    "Failed to resolve `{}` in module `{}`",
-                    last.value,
-                    Path {
-                        span: Span::new(0, 0),
-                        segments: segments[..segments.len() - 1].into()
-                    }
-                ))
-                .add_widget(loc_widget)
-                .add_widget(code_widget),
+                builders::error(err_str)
+                    .add_widget(loc_widget)
+                    .add_widget(code_widget),
                 enable_printing,
             );
 
@@ -314,7 +315,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     value.visit(self);
                 }
 
-                let sym = self.resolver.ctx.interner.intern(&name.value);
+                let sym = name.value;
                 let rib = self.ribs.last_mut().expect("rib exists");
                 rib.bindings.insert(sym, Res::Local(stmt.node_id));
             }

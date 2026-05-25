@@ -3,17 +3,14 @@ use thin_vec::ThinVec;
 use crate::{
     ast::{Ast, Literal, Mutability, Visibility},
     hashmap::FxHashMap,
-    hir::{
-        interner::{Interner, Symbol, sym},
-        lower::LoweringContext,
-    },
+    hir::lower::LoweringContext,
+    interner::{Interner, Symbol, sym},
     lexer::token::TokenKind,
     span::Span,
 };
 
 pub use resolve::path_to_mod;
 
-pub mod interner;
 mod lower;
 mod resolve;
 

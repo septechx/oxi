@@ -174,7 +174,7 @@ pub fn parse_struct_decl_item(
                         builders::error_at(
                             format!(
                                 "Property {} has already been defined in struct",
-                                property_name.value
+                                ctx.interner.lookup(property_name.value)
                             ),
                             parser.current_token().module_id,
                             property_name.span,

@@ -3,12 +3,12 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
     AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Path, Stmt, Type, Visibility,
+    NodeId, Path, Stmt, Type, Visibility, idents_to_string,
 };
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
-use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
+use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver};
 use crate::span::Span;
@@ -123,17 +123,17 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 let last_seg = pi.import_item.prefix.segments.last().expect("non-empty");
                 let module_prefix =
                     &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
-                let module_path: String = module_prefix
-                    .iter()
-                    .map(|s| s.value.as_ref())
-                    .collect::<Vec<_>>()
-                    .join("::");
+                let module_path = idents_to_string(module_prefix, &self.ctx.interner);
                 let msg = if module_path.is_empty() {
-                    format!("`{}` was not found", last_seg.value)
+                    format!(
+                        "`{}` was not found",
+                        self.ctx.interner.lookup(last_seg.value)
+                    )
                 } else {
                     format!(
                         "`{}` was not found in module `{}`",
-                        last_seg.value, module_path
+                        self.ctx.interner.lookup(last_seg.value),
+                        module_path
                     )
                 };
                 let loc_widget = LocationWidget::new_with_ctx(last_seg.span, pi.module, self.ctx)
@@ -226,14 +226,11 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             return ResolutionStatus::Failed;
         }
 
-        let local_name = rename
+        let local_sym = rename
             .as_ref()
-            .map(|r| r.value.as_ref())
-            .unwrap_or(unsafe { segments.last().unwrap_unchecked().value.as_ref() });
-        let local_sym = self.ctx.interner.intern(local_name);
-
-        let target_def_name = &segments[segments.len() - 1].value;
-        let target_sym = self.ctx.interner.intern(target_def_name);
+            .map(|r| r.value)
+            .unwrap_or(unsafe { segments.last().unwrap_unchecked().value });
+        let target_sym = &segments[segments.len() - 1].value;
 
         let current_module = pi.module.0 as usize;
 
@@ -249,7 +246,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         let target_res = self.modules[module_node_idx]
             .resolutions
-            .get(&target_sym)
+            .get(target_sym)
             .copied();
         let Some(target_res) = target_res else {
             return ResolutionStatus::Pending;
@@ -412,22 +409,22 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
             ItemKind::Const { name, .. } => {
-                let sym = self.resolver.ctx.interner.intern(&name.value);
+                let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Const, item.visibility);
             }
             ItemKind::Struct { name, .. } => {
-                let sym = self.resolver.ctx.interner.intern(&name.value);
+                let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
             }
             ItemKind::Interface { name, .. } => {
-                let sym = self.resolver.ctx.interner.intern(&name.value);
+                let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
             }
             ItemKind::Fn(f) => {
-                let sym = self.resolver.ctx.interner.intern(&f.name.value);
+                let sym = f.name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Function, item.visibility);
             }

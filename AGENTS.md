@@ -1,10 +1,7 @@
-# Running the tests
+# Usuful commands
 
-Either use `just test` or `env OXI_ROOT=$(pwd) cargo test`.
-
-# Running the lint
-
-Use `just lint`
+- Run test suite: `just test`
+- Run lint: `just lint`. If formatting issues are reported, fix them with `cargo fmt`
 
 # Language syntax
 

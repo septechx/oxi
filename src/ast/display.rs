@@ -2,9 +2,13 @@ use std::fmt::Write;
 
 use colored::Colorize;
 
-use crate::ast::{
-    AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
-    ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+use crate::{
+    ast::{
+        AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
+        ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+        idents_to_string,
+    },
+    context::with_ctx,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -85,8 +89,7 @@ fn punct_with_color(s: &str, color: bool) -> String {
 }
 
 fn format_path(path: &Path, color: bool) -> String {
-    let segments: Vec<String> = path.segments.iter().map(|s| s.value.to_string()).collect();
-    let path_str = segments.join("::");
+    let path_str = with_ctx(|ctx| idents_to_string(&path.segments, &ctx.interner));
     if color {
         path_str.magenta().to_string()
     } else {
@@ -171,7 +174,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "Const".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                name.value,
+                with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                 punct_with_color("\"", ctx.color)
             )?;
             write!(out, "{}", write_type(ty, ctx))?;
@@ -202,7 +205,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "StructDecl".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                name.value,
+                with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                 punct_with_color("\"", ctx.color)
             )?;
             if fields.is_empty() && items.is_empty() {
@@ -241,7 +244,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "InterfaceDecl".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                name.value,
+                with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                 punct_with_color("\"", ctx.color)
             )?;
             if items.is_empty() {
@@ -293,7 +296,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "{} {}\"{}\"",
                 "FnDecl".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
-                f.name.value
+                with_ctx(|ctx| ctx.interner.lookup(f.name.value).to_string())
             )?;
             write!(out, " {} ", punct_with_color("->", ctx.color))?;
             write!(out, "{}", write_type(&f.return_type, ctx))?;
@@ -315,7 +318,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                             out,
                             "{}FnArg \"{}\": {}",
                             arg_ctx.indent_str(),
-                            arg.0.value,
+                            with_ctx(|ctx| ctx.interner.lookup(arg.0.value).to_string()),
                             write_type(&arg.1, &arg_ctx)
                         )?;
                     }
@@ -350,7 +353,7 @@ pub fn write_item(out: &mut String, item: &Item, ctx: &DisplayContext) -> std::f
                 "Module".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                name.value,
+                with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                 punct_with_color("\"", ctx.color)
             )?;
             match body {
@@ -416,7 +419,7 @@ pub fn write_stmt(out: &mut String, stmt: &Stmt, ctx: &DisplayContext) -> std::f
                 "Let".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                name.value,
+                with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                 punct_with_color("\"", ctx.color)
             )?;
             write!(out, "{}", write_type(ty, ctx))?;
@@ -454,7 +457,7 @@ fn write_struct_field(
         "{} {}\"{}\": ",
         "Property".with_color(ctx.color),
         modifiers_with_color(&modifiers, ctx.color),
-        prop.0.value
+        with_ctx(|ctx| ctx.interner.lookup(prop.0.value).to_string())
     )?;
     write!(out, "{}", write_type(&prop.1, ctx))?;
     Ok(())
@@ -474,7 +477,7 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
                 "Method".with_color(ctx.color),
                 modifiers_with_color(&modifiers, ctx.color),
                 punct_with_color("\"", ctx.color),
-                f.name.value
+                with_ctx(|ctx| ctx.interner.lookup(f.name.value).to_string())
             )?;
             write!(out, "{}", punct_with_color("\"", ctx.color))?;
             write!(out, " {} ", punct_with_color("->", ctx.color))?;
@@ -494,7 +497,7 @@ fn write_assoc_item(out: &mut String, item: &AssocItem, ctx: &DisplayContext) ->
                         out,
                         "{}FnArg \"{}\": {}",
                         arg_ctx.indent_str(),
-                        name.value,
+                        with_ctx(|ctx| ctx.interner.lookup(name.value).to_string()),
                         write_type(ty, &arg_ctx)
                     )?;
                 }
@@ -745,7 +748,12 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                     if i > 0 {
                         writeln!(out)?;
                     }
-                    write!(out, "{}\"{}\": ", prop_ctx.indent_str(), name.value)?;
+                    write!(
+                        out,
+                        "{}\"{}\": ",
+                        prop_ctx.indent_str(),
+                        with_ctx(|ctx| ctx.interner.lookup(name.value).to_string())
+                    )?;
                     write_expr_inline_or_indented(out, expr, &prop_ctx)?;
                 }
             }
@@ -803,7 +811,12 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             let expr_ctx = ctx.indented();
             write_expr_inline_or_nested(out, "Base: ", base, &expr_ctx)?;
             writeln!(out)?;
-            write!(out, "{}Member: \"{}\"", expr_ctx.indent_str(), member.value)?;
+            write!(
+                out,
+                "{}Member: \"{}\"",
+                expr_ctx.indent_str(),
+                with_ctx(|ctx| ctx.interner.lookup(member.value).to_string())
+            )?;
         }
         ExprKind::As { expr, ty } => {
             writeln!(out, "{}", "As".with_color(ctx.color),)?;
@@ -878,7 +891,12 @@ fn write_import_tree(
     match &tree.kind {
         ImportTreeKind::Simple(rename) => {
             if let Some(r) = rename {
-                write!(out, "{} as {}", path_str, r.value)?;
+                write!(
+                    out,
+                    "{} as {}",
+                    path_str,
+                    with_ctx(|ctx| ctx.interner.lookup(r.value).to_string())
+                )?;
             } else {
                 write!(out, "{}", path_str)?;
             }
