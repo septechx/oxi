@@ -4,7 +4,6 @@ pub mod ast;
 pub mod backend;
 pub mod bindings;
 pub mod cli;
-pub mod codegen;
 pub mod context;
 pub mod errors;
 pub mod hashmap;

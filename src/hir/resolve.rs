@@ -108,32 +108,27 @@ impl LoweringContext {
                     return ResolutionStatus::Failed;
                 }
 
-                let desired_local_name = match rename_opt {
-                    Some(ident) => ident.value.as_ref(),
-                    None => segments
-                        .last()
-                        .expect("segments isn't empty")
-                        .value
-                        .as_ref(),
+                let local_sym = match rename_opt {
+                    Some(ident) => ident.value,
+                    None => segments.last().expect("segments isn't empty").value,
                 };
-                let local_sym = self.krate.interner.intern(desired_local_name);
 
                 if self.krate.modules[mid].imports.contains_key(&local_sym)
                     || self.krate.modules[mid].exports.contains_key(&local_sym)
                 {
                     self.krate.diagnostics.push(format!(
                         "Import name collision: `{}` in module `{}`",
-                        desired_local_name, self.krate.modules[mid].name
+                        self.krate.interner.lookup(local_sym),
+                        self.krate.modules[mid].name
                     ));
                     return ResolutionStatus::Failed;
                 }
 
                 if segments.len() == 1 {
                     let name = &segments[0].value;
-                    let sym = self.krate.interner.intern(name);
                     let mut found: Option<(usize, ExportEntry)> = None;
                     for (i, m) in self.krate.modules.iter().enumerate() {
-                        if let Some(entry) = m.exports.get(&sym) {
+                        if let Some(entry) = m.exports.get(name) {
                             found = Some((i, entry.clone()));
                             break;
                         }
@@ -179,22 +174,20 @@ impl LoweringContext {
                     let symbol_name = &segments[segments.len() - 1].value;
 
                     // find the module index if it exists
-                    let target_idx_opt = self
-                        .krate
-                        .modules
-                        .iter()
-                        .position(|m| m.name.as_str() == module_name.as_ref());
+                    let target_idx_opt =
+                        self.krate.modules.iter().position(|m| {
+                            m.name.as_str() == self.krate.interner.lookup(*module_name)
+                        });
                     if let Some(tmid) = target_idx_opt {
-                        let sym = self.krate.interner.intern(symbol_name);
                         let maybe_export = self.krate.modules[tmid]
                             .exports
-                            .get(&sym)
+                            .get(symbol_name)
                             .map(|export| (export.def, export.visibility));
                         if let Some((def, visibility)) = maybe_export {
                             if tmid != mid && visibility == Visibility::Private {
                                 self.krate.diagnostics.push(format!(
                                     "Cannot import `{}` from module `{}` as it is not marked as public",
-                                    symbol_name, module_name
+                                    self.krate.interner.lookup(*symbol_name), self.krate.interner.lookup(*module_name)
                                 ));
                                 return ResolutionStatus::Failed;
                             }
@@ -254,8 +247,7 @@ impl LoweringContext {
         }
 
         if path.is_single() {
-            let name = path.segments[0].value.as_ref();
-            let sym = self.krate.interner.intern(name);
+            let sym = path.segments[0].value;
             return self.lookup_in_current_module(sym);
         }
 
@@ -264,8 +256,7 @@ impl LoweringContext {
         // First, check if the first segment is a struct in current module
         // and try to resolve methods from remaining segments
         if let Some(curr) = self.current_module {
-            let first_name = path.segments[0].value.as_ref();
-            let first_sym = self.krate.interner.intern(first_name);
+            let first_sym = path.segments[0].value;
             if let Some(export_entry) = self.krate.modules[curr.0 as usize].exports.get(&first_sym)
             {
                 let def = export_entry.def;
@@ -273,7 +264,8 @@ impl LoweringContext {
                     && matches!(item.kind, HirItemKind::Struct(_))
                     && seg_count >= 2
                 {
-                    let method_name = path.segments[1].value.as_ref();
+                    let method_name = self.krate.interner.lookup(path.segments[1].value);
+                    let method_name = &method_name.to_string();
                     if let Some(method_def) =
                         self.try_resolve_struct_method(curr.0 as usize, def, method_name)
                     {
@@ -290,7 +282,7 @@ impl LoweringContext {
         for p in (1..seg_count).rev() {
             let module_name = path.segments[..p]
                 .iter()
-                .map(|id| id.value.as_ref())
+                .map(|id| self.krate.interner.lookup(id.value))
                 .collect::<Vec<_>>()
                 .join("::");
 
@@ -300,8 +292,7 @@ impl LoweringContext {
                 .iter()
                 .position(|m| m.name.as_str() == module_name)
             {
-                let symbol_name = path.segments[p].value.as_ref();
-                let sym = self.krate.interner.intern(symbol_name);
+                let sym = path.segments[p].value;
 
                 if let Some(export_entry) = self.krate.modules[target_idx].exports.get(&sym) {
                     let curr = self.current_module?;
@@ -318,7 +309,8 @@ impl LoweringContext {
                         && matches!(item.kind, HirItemKind::Struct(_))
                         && p + 1 < seg_count
                     {
-                        let method_name = path.segments[p + 1].value.as_ref();
+                        let method_name = self.krate.interner.lookup(path.segments[p + 1].value);
+                        let method_name = &method_name.to_string();
                         if let Some(method_def) =
                             self.try_resolve_struct_method(target_idx, def, method_name)
                         {
@@ -546,13 +538,13 @@ mod tests {
             self.ctx.current_module = Some(ModuleId(idx as u32));
         }
 
-        fn path(&self, segments: &[&str]) -> Path {
+        fn path(&mut self, segments: &[&str]) -> Path {
             Path {
                 span: Span::new(0, 0),
                 segments: segments
                     .iter()
                     .map(|s| Ident {
-                        value: (*s).into(),
+                        value: self.ctx.krate.interner.intern(s),
                         span: Span::new(0, 0),
                     })
                     .collect(),

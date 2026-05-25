@@ -1,17 +1,19 @@
 pub mod display;
-mod node_id;
 pub mod validate;
 pub mod visit;
 
+mod node_id;
 pub use node_id::*;
 
-use std::{fmt::Display, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::bail;
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::{
+    context::Ctx,
     hir::path_to_mod,
+    interner::Symbol,
     lexer::token::{Token, TokenKind},
     span::Span,
 };
@@ -232,19 +234,17 @@ pub enum TypeKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident {
-    pub value: Box<str>,
+    pub value: Symbol,
     pub span: Span,
 }
 
-impl TryFrom<Token> for Ident {
-    type Error = anyhow::Error;
-
-    fn try_from(token: Token) -> Result<Self, Self::Error> {
+impl Ident {
+    pub fn from_token(ctx: &mut Ctx, token: Token) -> Result<Self, anyhow::Error> {
         if token.kind != TokenKind::Identifier {
             bail!("Expected identifier token, but got {} instead", token.kind);
         }
         Ok(Self {
-            value: token.value,
+            value: ctx.interner.intern(token.value),
             span: token.span,
         })
     }
@@ -288,19 +288,13 @@ impl Path {
     pub fn is_single(&self) -> bool {
         self.segments.len() == 1
     }
-}
 
-impl Display for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = self
-            .segments
+    pub fn display(&self, ctx: &mut Ctx) -> String {
+        self.segments
             .iter()
-            .map(|s| s.value.as_ref())
+            .map(|s| ctx.interner.lookup(s.value))
             .collect::<Vec<_>>()
-            .join("::");
-        write!(f, "{s}")?;
-
-        Ok(())
+            .join("::")
     }
 }
 

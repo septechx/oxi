@@ -1,14 +1,35 @@
 macro_rules! declare_symbols {
-    (@step $idx:expr; $name:ident, $($rest:ident),*) => {
+    (@prefill crate) => { "crate" };
+    (@prefill super) => { "super" };
+    (@prefill self) => { "self" };
+    (@prefill $name:ident) => { stringify!($name) };
+
+    (@step $idx:expr; crate, $($rest:tt),*) => {
+        pub const crate_: Symbol = $idx;
+        declare_symbols!(@step $idx + 1u32; $($rest),*);
+    };
+    (@step $idx:expr; super, $($rest:tt),*) => {
+        pub const super_: Symbol = $idx;
+        declare_symbols!(@step $idx + 1u32; $($rest),*);
+    };
+    (@step $idx:expr; self, $($rest:tt),*) => {
+        pub const self_: Symbol = $idx;
+        declare_symbols!(@step $idx + 1u32; $($rest),*);
+    };
+    (@step $idx:expr; $name:ident, $($rest:tt),*) => {
         pub const $name: Symbol = $idx;
         declare_symbols!(@step $idx + 1u32; $($rest),*);
     };
-    (@step $idx:expr; $name:ident) => {
-        pub const $name: Symbol = $idx;
-    };
 
-    ($($name:ident),* $(,)?) => {
-        pub(crate) const SYM_PREFILL: &[&str] = &[$(stringify!($name)),*];
+    (@step $idx:expr; crate) => { pub const crate_: Symbol = $idx; };
+    (@step $idx:expr; super) => { pub const super_: Symbol = $idx; };
+    (@step $idx:expr; self) => { pub const self_: Symbol = $idx; };
+    (@step $idx:expr; $name:ident) => { pub const $name: Symbol = $idx; };
+
+    ($($name:tt),* $(,)?) => {
+        pub(crate) const SYM_PREFILL: &[&str] = &[
+            $(declare_symbols!(@prefill $name)),*
+        ];
 
         #[allow(non_upper_case_globals)]
         pub mod sym {
@@ -23,4 +44,5 @@ declare_symbols! {
     u8, u16, u32, u64, u128, usize,
     f16, f32, f64, f128,
     bool, void,
+    crate, super, self,
 }

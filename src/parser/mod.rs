@@ -7,16 +7,18 @@ mod string;
 mod types;
 mod utils;
 
+use std::path::PathBuf;
+
+use anyhow::Result;
+use thin_vec::ThinVec;
+
 use crate::{
     ast::{Ast, Ident, Item},
+    context::with_ctx_mut,
     errors::builders,
     lexer::token::{Token, TokenKind, TokenStream},
     parser::{lookups::create_token_lookups, stmt::parse_item, types::create_token_type_lookups},
 };
-
-use anyhow::Result;
-use std::{convert::TryInto, path::PathBuf};
-use thin_vec::ThinVec;
 
 pub struct Parser {
     tokens: ThinVec<Token>,
@@ -109,7 +111,7 @@ impl Parser {
 
     pub fn expect_identifier(&mut self) -> Result<Ident> {
         let token = self.expect(TokenKind::Identifier)?;
-        TryInto::<Ident>::try_into(token)
+        with_ctx_mut(|ctx| Ident::from_token(ctx, token))
     }
 }
 

@@ -19,6 +19,7 @@ pub struct ModuleTree {
 #[derive(Debug)]
 pub struct ModuleNode {
     pub ast_idx: Option<usize>,
+    // TODO: Replace with symbol
     pub name: String,
     pub qualified_name: String,
     pub parent: Option<usize>,

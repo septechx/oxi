@@ -1,4 +1,5 @@
 use crate::ast::Ident;
+use crate::interner::sym;
 use crate::resolve::Resolver;
 use crate::span::Span;
 
@@ -17,23 +18,25 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let mut current = from_node;
 
         for seg in segments.iter() {
-            let name = seg.value.as_ref();
-            match name {
-                "crate" => current = 0,
-                "super" => {
+            match seg.value {
+                sym::crate_ => current = 0,
+                sym::super_ => {
                     current = self.module_tree.nodes[current]
                         .parent
                         .ok_or(PathError::NoParentForSuper { span: seg.span })?;
                 }
-                "self" => {}
+                sym::self_ => {}
                 _ => {
                     current = self.module_tree.nodes[current]
                         .children
                         .iter()
-                        .find(|&&child| self.module_tree.nodes[child].name == name)
+                        .find(|&&child| {
+                            self.module_tree.nodes[child].name
+                                == self.ctx.interner.lookup(seg.value)
+                        })
                         .copied()
                         .ok_or(PathError::ModuleNotFound {
-                            name: name.to_string(),
+                            name: self.ctx.interner.lookup(seg.value).to_string(),
                             span: seg.span,
                         })?;
                 }

@@ -7,6 +7,7 @@ mod tests {
             Type, TypeKind, Visibility,
             visit::{VisitAction, Visitable, Visitor, VisitorMut},
         },
+        context::with_ctx_mut,
         hashmap::FxHashMap,
         hir::ModuleId,
         lexer::token::{Token, TokenKind},
@@ -169,10 +170,10 @@ mod tests {
     }
 
     fn dummy_ident(name: &str) -> Ident {
-        Ident {
-            value: name.to_string().into_boxed_str(),
+        with_ctx_mut(|ctx| Ident {
+            value: ctx.interner.intern(name),
             span: dummy_span(),
-        }
+        })
     }
 
     fn dummy_token(kind: TokenKind) -> Token {
