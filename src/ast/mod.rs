@@ -13,7 +13,7 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::{
     context::Ctx,
     hir::path_to_mod,
-    interner::Symbol,
+    interner::{Interner, Symbol},
     lexer::token::{Token, TokenKind},
     span::Span,
 };
@@ -290,12 +290,16 @@ impl Path {
     }
 
     pub fn display(&self, ctx: &mut Ctx) -> String {
-        self.segments
-            .iter()
-            .map(|s| ctx.interner.lookup(s.value))
-            .collect::<Vec<_>>()
-            .join("::")
+        idents_to_string(&self.segments, &ctx.interner)
     }
+}
+
+pub fn idents_to_string(idents: &[Ident], interner: &Interner) -> String {
+    idents
+        .iter()
+        .map(|s| interner.lookup(s.value))
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

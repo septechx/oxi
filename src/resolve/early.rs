@@ -3,7 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
     AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Path, Stmt, Type, Visibility,
+    NodeId, Path, Stmt, Type, Visibility, idents_to_string,
 };
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
@@ -123,17 +123,17 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 let last_seg = pi.import_item.prefix.segments.last().expect("non-empty");
                 let module_prefix =
                     &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
-                let module_path: String = module_prefix
-                    .iter()
-                    .map(|s| self.ctx.interner.lookup(s.value))
-                    .collect::<Vec<_>>()
-                    .join("::");
+                let module_path = idents_to_string(module_prefix, &self.ctx.interner);
                 let msg = if module_path.is_empty() {
-                    format!("`{}` was not found", last_seg.value)
+                    format!(
+                        "`{}` was not found",
+                        self.ctx.interner.lookup(last_seg.value)
+                    )
                 } else {
                     format!(
                         "`{}` was not found in module `{}`",
-                        last_seg.value, module_path
+                        self.ctx.interner.lookup(last_seg.value),
+                        module_path
                     )
                 };
                 let loc_widget = LocationWidget::new_with_ctx(last_seg.span, pi.module, self.ctx)

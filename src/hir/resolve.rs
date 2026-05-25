@@ -5,7 +5,7 @@ use std::{
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
+    ast::{self, Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
     context::with_ctx,
     hir::{DefId, ExportEntry, HirItemKind, lower::LoweringContext},
     interner::Symbol,
@@ -76,14 +76,9 @@ impl LoweringContext {
         // anything left unresolved -> emit diagnostics
         if !pending.is_empty() {
             for pi in pending {
-                let segments: ThinVec<String> = pi
-                    .import_item
-                    .prefix
-                    .segments
-                    .iter()
-                    .map(|ident| with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string()))
-                    .collect();
-                let path = segments.join("::");
+                let path = with_ctx(|ctx| {
+                    ast::idents_to_string(&pi.import_item.prefix.segments, &ctx.interner)
+                });
                 self.krate.diagnostics.push(format!(
                     "Could not resolve import `{}` in module `{}`",
                     path, self.krate.modules[pi.module_idx].name
@@ -281,11 +276,7 @@ impl LoweringContext {
         //  p = n-1: module_name = join(s0..s(p-1))  (length p), symbol = s[p]
         //  p = n-2, ..., 1
         for p in (1..seg_count).rev() {
-            let module_name = path.segments[..p]
-                .iter()
-                .map(|id| self.krate.interner.lookup(id.value))
-                .collect::<Vec<_>>()
-                .join("::");
+            let module_name = ast::idents_to_string(&path.segments[..p], &self.krate.interner);
 
             if let Some(target_idx) = self
                 .krate

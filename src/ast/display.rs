@@ -6,6 +6,7 @@ use crate::{
     ast::{
         AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
         ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+        idents_to_string,
     },
     context::with_ctx,
 };
@@ -88,12 +89,7 @@ fn punct_with_color(s: &str, color: bool) -> String {
 }
 
 fn format_path(path: &Path, color: bool) -> String {
-    let segments: Vec<String> = path
-        .segments
-        .iter()
-        .map(|s| with_ctx(|ctx| ctx.interner.lookup(s.value).to_string()))
-        .collect();
-    let path_str = segments.join("::");
+    let path_str = with_ctx(|ctx| idents_to_string(&path.segments, &ctx.interner));
     if color {
         path_str.magenta().to_string()
     } else {
