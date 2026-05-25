@@ -5,6 +5,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Item, ItemKind},
+    context::with_ctx,
     errors::builders,
     hashmap::FxHashMap,
     hir::ModuleId,
@@ -102,7 +103,7 @@ fn process_ast_items(
             continue;
         };
 
-        let mod_name = name.value.to_string();
+        let mod_name = with_ctx(|ctx| ctx.interner.lookup(name.value).to_string());
         let parent_qualified = &tree.nodes[parent_idx].qualified_name;
         let qualified = if parent_qualified.is_empty() {
             mod_name.clone()

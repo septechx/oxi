@@ -6,6 +6,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
+    context::with_ctx,
     hir::{DefId, ExportEntry, HirItemKind, lower::LoweringContext},
     interner::Symbol,
 };
@@ -80,7 +81,7 @@ impl LoweringContext {
                     .prefix
                     .segments
                     .iter()
-                    .map(|ident| ident.value.to_string())
+                    .map(|ident| with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string()))
                     .collect();
                 let path = segments.join("::");
                 self.krate.diagnostics.push(format!(

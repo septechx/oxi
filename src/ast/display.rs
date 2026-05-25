@@ -2,9 +2,12 @@ use std::fmt::Write;
 
 use colored::Colorize;
 
-use crate::ast::{
-    AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
-    ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+use crate::{
+    ast::{
+        AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
+        ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+    },
+    context::with_ctx,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -85,7 +88,11 @@ fn punct_with_color(s: &str, color: bool) -> String {
 }
 
 fn format_path(path: &Path, color: bool) -> String {
-    let segments: Vec<String> = path.segments.iter().map(|s| s.value.to_string()).collect();
+    let segments: Vec<String> = path
+        .segments
+        .iter()
+        .map(|s| with_ctx(|ctx| ctx.interner.lookup(s.value).to_string()))
+        .collect();
     let path_str = segments.join("::");
     if color {
         path_str.magenta().to_string()
