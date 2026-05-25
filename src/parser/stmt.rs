@@ -36,7 +36,7 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
         crate::with_ctx_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors.add(
-                builders::error_at(
+                builders::fatal_at(
                     format!("Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.", tok.kind), 
                     tok.module_id,
                     tok.span,

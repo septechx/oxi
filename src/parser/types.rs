@@ -77,14 +77,15 @@ fn parse_symbol_type(parser: &mut Parser) -> Result<Type> {
 
 fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
     let start_token = parser.expect(T::Reference)?;
-    let underlying = parse_type(parser, BindingPower::DefaultBp)?;
-    let end_span = underlying.span;
 
     let mut is_mutable = false;
     if parser.current_token().kind == TokenKind::Mut {
         parser.advance();
         is_mutable = true;
     }
+
+    let underlying = parse_type(parser, BindingPower::DefaultBp)?;
+    let end_span = underlying.span;
 
     let mutability = if is_mutable {
         Mutability::Mutable

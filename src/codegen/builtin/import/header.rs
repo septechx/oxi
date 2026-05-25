@@ -82,9 +82,11 @@ pub fn compile_header<'ctx>(
         items,
     };
 
+    let header_source = fs::read_to_string(&module_path)?;
     let module_id = crate::CTX.with(|ctx| {
-        let maps = &mut ctx.borrow_mut().source_maps;
-        maps.next_id()
+        ctx.borrow_mut()
+            .source_maps
+            .add_source(header_source, module_path.clone())
     });
 
     let mut mod_compilation_context = CompilationContext::new(module_path, module_id);

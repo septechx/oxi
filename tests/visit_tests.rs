@@ -5,7 +5,7 @@ mod tests {
             AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
             ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, Stmt, StmtKind,
             Type, TypeKind, Visibility,
-            visit::{VisitAction, Visitable, Visitor},
+            visit::{VisitAction, Visitable, Visitor, VisitorMut},
         },
         hashmap::FxHashMap,
         hir::ModuleId,
@@ -1250,5 +1250,242 @@ mod tests {
         visitor.assert_visited("item", "Item", 1);
         visitor.assert_visited("item", "ImplItem", 1);
         visitor.assert_visited("type", "SymbolType", 1);
+    }
+
+    // --- Mutable visitor regression tests ---
+
+    pub struct MutationVisitor {
+        item_counts: FxHashMap<&'static str, usize>,
+        stmt_counts: FxHashMap<&'static str, usize>,
+        expr_counts: FxHashMap<&'static str, usize>,
+        type_counts: FxHashMap<&'static str, usize>,
+        seen_integers: Vec<i64>,
+    }
+
+    impl MutationVisitor {
+        pub fn new() -> Self {
+            Self {
+                item_counts: FxHashMap::default(),
+                stmt_counts: FxHashMap::default(),
+                expr_counts: FxHashMap::default(),
+                type_counts: FxHashMap::default(),
+                seen_integers: Vec::new(),
+            }
+        }
+
+        pub fn assert_visited(&self, category: &str, name: &str, count: usize) {
+            let counts = match category {
+                "item" => &self.item_counts,
+                "stmt" => &self.stmt_counts,
+                "expr" => &self.expr_counts,
+                "type" => &self.type_counts,
+                _ => panic!("Invalid category: {}", category),
+            };
+            let actual = counts.get(name).copied().unwrap_or(0);
+            assert_eq!(
+                actual, count,
+                "Expected {} {} visits, got {}",
+                count, name, actual
+            );
+        }
+
+        pub fn assert_all_visited(&self, expectations: &[(&'static str, &'static str, usize)]) {
+            for &(category, name, count) in expectations {
+                self.assert_visited(category, name, count);
+            }
+        }
+    }
+
+    impl VisitorMut for MutationVisitor {
+        fn visit_item(&mut self, item: &mut Item) -> VisitAction {
+            *self.item_counts.entry("Item").or_insert(0) += 1;
+            let kind_name = match &item.kind {
+                ItemKind::Const { .. } => "ConstItem",
+                ItemKind::Struct { .. } => "StructDeclItem",
+                ItemKind::Interface { .. } => "InterfaceDeclItem",
+                ItemKind::Impl { .. } => "ImplItem",
+                ItemKind::Fn(_) => "FnDeclItem",
+                ItemKind::Import(_) => "ImportItem",
+                ItemKind::Module { .. } => "ModuleItem",
+            };
+            *self.item_counts.entry(kind_name).or_insert(0) += 1;
+            VisitAction::Continue
+        }
+
+        fn visit_stmt(&mut self, stmt: &mut Stmt) -> VisitAction {
+            *self.stmt_counts.entry("Stmt").or_insert(0) += 1;
+            let kind_name = match &stmt.kind {
+                StmtKind::Expr(_) => "ExprStmt",
+                StmtKind::Let { .. } => "LetStmt",
+                StmtKind::Semi(_) => "SemiStmt",
+            };
+            *self.stmt_counts.entry(kind_name).or_insert(0) += 1;
+            VisitAction::Continue
+        }
+
+        fn visit_expr(&mut self, expr: &mut Expr) -> VisitAction {
+            if let ExprKind::Literal(Literal::Integer(val)) = &expr.kind {
+                self.seen_integers.push(*val);
+            }
+
+            *self.expr_counts.entry("Expr").or_insert(0) += 1;
+            let kind_name = match &expr.kind {
+                ExprKind::Literal(l) => {
+                    *self.expr_counts.entry("Literal").or_insert(0) += 1;
+                    match l {
+                        Literal::Integer(_) | Literal::Float(_) => "NumberExpr",
+                        Literal::String(_) => "StringExpr",
+                        Literal::Char(_) => "CharExpr",
+                        Literal::Bool(_) => "BoolExpr",
+                    }
+                }
+                ExprKind::Block(_) => "BlockExpr",
+                ExprKind::If { .. } => "IfExpr",
+                ExprKind::While { .. } => "WhileExpr",
+                ExprKind::Loop(_) => "LoopExpr",
+                ExprKind::Symbol(_) => "SymbolExpr",
+                ExprKind::Binary { .. } => "BinaryExpr",
+                ExprKind::Postfix { .. } => "PostfixExpr",
+                ExprKind::Prefix { .. } => "PrefixExpr",
+                ExprKind::Assignment { .. } => "AssignmentExpr",
+                ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
+                ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
+                ExprKind::FunctionCall { .. } => "FunctionCallExpr",
+                ExprKind::MemberAccess { .. } => "MemberAccessExpr",
+                ExprKind::As { .. } => "AsExpr",
+                ExprKind::TupleLiteral { .. } => "TupleLiteralExpr",
+                ExprKind::Break(_) => "BreakExpr",
+                ExprKind::Return(_) => "ReturnExpr",
+            };
+            *self.expr_counts.entry(kind_name).or_insert(0) += 1;
+
+            if let ExprKind::Literal(Literal::Integer(val)) = &mut expr.kind {
+                *val += 1;
+            }
+
+            VisitAction::Continue
+        }
+
+        fn visit_type(&mut self, ty: &mut Type) -> VisitAction {
+            *self.type_counts.entry("Type").or_insert(0) += 1;
+            let kind_name = match &ty.kind {
+                TypeKind::Symbol(_) => "SymbolType",
+                TypeKind::Pointer(..) => "PointerType",
+                TypeKind::Slice(_) => "SliceType",
+                TypeKind::FixedArray(..) => "FixedArrayType",
+                TypeKind::Function { .. } => "FunctionType",
+                TypeKind::Tuple(_) => "TupleType",
+                TypeKind::Infer => "Infer",
+                TypeKind::Never => "Never",
+            };
+            *self.type_counts.entry(kind_name).or_insert(0) += 1;
+            VisitAction::Continue
+        }
+    }
+
+    #[test]
+    fn test_mutable_visitor_regression() {
+        let mut ast = Ast {
+            name: "test".into(),
+            items: thin_vec![
+                Item {
+                    kind: ItemKind::Const {
+                        name: dummy_ident("MY_CONST"),
+                        value: dummy_expr_number(42),
+                        ty: dummy_type_symbol("i32"),
+                    },
+                    span: dummy_span(),
+                    attributes: ThinVec::new(),
+                    visibility: Visibility::Private,
+                    node_id: NodeId::default(),
+                },
+                Item {
+                    kind: ItemKind::Fn(Fn {
+                        name: dummy_ident("main"),
+                        parameters: thin_vec![(
+                            dummy_ident("a"),
+                            dummy_type_symbol("i32"),
+                            NodeId::default(),
+                        )],
+                        body: Some(Block {
+                            stmts: thin_vec![
+                                Stmt {
+                                    kind: StmtKind::Let {
+                                        name: dummy_ident("x"),
+                                        value: Some(dummy_expr_number(1)),
+                                        ty: dummy_type_infer(),
+                                        mutability: Mutability::Mutable,
+                                    },
+                                    span: dummy_span(),
+                                    node_id: NodeId::default(),
+                                },
+                                Stmt {
+                                    kind: StmtKind::Expr(Expr {
+                                        kind: ExprKind::Block(Block {
+                                            stmts: thin_vec![Stmt {
+                                                kind: StmtKind::Semi(Expr {
+                                                    kind: ExprKind::Return(Some(Box::new(
+                                                        dummy_expr_number(2)
+                                                    ))),
+                                                    span: dummy_span(),
+                                                    node_id: NodeId::default(),
+                                                }),
+                                                span: dummy_span(),
+                                                node_id: NodeId::default(),
+                                            }],
+                                        }),
+                                        span: dummy_span(),
+                                        node_id: NodeId::default(),
+                                    }),
+                                    span: dummy_span(),
+                                    node_id: NodeId::default(),
+                                },
+                            ],
+                        }),
+                        return_type: dummy_type_symbol("void"),
+                        is_extern: false,
+                    }),
+                    span: dummy_span(),
+                    attributes: ThinVec::new(),
+                    visibility: Visibility::Private,
+                    node_id: NodeId::default(),
+                },
+            ],
+        };
+
+        let mut visitor = MutationVisitor::new();
+        ast.visit_mut(&mut visitor);
+
+        visitor.assert_all_visited(&[
+            ("item", "Item", 2),
+            ("item", "ConstItem", 1),
+            ("item", "FnDeclItem", 1),
+            ("stmt", "Stmt", 3),
+            ("stmt", "LetStmt", 1),
+            ("stmt", "ExprStmt", 1),
+            ("stmt", "SemiStmt", 1),
+            ("expr", "Expr", 5),
+            ("expr", "NumberExpr", 3),
+            ("expr", "BlockExpr", 1),
+            ("expr", "ReturnExpr", 1),
+            ("type", "Type", 4),
+            ("type", "SymbolType", 3),
+            ("type", "Infer", 1),
+        ]);
+
+        assert_eq!(visitor.seen_integers, vec![42, 1, 2]);
+
+        if let ItemKind::Const { value, .. } = &ast.items[0].kind {
+            if let ExprKind::Literal(Literal::Integer(val)) = &value.kind {
+                assert_eq!(
+                    *val, 43,
+                    "Const value should have been incremented by MutationVisitor"
+                );
+            } else {
+                panic!("Const value expected to be an integer literal");
+            }
+        } else {
+            panic!("First item expected to be Const");
+        }
     }
 }

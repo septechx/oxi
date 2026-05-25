@@ -171,7 +171,20 @@ impl Visitor for AstValidator {
             ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
             ItemKind::Module { body, .. } => {
-                if body.is_some() {
+                if let Some(items) = body {
+                    let mut names = Vec::new();
+                    for item in items.iter() {
+                        match &item.kind {
+                            ItemKind::Fn(f) => names.push(&f.name),
+                            ItemKind::Struct { name, .. } => names.push(name),
+                            ItemKind::Interface { name, .. } => names.push(name),
+                            ItemKind::Const { name, .. } => names.push(name),
+                            ItemKind::Module { name, .. } => names.push(name),
+                            ItemKind::Impl { .. } | ItemKind::Import(_) => {}
+                        }
+                    }
+                    self.check_duplicate_names(names, "module scope");
+
                     let old_top_level = self.is_top_level;
                     self.is_top_level = true;
                     body.visit(self);

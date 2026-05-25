@@ -43,7 +43,7 @@ pub fn main() -> Result<()> {
 
     if cli.quiet {
         CTX.with(|ctx| {
-            ctx.borrow_mut().enable_printing = true;
+            ctx.borrow_mut().enable_printing = false;
         });
     }
 
