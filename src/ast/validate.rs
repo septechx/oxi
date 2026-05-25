@@ -27,7 +27,9 @@ impl AstValidator {
         let mut seen = FxHashMap::default();
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
-                let msg = format!("Duplicate definition of `{}` in {}", ident.value, context);
+                let ident_str =
+                    crate::context::with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
+                let msg = format!("Duplicate definition of `{}` in {}", ident_str, context);
 
                 let err = {
                     let loc_widget = LocationWidget::new(ident.span, self.module_id)
@@ -35,10 +37,13 @@ impl AstValidator {
                     let code_widget =
                         CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
                             .expect("failed to get source location");
+                    let ident_str = crate::context::with_ctx(|ctx| {
+                        ctx.interner.lookup(ident.value).to_string()
+                    });
                     let info_widget = InfoWidget::new(
                         first_span,
                         self.module_id,
-                        format!("First definition of `{}` here", ident.value),
+                        format!("First definition of `{}` here", ident_str),
                     )
                     .expect("failed to get source location");
                     let first_loc_widget = LocationWidget::new(first_span, self.module_id)
@@ -68,7 +73,7 @@ impl AstValidator {
 
         if f.is_extern {
             if f.body.is_some() {
-                crate::with_ctx_mut(|ctx| {
+                crate::context::with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
                         builders::error_at(
@@ -82,7 +87,7 @@ impl AstValidator {
                 });
             }
         } else if f.body.is_none() && !self.in_interface {
-            crate::with_ctx_mut(|ctx| {
+            crate::context::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
                     builders::error_at(
@@ -221,8 +226,11 @@ impl Visitor for AstValidator {
                 let mut seen = FxHashMap::default();
                 for (ident, val) in fields.iter() {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
+                        let ident_str = crate::context::with_ctx(|ctx| {
+                            ctx.interner.lookup(ident.value).to_string()
+                        });
                         let msg =
-                            format!("Duplicate field `{}` in struct instantiation", ident.value);
+                            format!("Duplicate field `{}` in struct instantiation", ident_str);
 
                         let err = {
                             let loc_widget = LocationWidget::new(ident.span, self.module_id)
@@ -233,7 +241,12 @@ impl Visitor for AstValidator {
                             let info_widget = InfoWidget::new(
                                 first_span,
                                 self.module_id,
-                                format!("First initialization of `{}` here", ident.value),
+                                crate::context::with_ctx(|ctx| {
+                                    format!(
+                                        "First initialization of `{}` here",
+                                        ctx.interner.lookup(ident.value)
+                                    )
+                                }),
                             )
                             .expect("failed to get source location");
                             let first_loc_widget = LocationWidget::new(first_span, self.module_id)
@@ -287,7 +300,7 @@ impl Visitor for AstValidator {
             }
             ExprKind::Break(_) => {
                 if !self.in_loop {
-                    crate::with_ctx_mut(|ctx| {
+                    crate::context::with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
                             builders::error_at(
@@ -304,7 +317,7 @@ impl Visitor for AstValidator {
             }
             ExprKind::Return(_) => {
                 if !self.in_function {
-                    crate::with_ctx_mut(|ctx| {
+                    crate::context::with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
                             builders::error_at(

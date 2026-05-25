@@ -289,7 +289,7 @@ impl Path {
         self.segments.len() == 1
     }
 
-    pub fn display(&self, ctx: &mut Ctx) -> String {
+    pub fn display(&self, ctx: &Ctx) -> String {
         idents_to_string(&self.segments, &ctx.interner)
     }
 }

@@ -227,7 +227,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             let enable_printing = self.resolver.ctx.enable_printing;
             let err_str = format!(
                 "Failed to resolve `{}` in module `{}`",
-                last.value,
+                self.resolver.ctx.interner.lookup(last.value),
                 Path {
                     segments: segments[..segments.len() - 1].into(),
                     span: Span::new(0, 0),
