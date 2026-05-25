@@ -12,7 +12,7 @@ macro_rules! declare_symbols {
 
         #[allow(non_upper_case_globals)]
         pub mod sym {
-            use crate::hir::interner::Symbol;
+            use crate::interner::Symbol;
             declare_symbols!(@step 0u32; $($name),*);
         }
     };

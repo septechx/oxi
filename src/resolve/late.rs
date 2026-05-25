@@ -9,7 +9,7 @@ use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::DefId;
-use crate::hir::interner::Symbol;
+use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{PrimTy, Res, Resolver};
 use crate::span::Span;

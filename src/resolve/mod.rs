@@ -5,8 +5,8 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId, PrimTy};
+use crate::interner::Symbol;
 use crate::resolve::mod_tree::ModuleTree;
 
 pub use mod_tree::build_module_tree;

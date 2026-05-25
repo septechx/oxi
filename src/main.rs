@@ -9,6 +9,7 @@ pub mod context;
 pub mod errors;
 pub mod hashmap;
 pub mod hir;
+pub mod interner;
 pub mod lexer;
 pub mod macros;
 pub mod parser;

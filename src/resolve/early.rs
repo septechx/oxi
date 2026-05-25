@@ -7,8 +7,8 @@ use crate::ast::{
 };
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
-use crate::hir::interner::Symbol;
 use crate::hir::{DefId, ModuleId};
+use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver};
 use crate::span::Span;

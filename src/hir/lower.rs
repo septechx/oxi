@@ -10,8 +10,9 @@ use crate::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
         HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Impl, ImplItem, ImplItemId,
         ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,
-        ModuleInfo, PrimTy, StmtId, Struct, StructField, TypeId, Variable, interner::Symbol,
+        ModuleInfo, PrimTy, StmtId, Struct, StructField, TypeId, Variable,
     },
+    interner::Symbol,
     span::Span,
 };
 

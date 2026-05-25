@@ -7,8 +7,8 @@ use std::{
 use oxic::{
     ast::Visibility,
     context::{with_ctx, with_ctx_mut},
-    hir::interner::Symbol,
     hir::{IntTy, PrimTy},
+    interner::Symbol,
     resolve::{DefKind, Res, Resolver, ResolverOutputs, build_module_tree},
 };
 use thin_vec::ThinVec;

@@ -6,7 +6,8 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
-    hir::{DefId, ExportEntry, HirItemKind, interner::Symbol, lower::LoweringContext},
+    hir::{DefId, ExportEntry, HirItemKind, lower::LoweringContext},
+    interner::Symbol,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
