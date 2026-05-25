@@ -125,13 +125,16 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             let mut depth = 1;
             while depth <= self.ribs.len() {
                 let rib_index = self.ribs.len() - depth;
-                if self.ribs[rib_index].kind.blocks_enclosing_locals() {
-                    break;
-                }
+
                 if let Some(&res) = self.ribs[rib_index].bindings.get(&sym) {
                     self.resolver.res_map.insert(node_id, res);
                     return res;
                 }
+
+                if self.ribs[rib_index].kind.blocks_enclosing_locals() {
+                    break;
+                }
+
                 depth += 1;
             }
 
