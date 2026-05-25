@@ -26,19 +26,42 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct Rib {
     pub bindings: FxHashMap<Symbol, Res>,
     pub kind: RibKind,
 }
 
-#[derive(Debug, Default)]
+impl Rib {
+    fn new(kind: RibKind) -> Self {
+        Self {
+            bindings: FxHashMap::default(),
+            kind,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum RibKind {
-    /// No restrictions
+    /// No restrictions on which bindings may be used.
     #[default]
     Normal,
-    // TODO: Add other kinds to restrict invalid references
+    /// We have entered an item definition. Block upvars.
+    /// ```ignore
+    /// fn main() void {
+    ///     let a = 0;
+    ///     fn b() void {
+    ///         do_stuff(a); // Block usage of `a` here
+    ///     }
+    /// }
+    /// ```
+    Item,
+}
+
+impl RibKind {
+    fn blocks_enclosing_locals(self) -> bool {
+        self == RibKind::Item
+    }
 }
 
 #[derive(Debug)]
@@ -55,14 +78,14 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         }
     }
 
-    fn with_rib(&mut self, rib: Rib, f: impl FnOnce(&mut Self)) {
-        self.ribs.push(rib);
+    fn with_rib(&mut self, kind: RibKind, f: impl FnOnce(&mut Self)) {
+        self.ribs.push(Rib::new(kind));
         f(self);
         self.ribs.pop();
     }
 
     fn resolve_fn(&mut self, fun: &Fn) {
-        self.with_rib(Rib::default(), |this| {
+        self.with_rib(RibKind::Item, |this| {
             for arg in &fun.parameters {
                 arg.1.visit(this);
 
@@ -98,10 +121,14 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 return res;
             }
 
-            // 2nd check in ribs of path is a local
+            // 2nd check in ribs if path is a local
             let mut depth = 1;
             while depth <= self.ribs.len() {
-                if let Some(&res) = self.ribs[self.ribs.len() - depth].bindings.get(&sym) {
+                let rib_index = self.ribs.len() - depth;
+                if self.ribs[rib_index].kind.blocks_enclosing_locals() {
+                    break;
+                }
+                if let Some(&res) = self.ribs[rib_index].bindings.get(&sym) {
                     self.resolver.res_map.insert(node_id, res);
                     return res;
                 }
@@ -239,7 +266,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 self.resolve_fn(fun);
             }
             ItemKind::Struct { fields, items, .. } => {
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Item, |this| {
                     this.inject_self_ty(item.node_id);
                     for field in fields {
                         field.1.visit(this);
@@ -248,7 +275,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 });
             }
             ItemKind::Interface { items, .. } => {
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Item, |this| {
                     this.inject_self_ty(item.node_id);
                     this.resolve_assoc_items(items);
                 });
@@ -261,7 +288,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
                 self.resolve_path(&interface.0, interface.1);
 
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Item, |this| {
                     let Res::Def(def_id) = self_ty_res else {
                         // Name resolution probably failed and self_ty_res is Res::Err
                         todo!("Handle name resolution failure in impl self_ty")
@@ -351,7 +378,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 }
             }
             ExprKind::Block(b) => {
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Normal, |this| {
                     b.visit(this);
                 });
             }
@@ -361,7 +388,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 else_branch,
             } => {
                 condition.visit(self);
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Normal, |this| {
                     then_branch.visit(this);
                 });
                 if let Some(else_expr) = else_branch {
@@ -370,12 +397,12 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
             }
             ExprKind::While { condition, body } => {
                 condition.visit(self);
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Normal, |this| {
                     body.visit(this);
                 });
             }
             ExprKind::Loop(b) => {
-                self.with_rib(Rib::default(), |this| {
+                self.with_rib(RibKind::Normal, |this| {
                     b.visit(this);
                 });
             }
