@@ -162,6 +162,12 @@ fn process_ast_items(
                 child_idx
             }
             Some(items) => {
+                let inline_declaring_path = declaring_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(&mod_name)
+                    .join("mod.oxi");
+
                 tree.nodes.push(ModuleNode {
                     ast_idx: None,
                     name: mod_name,
@@ -180,7 +186,7 @@ fn process_ast_items(
                     child_idx,
                     claimed_files,
                     items,
-                    declaring_path,
+                    &inline_declaring_path,
                 )?;
 
                 child_idx

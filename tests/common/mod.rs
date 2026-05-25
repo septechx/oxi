@@ -2,7 +2,6 @@ use oxic::{
     ast::validate::validate_ast,
     context::{with_ctx, with_ctx_mut},
     errors::ErrorLevel,
-    hir::ModuleId,
     lexer::tokenize,
     parser::parse,
     resolve::{Resolver, build_module_tree},
@@ -116,7 +115,7 @@ impl Drop for Test {
                 }
             };
 
-            let (tokens, _module_id) = match tokenize(source, file_path) {
+            let (tokens, module_id) = match tokenize(source, file_path) {
                 Ok(t) => t,
                 Err(_) => {
                     if self.should_succeed == Some(false) {
@@ -144,7 +143,7 @@ impl Drop for Test {
                 return;
             }
 
-            validate_ast(&ast, ModuleId(0));
+            validate_ast(&ast, module_id);
             if self.handle_error_check() {
                 return;
             }

@@ -46,10 +46,10 @@ fn resolve_outputs(files: &[(&str, &str)]) -> ResolverOutputs {
     for file_path in &file_paths {
         let source = fs::read_to_string(file_path).expect("Failed to read source file");
 
-        let (tokens, _module_id) =
+        let (tokens, module_id) =
             oxic::lexer::tokenize(source, file_path).expect("Tokenization failed");
         let ast = oxic::parser::parse(tokens, file_path).expect("Parsing failed");
-        oxic::ast::validate::validate_ast(&ast, oxic::hir::ModuleId(0));
+        oxic::ast::validate::validate_ast(&ast, module_id);
         asts.push(ast);
     }
 
