@@ -110,7 +110,21 @@ impl Parser {
     }
 
     pub fn expect_identifier(&mut self) -> Result<Ident> {
-        let token = self.expect(TokenKind::Identifier)?;
+        let token = self.current_token();
+
+        if token.kind != TokenKind::Identifier {
+            with_ctx_mut(|ctx| {
+                let err = builders::fatal_at(
+                    format!("Syntax error: Expected identifier, found {}", token.kind),
+                    token.module_id,
+                    token.span,
+                    ctx,
+                );
+                ctx.errors.add(err, ctx.enable_printing);
+            });
+        }
+
+        self.advance();
         with_ctx_mut(|ctx| Ident::from_token(ctx, token))
     }
 }

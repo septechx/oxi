@@ -3,12 +3,14 @@ use crate::{
         AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
         visit::{VisitAction, Visitable, Visitor},
     },
+    context::{with_ctx, with_ctx_mut},
     errors::{
         builders,
         widgets::{CodeWidget, HighlightType, InfoWidget, LocationWidget},
     },
     hashmap::FxHashMap,
     hir::ModuleId,
+    lexer::token::TokenKind,
 };
 
 struct AstValidator {
@@ -27,8 +29,7 @@ impl AstValidator {
         let mut seen = FxHashMap::default();
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
-                let ident_str =
-                    crate::context::with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
+                let ident_str = with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
                 let msg = format!("Duplicate definition of `{}` in {}", ident_str, context);
 
                 let err = {
@@ -37,9 +38,7 @@ impl AstValidator {
                     let code_widget =
                         CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
                             .expect("failed to get source location");
-                    let ident_str = crate::context::with_ctx(|ctx| {
-                        ctx.interner.lookup(ident.value).to_string()
-                    });
+                    let ident_str = with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
                     let info_widget = InfoWidget::new(
                         first_span,
                         self.module_id,
@@ -73,7 +72,7 @@ impl AstValidator {
 
         if f.is_extern {
             if f.body.is_some() {
-                crate::context::with_ctx_mut(|ctx| {
+                with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
                         builders::error_at(
@@ -87,7 +86,7 @@ impl AstValidator {
                 });
             }
         } else if f.body.is_none() && !self.in_interface {
-            crate::context::with_ctx_mut(|ctx| {
+            with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
                     builders::error_at(
@@ -115,6 +114,14 @@ impl AstValidator {
     fn validate_assoc_item(&mut self, item: &AssocItem) {
         match &item.kind {
             AssocItemKind::Fn(f) => self.validate_fn_decl(f),
+        }
+    }
+
+    fn is_lvalue(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Symbol(_) | ExprKind::MemberAccess { .. } => true,
+            ExprKind::Postfix { operator, .. } if operator.kind == TokenKind::At => true,
+            _ => false,
         }
     }
 }
@@ -226,9 +233,8 @@ impl Visitor for AstValidator {
                 let mut seen = FxHashMap::default();
                 for (ident, val) in fields.iter() {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
-                        let ident_str = crate::context::with_ctx(|ctx| {
-                            ctx.interner.lookup(ident.value).to_string()
-                        });
+                        let ident_str =
+                            with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
                         let msg =
                             format!("Duplicate field `{}` in struct instantiation", ident_str);
 
@@ -241,7 +247,7 @@ impl Visitor for AstValidator {
                             let info_widget = InfoWidget::new(
                                 first_span,
                                 self.module_id,
-                                crate::context::with_ctx(|ctx| {
+                                with_ctx(|ctx| {
                                     format!(
                                         "First initialization of `{}` here",
                                         ctx.interner.lookup(ident.value)
@@ -300,7 +306,7 @@ impl Visitor for AstValidator {
             }
             ExprKind::Break(_) => {
                 if !self.in_loop {
-                    crate::context::with_ctx_mut(|ctx| {
+                    with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
                             builders::error_at(
@@ -317,7 +323,7 @@ impl Visitor for AstValidator {
             }
             ExprKind::Return(_) => {
                 if !self.in_function {
-                    crate::context::with_ctx_mut(|ctx| {
+                    with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
                             builders::error_at(
@@ -327,6 +333,22 @@ impl Visitor for AstValidator {
                                 ctx,
                             ),
                             enable_printing,
+                        );
+                    });
+                }
+                VisitAction::Continue
+            }
+            ExprKind::Assignment { assignee, .. } => {
+                if !Self::is_lvalue(assignee) {
+                    with_ctx_mut(|ctx| {
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Invalid assignment target",
+                                self.module_id,
+                                assignee.span,
+                                ctx,
+                            ),
+                            ctx.enable_printing,
                         );
                     });
                 }

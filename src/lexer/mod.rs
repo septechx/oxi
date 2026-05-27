@@ -227,7 +227,7 @@ fn initialize_regexes() {
             regex_handler!(r#"^"[^"]*""#, string_literal_handler()),
             regex_handler!(r"^'[^']'", char_literal_handler()),
             regex_handler!(r"^[0-9]+(\.[0-9]+)?", number_handler()),
-            regex_handler!(r"^[@]?[a-zA-Z_][a-zA-Z0-9_]*", identifier_handler()),
+            regex_handler!(r"^[a-zA-Z_][a-zA-Z0-9_]*", identifier_handler()),
             // Single-char
             regex_handler!(r"^;", def T::Semicolon),
             regex_handler!(r"^&", def T::Reference),
@@ -253,6 +253,7 @@ fn initialize_regexes() {
             regex_handler!(r"^#", def T::Hash),
             regex_handler!(r"^>", def T::More),
             regex_handler!(r"^<", def T::Less),
+            regex_handler!(r"^@", def T::At),
             regex_handler!(r"^\$", def T::Dollar),
         ];
         let _ = REGEXES.set(regexes);

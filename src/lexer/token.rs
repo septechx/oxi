@@ -113,6 +113,7 @@ define_tokens! {
         Pipe => "|>",
         ColonColon => "::",
         Dollar => "$",
+        At => "@",
         ShiftLeft => "<<",
         ShiftRight => ">>",
     ],
