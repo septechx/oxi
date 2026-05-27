@@ -120,7 +120,7 @@ impl AstValidator {
     fn is_lvalue(expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Symbol(_) | ExprKind::MemberAccess { .. } => true,
-            ExprKind::Postfix { operator, .. } if operator.kind == TokenKind::Star => true,
+            ExprKind::Postfix { operator, .. } if operator.kind == TokenKind::At => true,
             _ => false,
         }
     }
