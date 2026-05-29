@@ -1,9 +1,11 @@
+#![allow(unused)]
+
 use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Literal, Mutability, Visibility},
     hashmap::FxHashMap,
-    hir::lower::LoweringContext,
+    hir2::lower::LoweringContext,
     interner::{Interner, Symbol, sym},
     lexer::token::TokenKind,
     span::Span,

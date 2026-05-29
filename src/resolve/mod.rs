@@ -7,9 +7,8 @@ use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, ModuleId, PrimTy};
 use crate::interner::Symbol;
-use crate::resolve::mod_tree::ModuleTree;
 
-pub use mod_tree::build_module_tree;
+pub use mod_tree::{ModuleTree, build_module_tree};
 
 mod early;
 mod late;

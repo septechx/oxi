@@ -7,7 +7,7 @@ use crate::{
     },
     context::with_ctx_mut,
     hashmap::FxHashMap,
-    hir::{
+    hir2::{
         Body, BodyId, DefId, ExportEntry, ExprId, Function, HirCrate, HirExpr, HirExprKind, HirId,
         HirItem, HirItemKind, HirStmt, HirStmtKind, HirType, Impl, ImplItem, ImplItemId,
         ImplItemKind, Interface, InterfaceMethod, LocalId, LoopSource, MethodMeta, ModuleId,

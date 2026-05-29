@@ -7,7 +7,7 @@ use thin_vec::ThinVec;
 use crate::{
     ast::{self, Ast, ImportTree, ImportTreeKind, ItemKind, Path, Visibility},
     context::with_ctx,
-    hir::{DefId, ExportEntry, HirItemKind, lower::LoweringContext},
+    hir2::{DefId, ExportEntry, HirItemKind, lower::LoweringContext},
     interner::Symbol,
 };
 
@@ -383,7 +383,7 @@ mod tests {
     use super::*;
     use crate::ast::Ident;
     use crate::hashmap::FxHashMap;
-    use crate::hir::{HirItem, MethodMeta, ModuleId, ModuleInfo, TypeId};
+    use crate::hir2::{HirItem, MethodMeta, ModuleId, ModuleInfo, TypeId};
     use crate::span::Span;
 
     #[test]
@@ -436,7 +436,7 @@ mod tests {
 
             self.ctx.krate.items.push(HirItem {
                 defid: def_id,
-                kind: HirItemKind::Function(crate::hir::Function {
+                kind: HirItemKind::Function(crate::hir2::Function {
                     name: sym,
                     params: ThinVec::new(),
                     ret: TypeId(0),
@@ -469,7 +469,7 @@ mod tests {
 
             self.ctx.krate.items.push(HirItem {
                 defid: def_id,
-                kind: HirItemKind::Struct(crate::hir::Struct {
+                kind: HirItemKind::Struct(crate::hir2::Struct {
                     name: sym,
                     fields: ThinVec::new(),
                     module: ModuleId(mod_idx as u32),
@@ -500,7 +500,7 @@ mod tests {
 
             self.ctx.krate.items.push(HirItem {
                 defid: method_def,
-                kind: HirItemKind::Function(crate::hir::Function {
+                kind: HirItemKind::Function(crate::hir2::Function {
                     name: method_sym,
                     params: ThinVec::new(),
                     ret: TypeId(0),

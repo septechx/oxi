@@ -1,5 +1,7 @@
 #![deny(clippy::unwrap_used)]
 
+mod hir2;
+
 pub mod ast;
 pub mod backend;
 pub mod bindings;
@@ -27,6 +29,7 @@ use thin_vec::ThinVec;
 use crate::ast::validate::validate_ast;
 use crate::cli::Cli;
 use crate::context::{Ctx, with_ctx_mut};
+use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
 use crate::resolve::{Resolver, build_module_tree};
@@ -107,22 +110,35 @@ fn build_file(cli: Cli) -> Result<()> {
     }
 
     let file_paths: Vec<_> = cli.input.clone();
+
+    Resolver::assign_node_ids(&mut asts);
+
     let module_tree = match build_module_tree(&asts, &file_paths) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };
     check_for_errors();
 
-    Resolver::assign_node_ids(&mut asts);
-    let resolver_outputs = with_ctx_mut(|ctx| {
+    let module_tree = match build_module_tree(&asts, &file_paths) {
+        Ok(tree) => tree,
+        Err(e) => fatal!(e.to_string()),
+    };
+    check_for_errors();
+    let resolver = with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &module_tree, ctx);
         resolver.resolve();
         resolver.into_resolver_outputs()
     });
 
-    dbg!(resolver_outputs);
+    let hir_crate = with_ctx_mut(|ctx| {
+        let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
+        lowering_ctx.lower_crate();
+        "TODO: Return HIR"
+    });
 
-    println!("Module resolution completed successfully.");
+    dbg!(hir_crate);
+
+    println!("AST lowering completed successfully.");
 
     Ok(())
 }

@@ -1,14 +1,20 @@
 #[macro_use]
 mod macros;
+mod index;
+mod lower;
 
 use std::ffi::OsString;
 use std::path;
 
-use crate::interner::{Symbol, sym};
+use thin_vec::ThinVec;
 
-impl_ids! {
-    ModuleId, DefId
-}
+use crate::ast::Ast;
+use crate::context::Ctx;
+use crate::hir::index::index_crate;
+use crate::interner::{Symbol, sym};
+use crate::resolve::{ModuleTree, ResolverOutputs};
+
+impl_ids!(ModuleId, DefId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntTy {
@@ -92,6 +98,43 @@ impl PrimTy {
             PrimTy::Float(FloatTy::F128) => sym::f128,
             PrimTy::Bool => sym::bool,
             PrimTy::Void => sym::void,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct AstLoweringContext<'a, 'ctx> {
+    ctx: &'ctx mut Ctx,
+    asts: &'a ThinVec<Ast>,
+    module_tree: &'a ModuleTree,
+    resolver: &'a ResolverOutputs,
+}
+
+impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
+    pub fn new(
+        ctx: &'ctx mut Ctx,
+        asts: &'a ThinVec<Ast>,
+        module_tree: &'a ModuleTree,
+        resolver: &'a ResolverOutputs,
+    ) -> Self {
+        Self {
+            ctx,
+            asts,
+            module_tree,
+            resolver,
+        }
+    }
+
+    pub fn lower_crate(&mut self) {
+        let index = index_crate(
+            self.asts,
+            self.module_tree,
+            &self.resolver.def_map,
+            self.resolver.defs.len(),
+        );
+
+        for def_id in index.indices() {
+            self.lower_node(def_id, &index);
         }
     }
 }
