@@ -118,6 +118,7 @@ pub struct AssocItem {
     pub kind: AssocItemKind,
     pub visibility: Visibility,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]

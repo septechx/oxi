@@ -148,6 +148,7 @@ pub fn parse_struct_decl_item(
                     }),
                     span: stmt.span,
                     visibility,
+                    node_id: NodeId::default(),
                 })
             };
             continue;
@@ -270,6 +271,7 @@ pub fn parse_interface_decl_item(
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
                 span: stmt.span,
+                node_id: NodeId::default(),
             });
 
             parser.expect(TokenKind::Comma)?;
@@ -441,6 +443,7 @@ pub fn parse_impl_item(
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Public,
                 span: stmt.span,
+                node_id: NodeId::default(),
             });
         }
     }

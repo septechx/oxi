@@ -1,4 +1,4 @@
-use crate::ast::{Item, ItemKind};
+use crate::ast::{AssocItem, AssocItemKind, Item, ItemKind};
 use crate::hir::index::{AstIndex, AstOwner};
 use crate::hir::{AstLoweringContext, DefId};
 
@@ -7,6 +7,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         match index.get(def_id) {
             AstOwner::NonOwner => {}
             AstOwner::Item(item) => self.lower_item(item),
+            AstOwner::AssocItem(item) => self.lower_assoc_item(item),
         }
     }
 
@@ -19,6 +20,12 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             ItemKind::Fn(_) => todo!("Implement lowering of function items"),
             ItemKind::Import(_) => {}
             ItemKind::Module { .. } => {}
+        }
+    }
+
+    fn lower_assoc_item(&mut self, item: &'a AssocItem) {
+        match &item.kind {
+            AssocItemKind::Fn(_) => todo!("Implement lowering of associated fn items"),
         }
     }
 }

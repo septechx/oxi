@@ -22,6 +22,20 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     }
 
     fn create_def(&mut self, id: NodeId, name: Symbol, kind: DefKind, visibility: Visibility) {
+        let def_id = self.alloc_def(id, name, kind, visibility);
+        let binding = NameBinding { def_id, visibility };
+        self.current_module_mut()
+            .resolutions
+            .insert(name, NameResolution::non_glob_import(binding));
+    }
+
+    fn alloc_def(
+        &mut self,
+        id: NodeId,
+        name: Symbol,
+        kind: DefKind,
+        visibility: Visibility,
+    ) -> DefId {
         let idx = self.defs.len() as u32;
         let def_id = DefId(idx);
         self.defs.push(Def {
@@ -30,10 +44,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             visibility,
         });
         self.def_map.insert(id, def_id);
-        let binding = NameBinding { def_id, visibility };
-        self.current_module_mut()
-            .resolutions
-            .insert(name, NameResolution::non_glob_import(binding));
+        def_id
     }
 
     fn register_import(&mut self, import_item: ImportTree, visibility: Visibility) {
@@ -337,6 +348,7 @@ impl NodeIdAssigner {
 
     fn assign_to_assoc_items(&mut self, items: &mut ThinVec<AssocItem>) {
         for item in items {
+            item.node_id = self.next_node_id();
             let AssocItemKind::Fn(fun) = &mut item.kind;
             self.assign_to_fn(fun);
         }
@@ -412,23 +424,41 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Const, item.visibility);
+                VisitAction::SkipChildren
             }
             ItemKind::Struct { name, .. } => {
                 let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
+                VisitAction::Continue
             }
             ItemKind::Interface { name, .. } => {
                 let sym = name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
+                VisitAction::Continue
             }
+            ItemKind::Impl { .. } => VisitAction::Continue,
             ItemKind::Fn(f) => {
                 let sym = f.name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Function, item.visibility);
+                VisitAction::SkipChildren
             }
-            _ => {}
+            _ => VisitAction::SkipChildren,
+        }
+    }
+
+    fn visit_assoc_item(&mut self, item: &AssocItem) -> VisitAction {
+        match &item.kind {
+            AssocItemKind::Fn(f) => {
+                self.resolver.alloc_def(
+                    item.node_id,
+                    f.name.value,
+                    DefKind::Function,
+                    item.visibility,
+                );
+            }
         }
         VisitAction::SkipChildren
     }

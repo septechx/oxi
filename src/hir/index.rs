@@ -1,4 +1,4 @@
-use crate::ast::{Ast, Item, NodeMap};
+use crate::ast::{AssocItem, Ast, Item, ItemKind, NodeMap};
 use crate::hir::DefId;
 use crate::resolve::ModuleTree;
 
@@ -6,6 +6,7 @@ use crate::resolve::ModuleTree;
 pub enum AstOwner<'ast> {
     NonOwner,
     Item(&'ast Item),
+    AssocItem(&'ast AssocItem),
 }
 
 #[derive(Debug)]
@@ -60,6 +61,22 @@ fn index_module_rec<'ast>(
             if idx < owners.len() {
                 owners[idx] = AstOwner::Item(item);
             }
+        }
+
+        match &item.kind {
+            ItemKind::Struct { items: assoc, .. }
+            | ItemKind::Interface { items: assoc, .. }
+            | ItemKind::Impl { items: assoc, .. } => {
+                for assoc_item in assoc {
+                    if let Some(&def_id) = def_map.get(&assoc_item.node_id) {
+                        let idx = def_id.0 as usize;
+                        if idx < owners.len() {
+                            owners[idx] = AstOwner::AssocItem(assoc_item);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
