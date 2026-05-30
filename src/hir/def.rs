@@ -17,7 +17,7 @@ pub enum DefKind {
 
 #[derive(Debug, Clone)]
 pub struct Def {
-    pub name: Symbol,
+    pub name: Option<Symbol>,
+    pub visibility: Option<Visibility>,
     pub kind: DefKind,
-    pub visibility: Visibility,
 }

@@ -95,9 +95,9 @@ fn function_def_is_recorded() {
     let outputs = resolve_outputs(&[("main.oxi", "pub fn foo() void {}")]);
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Function);
-    assert_eq!(outputs.defs[0].visibility, Visibility::Public);
+    assert_eq!(outputs.defs[0].visibility, Some(Visibility::Public));
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "foo");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "foo");
     });
 }
 
@@ -106,7 +106,7 @@ fn private_function_def_has_private_visibility() {
     let outputs = resolve_outputs(&[("main.oxi", "fn foo() void {}")]);
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Function);
-    assert_eq!(outputs.defs[0].visibility, Visibility::Private);
+    assert_eq!(outputs.defs[0].visibility, Some(Visibility::Private));
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn struct_def_is_recorded() {
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Struct);
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "Foo");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "Foo");
     });
 }
 
@@ -125,7 +125,7 @@ fn const_def_is_recorded() {
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Const);
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "X");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "X");
     });
 }
 

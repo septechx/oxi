@@ -21,20 +21,22 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         }
     }
 
+    /// Allocates a definition and registers its name resolution
     fn create_def(&mut self, id: NodeId, name: Symbol, kind: DefKind, visibility: Visibility) {
-        let def_id = self.alloc_def(id, name, kind, visibility);
+        let def_id = self.alloc_def(id, Some(name), kind, Some(visibility));
         let binding = NameBinding { def_id, visibility };
         self.current_module_mut()
             .resolutions
             .insert(name, NameResolution::non_glob_import(binding));
     }
 
+    /// Allocates a definition without registering its name resolution
     fn alloc_def(
         &mut self,
         id: NodeId,
-        name: Symbol,
+        name: Option<Symbol>,
         kind: DefKind,
-        visibility: Visibility,
+        visibility: Option<Visibility>,
     ) -> DefId {
         let idx = self.defs.len() as u32;
         let def_id = DefId(idx);
@@ -438,13 +440,18 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                     .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
                 VisitAction::Continue
             }
-            ItemKind::Impl { .. } => VisitAction::Continue,
+            ItemKind::Impl { .. } => {
+                self.resolver
+                    .alloc_def(item.node_id, None, DefKind::Impl, None);
+                VisitAction::Continue
+            }
             ItemKind::Fn(f) => {
                 let sym = f.name.value;
                 self.resolver
                     .create_def(item.node_id, sym, DefKind::Function, item.visibility);
                 VisitAction::SkipChildren
             }
+            // Maybe we should also create defs for `mod` and `import` items, but just skip for now
             _ => VisitAction::SkipChildren,
         }
     }
@@ -454,9 +461,9 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
             AssocItemKind::Fn(f) => {
                 self.resolver.alloc_def(
                     item.node_id,
-                    f.name.value,
+                    Some(f.name.value),
                     DefKind::Function,
-                    item.visibility,
+                    Some(item.visibility),
                 );
             }
         }
