@@ -5,7 +5,7 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::{DefId, ModuleId, PrimTy};
+use crate::hir::{Def, DefId, DefKind, ModuleId, PrimTy};
 use crate::interner::Symbol;
 
 pub use mod_tree::{ModuleTree, build_module_tree};
@@ -14,21 +14,6 @@ mod early;
 mod late;
 mod mod_tree;
 mod path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DefKind {
-    Function,
-    Struct,
-    Interface,
-    Const,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Def {
-    pub name: Symbol,
-    pub kind: DefKind,
-    pub visibility: Visibility,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Res {

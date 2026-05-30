@@ -119,11 +119,6 @@ fn build_file(cli: Cli) -> Result<()> {
     };
     check_for_errors();
 
-    let module_tree = match build_module_tree(&asts, &file_paths) {
-        Ok(tree) => tree,
-        Err(e) => fatal!(e.to_string()),
-    };
-    check_for_errors();
     let resolver = with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &module_tree, ctx);
         resolver.resolve();
@@ -132,11 +127,10 @@ fn build_file(cli: Cli) -> Result<()> {
 
     let hir_crate = with_ctx_mut(|ctx| {
         let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
-        lowering_ctx.lower_crate();
-        "TODO: Return HIR"
+        lowering_ctx.lower_crate()
     });
 
-    dbg!(hir_crate);
+    dbg!(&hir_crate);
 
     println!("AST lowering completed successfully.");
 

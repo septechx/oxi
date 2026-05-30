@@ -1,0 +1,420 @@
+use thin_vec::ThinVec;
+
+use crate::ast::{self, Literal, Mutability, Visibility};
+use crate::hir::owner::HirId;
+use crate::hir::{DefId, OwnerId, PrimTy};
+use crate::interner::Symbol;
+use crate::span::Span;
+
+#[derive(Debug, Clone)]
+pub enum OwnerNode<'a> {
+    Item(&'a Item),
+    ImplItem(&'a ImplItem),
+    Crate,
+}
+
+impl<'a> OwnerNode<'a> {
+    pub fn from_node(node: &'a Node) -> Option<Self> {
+        match node {
+            Node::Item(item) => Some(OwnerNode::Item(item)),
+            Node::ImplItem(item) => Some(OwnerNode::ImplItem(item)),
+            Node::Crate => Some(OwnerNode::Crate),
+            _ => None,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            OwnerNode::Item(item) => item.span,
+            OwnerNode::ImplItem(item) => item.span,
+            OwnerNode::Crate => Span::new(0, 0),
+        }
+    }
+
+    pub fn hir_id(&self) -> HirId {
+        match self {
+            OwnerNode::Item(item) => item.hir_id,
+            OwnerNode::ImplItem(item) => item.hir_id,
+            OwnerNode::Crate => HirId::INVALID,
+        }
+    }
+
+    pub fn owner_id(&self) -> OwnerId {
+        match self {
+            OwnerNode::Item(item) => item.owner_id,
+            OwnerNode::ImplItem(item) => item.owner_id,
+            OwnerNode::Crate => OwnerId(0),
+        }
+    }
+
+    pub fn def_id(&self) -> DefId {
+        DefId(self.owner_id().0)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Node {
+    /// A top-level item
+    Item(Box<Item>),
+    /// An associated item inside an impl block
+    ImplItem(Box<ImplItem>),
+    /// An expression
+    Expr(Box<Expr>),
+    /// A statement
+    Stmt(Box<Stmt>),
+    /// A type
+    Ty(Box<Ty>),
+    /// A block expression
+    Block(Box<Block>),
+    /// A function parameter
+    Param(Box<Param>),
+    /// A local variable binding
+    Local(Box<Local>),
+    /// The crate root
+    Crate,
+    Err(Span),
+}
+
+impl Node {
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Node::Item(item) => Some(item.span),
+            Node::ImplItem(item) => Some(item.span),
+            Node::Expr(expr) => Some(expr.span),
+            Node::Stmt(stmt) => Some(stmt.span),
+            Node::Ty(ty) => Some(ty.span),
+            Node::Block(block) => Some(block.span),
+            Node::Param(param) => Some(param.span),
+            Node::Local(local) => Some(local.span),
+            Node::Crate => None,
+            Node::Err(span) => Some(*span),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Item {
+    pub hir_id: HirId,
+    pub owner_id: OwnerId,
+    pub kind: ItemKind,
+    pub span: Span,
+    pub visibility: Visibility,
+}
+
+impl Item {
+    pub fn hir_id(&self) -> HirId {
+        self.hir_id
+    }
+
+    pub fn item_id(&self) -> ItemId {
+        ItemId {
+            owner_id: self.owner_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemId {
+    pub owner_id: OwnerId,
+}
+
+impl ItemId {
+    pub fn hir_id(&self) -> HirId {
+        HirId::make_owner(self.owner_id.to_def_id())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ItemKind {
+    Fn {
+        sig: FnSig,
+        decl: FnDecl,
+        body: Option<Body>,
+    },
+    Struct {
+        name: Symbol,
+        fields: ThinVec<StructField>,
+        items: ThinVec<DefId>,
+    },
+    Interface {
+        name: Symbol,
+        methods: ThinVec<InterfaceMethod>,
+    },
+    Impl(ImplBlock),
+    Const {
+        name: Symbol,
+        ty: Ty,
+        init: Option<Expr>,
+    },
+    Module {
+        name: Symbol,
+        body: Option<Block>,
+    },
+    Import(ast::ImportTree),
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplItem {
+    pub hir_id: HirId,
+    pub owner_id: OwnerId,
+    pub kind: ImplItemKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplItemId {
+    pub owner_id: OwnerId,
+}
+
+#[derive(Debug, Clone)]
+pub enum ImplItemKind {
+    Fn {
+        sig: FnSig,
+        decl: FnDecl,
+        body: Option<Body>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplBlock {
+    pub self_ty: Ty,
+    pub interface_ty: Ty,
+    pub items: ThinVec<DefId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: Symbol,
+    pub ty: Ty,
+    pub visibility: Visibility,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceMethod {
+    pub name: Symbol,
+    pub params: ThinVec<Ty>,
+    pub ret: Ty,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnDecl {
+    pub params: ThinVec<Param>,
+    pub ret: Ty,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnSig {
+    pub is_extern: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub hir_id: HirId,
+    pub name: Symbol,
+    pub ty: Ty,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Body {
+    pub stmts: ThinVec<Stmt>,
+    pub params: ThinVec<Param>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Local {
+    pub hir_id: HirId,
+    pub name: Symbol,
+    pub ty: Option<Ty>,
+    pub init: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Expr {
+    pub hir_id: HirId,
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprKind {
+    /// A literal value
+    Literal(Literal),
+    /// A path
+    Path(Path),
+    /// Binary operation: left op right
+    Binary {
+        left: Box<Expr>,
+        op: BinOp,
+        right: Box<Expr>,
+    },
+    /// Function call: callee(args...)
+    Call {
+        callee: Box<Expr>,
+        args: ThinVec<Expr>,
+    },
+    /// Method call: receiver.method(args...)
+    MethodCall {
+        receiver: Box<Expr>,
+        method: Symbol,
+        args: ThinVec<Expr>,
+    },
+    /// Field access: base.field
+    Field { base: Box<Expr>, field: Symbol },
+    /// Struct literal: Struct { field: value, ... }
+    StructInit {
+        def: DefId,
+        fields: ThinVec<(Symbol, Expr)>,
+    },
+    /// Array literal: []Type{value1, value2, ... }
+    ArrayInit { def: DefId, contents: ThinVec<Expr> },
+    /// Tuple literal: (value1, value2, ...)
+    TupleInit(ThinVec<Expr>),
+    /// Block: { stmts }
+    Block(Block),
+    /// If expression: if cond { then } else { else }
+    If {
+        cond: Box<Expr>,
+        then_branch: Block,
+        else_branch: Option<Box<Expr>>,
+    },
+    /// Infinite loop: loop { body }
+    Loop(Block),
+    /// Break from a block
+    Break(Option<Box<Expr>>),
+    /// Return from a function
+    Return(Option<Box<Expr>>),
+    /// Assignment: target = value
+    Assign {
+        target: Box<Expr>,
+        op: AssOp,
+        value: Box<Expr>,
+    },
+    /// Prefix operation: op right
+    Prefix { op: PreOp, right: Box<Expr> },
+    /// Postfix operation: left op
+    Postfix { left: Box<Expr>, op: PosOp },
+    /// Member access expression (unresolved)
+    MemberAccess { base: Box<Expr>, member: Symbol },
+    /// Type cast: expr as Type
+    As { expr: Box<Expr>, ty: Ty },
+}
+
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub hir_id: HirId,
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum StmtKind {
+    /// Expression without trailing semicolon (tail position)
+    Expr(Expr),
+    /// Expression with trailing semicolon
+    Semi(Expr),
+    /// let-binding
+    Let {
+        name: Symbol,
+        ty: Option<Ty>,
+        init: Option<Expr>,
+        local: HirId,
+        mutability: Mutability,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct Block {
+    pub stmts: ThinVec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Ty {
+    pub hir_id: HirId,
+    pub kind: TyKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum TyKind {
+    Error,
+    PrimTy(PrimTy),
+    /// A named type
+    Path(Path),
+    /// Pointer type: &T or &mut T
+    Ptr(Box<Ty>, Mutability),
+    /// Slice type: []T
+    Slice(Box<Ty>),
+    /// Fixed-size array: [T; N]
+    Array(Box<Ty>, usize),
+    /// Function pointer type: (T, T) -> T
+    Fn {
+        params: ThinVec<Ty>,
+        ret: Box<Ty>,
+    },
+    /// Tuple type: (T, T, ...)
+    Tuple(ThinVec<Ty>),
+    /// Inferred type
+    Infer,
+    /// Never type: !
+    Never,
+}
+
+#[derive(Debug, Clone)]
+pub struct Path {
+    pub span: Span,
+    pub res: PathResolution,
+    pub segments: ThinVec<Symbol>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PathResolution {
+    Def(DefId),
+    PrimTy(PrimTy),
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Shl,
+    Shr,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreOp {
+    Not,
+    Neg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PosOp {
+    Deref,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssOp {
+    Ass,
+    AssSub,
+    AssAdd,
+    AssMul,
+    AssDiv,
+    AssRem,
+}

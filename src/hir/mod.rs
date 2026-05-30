@@ -1,7 +1,10 @@
 #[macro_use]
 mod macros;
+mod def;
 mod index;
 mod lower;
+mod owner;
+mod types;
 
 use std::ffi::OsString;
 use std::path;
@@ -10,11 +13,30 @@ use thin_vec::ThinVec;
 
 use crate::ast::Ast;
 use crate::context::Ctx;
-use crate::hir::index::index_crate;
+use crate::hir::owner::Crate;
 use crate::interner::{Symbol, sym};
 use crate::resolve::{ModuleTree, ResolverOutputs};
 
-impl_ids!(ModuleId, DefId);
+pub use def::*;
+
+impl_ids!(ModuleId, DefId, OwnerId, ItemLocalId);
+
+impl OwnerId {
+    pub const INVALID: OwnerId = OwnerId(u32::MAX);
+
+    pub fn to_def_id(self) -> DefId {
+        DefId(self.0)
+    }
+}
+
+impl ItemLocalId {
+    pub const ZERO: ItemLocalId = ItemLocalId(0);
+    pub const INVALID: ItemLocalId = ItemLocalId(u32::MAX);
+
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntTy {
@@ -125,17 +147,21 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
     }
 
-    pub fn lower_crate(&mut self) {
-        let index = index_crate(
+    pub fn lower_crate(&mut self) -> Crate {
+        let index = index::index_crate(
             self.asts,
             self.module_tree,
             &self.resolver.def_map,
             self.resolver.defs.len(),
         );
 
+        let mut hir_crate = Crate::with_capacity(self.resolver.defs.len());
+
         for def_id in index.indices() {
-            self.lower_node(def_id, &index);
+            self.lower_node(def_id, &index, &mut hir_crate);
         }
+
+        hir_crate
     }
 }
 
