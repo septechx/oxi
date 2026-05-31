@@ -1,9 +1,10 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Literal, Mutability, Visibility};
+use crate::ast::{self, Ident, Literal, Mutability, Visibility};
 use crate::hir::owner::HirId;
 use crate::hir::{DefId, OwnerId, PrimTy};
 use crate::interner::Symbol;
+use crate::lexer::token::{Token, TokenKind};
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -162,11 +163,6 @@ pub struct ImplItem {
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplItemId {
-    pub owner_id: OwnerId,
-}
-
-#[derive(Debug, Clone)]
 pub enum ImplItemKind {
     Fn {
         sig: FnSig,
@@ -261,14 +257,20 @@ pub enum ExprKind {
         args: ThinVec<Expr>,
     },
     /// Field access: base.field
-    Field { base: Box<Expr>, field: Symbol },
+    Field {
+        base: Box<Expr>,
+        field: Symbol,
+    },
     /// Struct literal: Struct { field: value, ... }
     StructInit {
         def: DefId,
         fields: ThinVec<(Symbol, Expr)>,
     },
     /// Array literal: []Type{value1, value2, ... }
-    ArrayInit { def: DefId, contents: ThinVec<Expr> },
+    ArrayInit {
+        def: DefId,
+        contents: ThinVec<Expr>,
+    },
     /// Tuple literal: (value1, value2, ...)
     TupleInit(ThinVec<Expr>),
     /// Block: { stmts }
@@ -292,13 +294,26 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     /// Prefix operation: op right
-    Prefix { op: PreOp, right: Box<Expr> },
+    Prefix {
+        op: PreOp,
+        right: Box<Expr>,
+    },
     /// Postfix operation: left op
-    Postfix { left: Box<Expr>, op: PosOp },
+    Postfix {
+        left: Box<Expr>,
+        op: PosOp,
+    },
     /// Member access expression (unresolved)
-    MemberAccess { base: Box<Expr>, member: Symbol },
+    MemberAccess {
+        base: Box<Expr>,
+        member: Symbol,
+    },
     /// Type cast: expr as Type
-    As { expr: Box<Expr>, ty: Ty },
+    As {
+        expr: Box<Expr>,
+        ty: Ty,
+    },
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -364,9 +379,8 @@ pub enum TyKind {
 
 #[derive(Debug, Clone)]
 pub struct Path {
-    pub span: Span,
     pub res: PathResolution,
-    pub segments: ThinVec<Symbol>,
+    pub segments: ThinVec<Ident>,
 }
 
 #[derive(Debug, Clone)]
@@ -398,15 +412,62 @@ pub enum BinOp {
     Or,
 }
 
+impl BinOp {
+    pub fn from_token(tk: &Token) -> Option<Self> {
+        Some(match tk.kind {
+            TokenKind::Plus => BinOp::Add,
+            TokenKind::Dash => BinOp::Sub,
+            TokenKind::Star => BinOp::Mul,
+            TokenKind::Slash => BinOp::Div,
+            TokenKind::Percent => BinOp::Rem,
+            TokenKind::ShiftLeft => BinOp::Shl,
+            TokenKind::ShiftRight => BinOp::Shr,
+            TokenKind::Reference => BinOp::BitAnd,
+            TokenKind::Bar => BinOp::BitOr,
+            TokenKind::Xor => BinOp::BitXor,
+            TokenKind::EqualsEquals => BinOp::Eq,
+            TokenKind::NotEquals => BinOp::Ne,
+            TokenKind::Less => BinOp::Lt,
+            TokenKind::LessEquals => BinOp::Le,
+            TokenKind::More => BinOp::Gt,
+            TokenKind::MoreEquals => BinOp::Ge,
+            TokenKind::And => BinOp::And,
+            TokenKind::Or => BinOp::Or,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreOp {
     Not,
     Neg,
+    Ref,
+}
+
+impl PreOp {
+    pub fn from_token(tk: &Token) -> Option<Self> {
+        Some(match tk.kind {
+            TokenKind::Dash => Self::Neg,
+            TokenKind::Reference => Self::Ref,
+            TokenKind::Bang => Self::Not,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PosOp {
     Deref,
+}
+
+impl PosOp {
+    pub fn from_token(tk: &Token) -> Option<Self> {
+        Some(match tk.kind {
+            TokenKind::At => Self::Deref,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -417,4 +478,18 @@ pub enum AssOp {
     AssMul,
     AssDiv,
     AssRem,
+}
+
+impl AssOp {
+    pub fn from_token(tk: &Token) -> Option<Self> {
+        Some(match tk.kind {
+            TokenKind::Equals => Self::Ass,
+            TokenKind::MinusEquals => Self::AssSub,
+            TokenKind::PlusEquals => Self::AssAdd,
+            TokenKind::StarEquals => Self::AssMul,
+            TokenKind::SlashEquals => Self::AssDiv,
+            TokenKind::PercentEquals => Self::AssRem,
+            _ => return None,
+        })
+    }
 }
