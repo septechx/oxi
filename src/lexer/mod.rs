@@ -239,6 +239,7 @@ fn initialize_regexes() {
             regex_handler!(r"^%", def T::Percent),
             regex_handler!(r"^\|", def T::Bar),
             regex_handler!(r"^\?", def T::Question),
+            regex_handler!(r"^!", def T::Bang),
             regex_handler!(r"^:", def T::Colon),
             regex_handler!(r"^\{", def T::OpenCurly),
             regex_handler!(r"^\}", def T::CloseCurly),

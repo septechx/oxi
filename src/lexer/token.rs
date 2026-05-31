@@ -83,6 +83,7 @@ define_tokens! {
         CloseParen => ")",
         Dot => ".",
         Question => "?",
+        Bang => "!",
         Equals => "=",
         PlusEquals => "+=",
         MinusEquals => "-=",
