@@ -124,13 +124,18 @@ fn build_file(cli: Cli) -> Result<()> {
         resolver.resolve();
         resolver.into_resolver_outputs()
     });
+    check_for_errors();
 
     let hir_crate = with_ctx_mut(|ctx| {
         let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
         lowering_ctx.lower_crate()
     });
+    check_for_errors();
 
-    dbg!(&hir_crate);
+    with_ctx_mut(|ctx| {
+        dbg!(&hir_crate);
+        dbg!(&ctx.interner);
+    });
 
     println!("AST lowering completed successfully.");
 

@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn test_string_expr_visited_once() {
         let expr = Expr {
-            kind: ExprKind::Literal(Literal::String("hello".to_string().into_boxed_str())),
+            kind: ExprKind::Literal(Literal::String(1)),
             span: dummy_span(),
             node_id: NodeId::default(),
         };

@@ -202,11 +202,11 @@ pub enum ExprKind {
     Return(Option<Box<Expr>>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Literal {
     Integer(i64),
     Float(f64),
-    String(Box<str>),
+    String(Symbol),
     Char(char),
     Bool(bool),
 }

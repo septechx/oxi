@@ -2,9 +2,10 @@ use thin_vec::ThinVec;
 
 use crate::ast::{self, Ident, Literal, Mutability, Visibility};
 use crate::hir::owner::HirId;
-use crate::hir::{DefId, OwnerId, PrimTy};
+use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
 use crate::interner::Symbol;
 use crate::lexer::token::{Token, TokenKind};
+use crate::resolve::Res;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -130,7 +131,7 @@ pub enum ItemKind {
     Fn {
         sig: FnSig,
         decl: FnDecl,
-        body: Option<Body>,
+        body_id: Option<BodyId>,
     },
     Struct {
         name: Symbol,
@@ -145,7 +146,7 @@ pub enum ItemKind {
     Const {
         name: Symbol,
         ty: Ty,
-        init: Option<Expr>,
+        body_id: Option<BodyId>,
     },
     Module {
         name: Symbol,
@@ -167,7 +168,7 @@ pub enum ImplItemKind {
     Fn {
         sig: FnSig,
         decl: FnDecl,
-        body: Option<Body>,
+        body_id: Option<BodyId>,
     },
 }
 
@@ -213,15 +214,14 @@ pub struct Param {
 
 #[derive(Debug, Clone)]
 pub struct Body {
-    pub stmts: ThinVec<Stmt>,
-    pub params: ThinVec<Param>,
+    pub value: Expr,
 }
 
 #[derive(Debug, Clone)]
 pub struct Local {
     pub hir_id: HirId,
     pub name: Symbol,
-    pub ty: Option<Ty>,
+    pub ty: Ty,
     pub init: Option<Expr>,
     pub span: Span,
 }
@@ -332,7 +332,7 @@ pub enum StmtKind {
     /// let-binding
     Let {
         name: Symbol,
-        ty: Option<Ty>,
+        ty: Ty,
         init: Option<Expr>,
         local: HirId,
         mutability: Mutability,
@@ -379,15 +379,8 @@ pub enum TyKind {
 
 #[derive(Debug, Clone)]
 pub struct Path {
-    pub res: PathResolution,
+    pub res: Res<HirId>,
     pub segments: ThinVec<Ident>,
-}
-
-#[derive(Debug, Clone)]
-pub enum PathResolution {
-    Def(DefId),
-    PrimTy(PrimTy),
-    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

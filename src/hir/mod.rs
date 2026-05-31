@@ -11,15 +11,24 @@ use std::path;
 
 use thin_vec::ThinVec;
 
-use crate::ast::Ast;
+use crate::ast::{Ast, NodeId, NodeMap};
 use crate::context::Ctx;
-use crate::hir::owner::Crate;
+use crate::hir::owner::{Crate, HirId};
 use crate::interner::{Symbol, sym};
 use crate::resolve::{ModuleTree, ResolverOutputs};
 
 pub use def::*;
 
 impl_ids!(ModuleId, DefId, OwnerId, ItemLocalId);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BodyId(pub ItemLocalId);
+
+impl std::fmt::Display for BodyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl OwnerId {
     pub const INVALID: OwnerId = OwnerId(u32::MAX);
@@ -130,6 +139,11 @@ pub struct AstLoweringContext<'a, 'ctx> {
     asts: &'a ThinVec<Ast>,
     module_tree: &'a ModuleTree,
     resolver: &'a ResolverOutputs,
+
+    current_owner: Option<OwnerId>,
+    next_local_id: u32,
+    /// Maps AST NodeId -> HirId for local bindings (function params, let bindings)
+    node_to_hir_id: NodeMap<HirId>,
 }
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -144,6 +158,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             asts,
             module_tree,
             resolver,
+            current_owner: None,
+            next_local_id: 0,
+            node_to_hir_id: NodeMap::default(),
         }
     }
 
@@ -162,6 +179,30 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
 
         hir_crate
+    }
+
+    fn next_local_id(&mut self) -> ItemLocalId {
+        let id = ItemLocalId(self.next_local_id);
+        self.next_local_id += 1;
+        id
+    }
+
+    fn next_hir_id(&mut self) -> HirId {
+        let owner = self.current_owner.expect("current owner set");
+        HirId {
+            owner,
+            local_id: self.next_local_id(),
+        }
+    }
+
+    /// Register a local binding's HirId for the given AST NodeId
+    pub(super) fn register_local(&mut self, node_id: NodeId, hir_id: HirId) {
+        self.node_to_hir_id.insert(node_id, hir_id);
+    }
+
+    /// Look up the HirId for a local binding by its AST NodeId
+    pub(super) fn lookup_local(&self, node_id: NodeId) -> Option<HirId> {
+        self.node_to_hir_id.get(&node_id).copied()
     }
 }
 

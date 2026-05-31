@@ -16,11 +16,14 @@ mod mod_tree;
 mod path;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Res {
+pub enum Res<Id = NodeId> {
     /// Module-level def
     Def(DefId),
     /// Local definition in function body
-    Local(NodeId),
+    ///
+    /// Id is generic to allow for AST NodeId's during name resolution and then HIR HirId's during
+    /// AST lowering
+    Local(Id),
     /// Primitive type, like `i32`
     PrimTy(PrimTy),
     /// Self param in struct or impl

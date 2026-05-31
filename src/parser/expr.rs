@@ -77,9 +77,11 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             }
         }
         TokenKind::StringLiteral => Ok(Expr {
-            kind: ExprKind::Literal(Literal::String(
-                process_string(&value, span, token.module_id).into_boxed_str(),
-            )),
+            kind: ExprKind::Literal(Literal::String(process_string(
+                &value,
+                span,
+                token.module_id,
+            ))),
             node_id: NodeId::default(),
             span,
         }),

@@ -1,6 +1,6 @@
 use crate::hashmap::FxHashMap;
 use crate::hir::types::{Body, Node, OwnerNode};
-use crate::hir::{DefId, ItemLocalId, OwnerId};
+use crate::hir::{BodyId, DefId, ItemLocalId, OwnerId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HirId {
@@ -46,12 +46,16 @@ pub struct OwnerInfo {
 #[derive(Debug)]
 pub struct OwnerNodes {
     pub nodes: Vec<ParentedNode>,
-    pub bodies: Vec<Body>,
+    pub bodies: FxHashMap<BodyId, Body>,
 }
 
 impl OwnerNodes {
     pub fn node(&self) -> OwnerNode<'_> {
         OwnerNode::from_node(&self.nodes[0].node).expect("node 0 must be an owner node")
+    }
+
+    pub fn body(&self, id: BodyId) -> Option<&Body> {
+        self.bodies.get(&id)
     }
 }
 
