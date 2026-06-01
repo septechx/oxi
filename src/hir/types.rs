@@ -233,6 +233,12 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Expr {
+    pub fn into_box(self) -> Box<Self> {
+        Box::new(self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     /// A literal value
@@ -245,10 +251,10 @@ pub enum ExprKind {
         op: BinOp,
         right: Box<Expr>,
     },
-    /// Function call: callee(args...)
+    /// Function call: callee(params...)
     Call {
         callee: Box<Expr>,
-        args: ThinVec<Expr>,
+        params: ThinVec<Expr>,
     },
     /// Method call: receiver.method(args...)
     MethodCall {
@@ -383,6 +389,10 @@ pub struct Path {
     pub segments: ThinVec<Ident>,
 }
 
+pub trait FromToken<T> {
+    fn from_token(tk: &Token) -> Option<T>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     Add,
@@ -405,8 +415,8 @@ pub enum BinOp {
     Or,
 }
 
-impl BinOp {
-    pub fn from_token(tk: &Token) -> Option<Self> {
+impl FromToken<BinOp> for BinOp {
+    fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Plus => BinOp::Add,
             TokenKind::Dash => BinOp::Sub,
@@ -438,8 +448,8 @@ pub enum PreOp {
     Ref,
 }
 
-impl PreOp {
-    pub fn from_token(tk: &Token) -> Option<Self> {
+impl FromToken<PreOp> for PreOp {
+    fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Dash => Self::Neg,
             TokenKind::Reference => Self::Ref,
@@ -454,8 +464,8 @@ pub enum PosOp {
     Deref,
 }
 
-impl PosOp {
-    pub fn from_token(tk: &Token) -> Option<Self> {
+impl FromToken<PosOp> for PosOp {
+    fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::At => Self::Deref,
             _ => return None,
@@ -473,8 +483,8 @@ pub enum AssOp {
     AssRem,
 }
 
-impl AssOp {
-    pub fn from_token(tk: &Token) -> Option<Self> {
+impl FromToken<AssOp> for AssOp {
+    fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Equals => Self::Ass,
             TokenKind::MinusEquals => Self::AssSub,

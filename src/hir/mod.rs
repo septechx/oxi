@@ -135,7 +135,6 @@ impl PrimTy {
 
 #[derive(Debug)]
 pub struct AstLoweringContext<'a, 'ctx> {
-    #[allow(dead_code)]
     ctx: &'ctx mut Ctx,
     asts: &'a ThinVec<Ast>,
     module_tree: &'a ModuleTree,
