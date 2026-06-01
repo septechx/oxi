@@ -7,11 +7,11 @@
 
 Oxic is a compiler for the Oxi programming language.
 
-```zig
-static std = @import("std");
+```rust
+import std::print;
 
 pub fn main() isize {
-    std.print("Hello world\n");
+    print("Hello world\n");
 
     return 0;
 }
