@@ -27,21 +27,6 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         })
     }
 
-    fn with_owner(
-        &mut self,
-        def_id: DefId,
-        hir_crate: &mut Crate,
-        f: impl FnOnce(&mut Self, DefId) -> Option<OwnerInfo>,
-    ) {
-        self.current_owner = Some(OwnerId(def_id.0));
-        self.next_local_id = 1;
-        if let Some(info) = f(self, def_id) {
-            self.store_owner(def_id, hir_crate, info);
-        } else {
-            self.current_owner = None;
-        }
-    }
-
     pub(super) fn lower_assoc_item(
         &mut self,
         def_id: DefId,
@@ -108,14 +93,6 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 bodies: FxHashMap::default(),
             },
             parenting: FxHashMap::default(),
-        }
-    }
-
-    fn store_owner(&mut self, def_id: DefId, hir_crate: &mut Crate, owner_info: OwnerInfo) {
-        self.current_owner = None;
-        hir_crate.ensure_owner(def_id);
-        if let Some(owner) = hir_crate.owner_mut(def_id) {
-            *owner = MaybeOwner::Owner(Box::new(owner_info));
         }
     }
 
@@ -238,5 +215,23 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         };
         let local_id = self.next_local_id();
         (BodyId(local_id), Body { value: block_expr })
+    }
+
+    fn with_owner(
+        &mut self,
+        def_id: DefId,
+        hir_crate: &mut Crate,
+        f: impl FnOnce(&mut Self, DefId) -> Option<OwnerInfo>,
+    ) {
+        self.current_owner = Some(OwnerId(def_id.0));
+        self.next_local_id = 1;
+        let opt = f(self, def_id);
+        self.current_owner = None;
+
+        if let Some(info) = opt {
+            hir_crate.ensure_owner(def_id);
+            let owner = hir_crate.owner_mut(def_id).expect("owner exists");
+            *owner = MaybeOwner::Owner(Box::new(info));
+        }
     }
 }
