@@ -37,8 +37,6 @@ impl HirId {
 #[derive(Debug)]
 pub struct OwnerInfo {
     pub nodes: OwnerNodes,
-    /// Map from each nested owner's DefId to its parent's ItemLocalId.
-    pub parenting: FxHashMap<DefId, ItemLocalId>,
 }
 
 /// The HIR tree for a single owner.

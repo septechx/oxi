@@ -11,7 +11,7 @@ use crate::span::Span;
 #[derive(Debug, Clone)]
 pub enum OwnerNode<'a> {
     Item(&'a Item),
-    ImplItem(&'a ImplItem),
+    ImplItem(&'a AssocItem),
     Crate,
 }
 
@@ -19,7 +19,7 @@ impl<'a> OwnerNode<'a> {
     pub fn from_node(node: &'a Node) -> Option<Self> {
         match node {
             Node::Item(item) => Some(OwnerNode::Item(item)),
-            Node::ImplItem(item) => Some(OwnerNode::ImplItem(item)),
+            Node::AssocItem(item) => Some(OwnerNode::ImplItem(item)),
             Node::Crate => Some(OwnerNode::Crate),
             _ => None,
         }
@@ -58,8 +58,8 @@ impl<'a> OwnerNode<'a> {
 pub enum Node {
     /// A top-level item
     Item(Box<Item>),
-    /// An associated item inside an impl block
-    ImplItem(Box<ImplItem>),
+    /// An associated item
+    AssocItem(Box<AssocItem>),
     /// An expression
     Expr(Box<Expr>),
     /// A statement
@@ -81,7 +81,7 @@ impl Node {
     pub fn span(&self) -> Option<Span> {
         match self {
             Node::Item(item) => Some(item.span),
-            Node::ImplItem(item) => Some(item.span),
+            Node::AssocItem(item) => Some(item.span),
             Node::Expr(expr) => Some(expr.span),
             Node::Stmt(stmt) => Some(stmt.span),
             Node::Ty(ty) => Some(ty.span),
@@ -128,11 +128,7 @@ impl ItemId {
 
 #[derive(Debug, Clone)]
 pub enum ItemKind {
-    Fn {
-        sig: FnSig,
-        decl: FnDecl,
-        body_id: Option<BodyId>,
-    },
+    Fn(Fn),
     Struct {
         name: Symbol,
         fields: ThinVec<StructField>,
@@ -156,20 +152,16 @@ pub enum ItemKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplItem {
+pub struct AssocItem {
     pub hir_id: HirId,
     pub owner_id: OwnerId,
-    pub kind: ImplItemKind,
+    pub kind: AssocItemKind,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
-pub enum ImplItemKind {
-    Fn {
-        sig: FnSig,
-        decl: FnDecl,
-        body_id: Option<BodyId>,
-    },
+pub enum AssocItemKind {
+    Fn(Fn),
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +194,13 @@ pub struct FnDecl {
 #[derive(Debug, Clone)]
 pub struct FnSig {
     pub is_extern: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct Fn {
+    pub sig: FnSig,
+    pub decl: FnDecl,
+    pub body_id: Option<BodyId>,
 }
 
 #[derive(Debug, Clone)]

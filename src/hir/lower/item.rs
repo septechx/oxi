@@ -19,7 +19,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     fields,
                     items,
                 } => this.lower_struct(def_id, name, fields, items, item.span, item.visibility),
-                ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility),
+                ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
                 ast::ItemKind::Interface { .. } => todo!("Implement lowering of interface items"),
                 ast::ItemKind::Impl { .. } => todo!("Implement lowering of impl items"),
                 ast::ItemKind::Import(_) | ast::ItemKind::Module { .. } => return None,
@@ -33,13 +33,13 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         item: &'a ast::AssocItem,
         hir_crate: &mut Crate,
     ) {
-        match &item.kind {
-            ast::AssocItemKind::Fn(_f) => {
-                _ = def_id;
-                _ = hir_crate;
-                todo!()
-            }
-        }
+        self.with_owner(def_id, hir_crate, |this, def_id| {
+            Some(match &item.kind {
+                ast::AssocItemKind::Fn(f) => {
+                    this.lower_fn(def_id, f, item.span, item.visibility, Some(def_id))
+                }
+            })
+        })
     }
 
     fn lower_struct(
@@ -92,7 +92,6 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 }],
                 bodies: FxHashMap::default(),
             },
-            parenting: FxHashMap::default(),
         }
     }
 
@@ -137,7 +136,6 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 }],
                 bodies,
             },
-            parenting: FxHashMap::default(),
         }
     }
 
@@ -147,6 +145,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         f: &'a ast::Fn,
         span: Span,
         visibility: Visibility,
+        associated: Option<DefId>,
     ) -> OwnerInfo {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
@@ -175,27 +174,39 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             body_id
         });
 
+        let fun = Fn {
+            sig: FnSig {
+                is_extern: f.is_extern,
+            },
+            decl: FnDecl { params, ret },
+            body_id,
+        };
+
+        let node = if associated.is_some() {
+            Node::AssocItem(Box::new(AssocItem {
+                kind: AssocItemKind::Fn(fun),
+                hir_id,
+                owner_id,
+                span,
+            }))
+        } else {
+            Node::Item(Box::new(Item {
+                kind: ItemKind::Fn(fun),
+                hir_id,
+                owner_id,
+                span,
+                visibility,
+            }))
+        };
+
         OwnerInfo {
             nodes: OwnerNodes {
                 nodes: vec![ParentedNode {
                     parent: ItemLocalId::ZERO,
-                    node: Node::Item(Box::new(Item {
-                        hir_id,
-                        owner_id,
-                        kind: ItemKind::Fn {
-                            sig: FnSig {
-                                is_extern: f.is_extern,
-                            },
-                            decl: FnDecl { params, ret },
-                            body_id,
-                        },
-                        span,
-                        visibility,
-                    })),
+                    node,
                 }],
                 bodies,
             },
-            parenting: FxHashMap::default(),
         }
     }
 
