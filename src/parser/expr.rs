@@ -388,7 +388,7 @@ pub fn parse_block_expr(parser: &mut Parser) -> Result<Expr> {
     let (body, span) = parse_body(parser, start_span)?;
 
     Ok(Expr {
-        kind: ExprKind::Block(Block { stmts: body }),
+        kind: ExprKind::Block(Block { stmts: body, span }),
         node_id: NodeId::default(),
         span,
     })
@@ -417,7 +417,10 @@ pub fn parse_if_expr(parser: &mut Parser) -> Result<Expr> {
     Ok(Expr {
         kind: ExprKind::If {
             condition,
-            then_branch: Block { stmts },
+            then_branch: Block {
+                stmts,
+                span: body_span,
+            },
             else_branch,
         },
         node_id: NodeId::default(),
@@ -433,7 +436,7 @@ pub fn parse_while_expr(parser: &mut Parser) -> Result<Expr> {
     Ok(Expr {
         kind: ExprKind::While {
             condition,
-            body: Block { stmts },
+            body: Block { stmts, span },
         },
         node_id: NodeId::default(),
         span,
@@ -445,7 +448,7 @@ pub fn parse_loop_expr(parser: &mut Parser) -> Result<Expr> {
     parser.expect(TokenKind::OpenCurly)?;
     let (stmts, span) = parse_body(parser, start_span)?;
     Ok(Expr {
-        kind: ExprKind::Loop(Block { stmts }),
+        kind: ExprKind::Loop(Block { stmts, span }),
         node_id: NodeId::default(),
         span,
     })

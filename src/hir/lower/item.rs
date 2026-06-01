@@ -15,7 +15,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         match &item.kind {
             ast::ItemKind::Const { name, ty, value } => {
                 self.current_owner = Some(owner_id);
-                self.next_local_id = 0;
+                self.next_local_id = 1;
 
                 let ty = self.lower_type(ty);
                 let init = self.lower_expr(value);
@@ -92,7 +92,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
 
         self.current_owner = Some(owner_id);
-        self.next_local_id = 0;
+        self.next_local_id = 1;
 
         let params: ThinVec<Param> = f
             .parameters
@@ -113,7 +113,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
         let mut bodies = FxHashMap::default();
         let body_id = f.body.as_ref().map(|block| {
-            let (body_id, body) = self.lower_block_body(block, span);
+            let (body_id, body) = self.lower_block_body(block);
             bodies.insert(body_id, body);
             body_id
         });
@@ -145,7 +145,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         self.current_owner = None;
     }
 
-    fn lower_block_body(&mut self, block: &ast::Block, span: Span) -> (BodyId, Body) {
+    fn lower_block_body(&mut self, block: &ast::Block) -> (BodyId, Body) {
         let stmts = block
             .stmts
             .iter()
@@ -153,8 +153,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .collect();
         let block_expr = Expr {
             hir_id: self.next_hir_id(),
-            kind: ExprKind::Block(Block { stmts, span }),
-            span,
+            kind: ExprKind::Block(Block {
+                stmts,
+                span: block.span,
+            }),
+            span: block.span,
         };
         let local_id = self.next_local_id();
         (BodyId(local_id), Body { value: block_expr })

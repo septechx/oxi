@@ -227,7 +227,10 @@ mod tests {
 
     fn dummy_expr_block(body: ThinVec<Stmt>) -> Expr {
         Expr {
-            kind: ExprKind::Block(Block { stmts: body }),
+            kind: ExprKind::Block(Block {
+                stmts: body,
+                span: dummy_span(),
+            }),
             span: dummy_span(),
             node_id: NodeId::default(),
         }
@@ -244,6 +247,7 @@ mod tests {
     fn dummy_fn_body() -> Option<Block> {
         Some(Block {
             stmts: ThinVec::new(),
+            span: dummy_span(),
         })
     }
 
@@ -763,6 +767,7 @@ mod tests {
                     ],
                     body: Some(Block {
                         stmts: thin_vec![dummy_stmt_expr(dummy_expr_number(1))],
+                        span: dummy_span(),
                     }),
                     return_type: dummy_type_symbol("void"),
                     is_extern: false,
@@ -1027,6 +1032,7 @@ mod tests {
                                 parameters: ThinVec::new(),
                                 body: Some(Block {
                                     stmts: thin_vec![dummy_stmt_expr(dummy_expr_number(1))],
+                                    span: dummy_span(),
                                 }),
                                 return_type: dummy_type_never(),
                                 is_extern: false,
@@ -1092,6 +1098,7 @@ mod tests {
                                                 span: dummy_span(),
                                                 node_id: NodeId::default(),
                                             }],
+                                            span: dummy_span(),
                                         }),
                                         span: dummy_span(),
                                         node_id: NodeId::default(),
@@ -1100,6 +1107,7 @@ mod tests {
                                     node_id: NodeId::default(),
                                 },
                             ],
+                            span: dummy_span(),
                         }),
                         return_type: dummy_type_symbol("isize"),
                         is_extern: false,
@@ -1439,6 +1447,7 @@ mod tests {
                                                 span: dummy_span(),
                                                 node_id: NodeId::default(),
                                             }],
+                                            span: dummy_span(),
                                         }),
                                         span: dummy_span(),
                                         node_id: NodeId::default(),
@@ -1447,6 +1456,7 @@ mod tests {
                                     node_id: NodeId::default(),
                                 },
                             ],
+                            span: dummy_span(),
                         }),
                         return_type: dummy_type_symbol("void"),
                         is_extern: false,
