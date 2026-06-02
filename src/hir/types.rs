@@ -243,7 +243,7 @@ pub enum ExprKind {
     /// A literal value
     Literal(Literal),
     /// A path
-    Path(Path),
+    Path(QPath),
     /// Binary operation: left op right
     Binary {
         left: Box<Expr>,
@@ -362,7 +362,7 @@ pub enum TyKind {
     Error,
     PrimTy(PrimTy),
     /// A named type
-    Path(Path),
+    Path(QPath),
     /// Pointer type: &T or &mut T
     Ptr(Box<Ty>, Mutability),
     /// Slice type: []T
@@ -386,6 +386,16 @@ pub enum TyKind {
 pub struct Path {
     pub res: Res<HirId>,
     pub segments: ThinVec<Ident>,
+    pub span: Span,
+}
+
+/// A path that may still have associated-item suffixes to resolve during type checking.
+#[derive(Debug, Clone)]
+pub enum QPath {
+    /// Fully resolved path
+    Resolved(Path),
+    /// Type-relative path: `T::Assoc`
+    TypeRelative { qself: Box<QPath>, segment: Ident },
 }
 
 pub trait FromToken<T> {

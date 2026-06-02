@@ -22,8 +22,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     fn lower_expr_kind(&mut self, expr: &ast::Expr) -> ExprKind {
         match &expr.kind {
             ast::ExprKind::Symbol(path) => {
-                let hir_path = self.lower_path(path, expr.node_id);
-                ExprKind::Path(hir_path)
+                let qpath = self.lower_qpath(path, expr.node_id);
+                ExprKind::Path(qpath)
             }
             ast::ExprKind::Literal(lit) => ExprKind::Literal(*lit),
             ast::ExprKind::Binary {

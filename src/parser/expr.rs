@@ -206,7 +206,7 @@ pub fn parse_struct_instantiation_expr(
             parse_expr(parser, BindingPower::Assignment)?
         } else {
             Expr {
-                kind: ExprKind::Symbol(Path::from_ident(property.clone())),
+                kind: ExprKind::Symbol(Path::from_ident(property)),
                 node_id: NodeId::default(),
                 span: property.span,
             }

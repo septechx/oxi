@@ -112,7 +112,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         let segments = &path.segments;
         let partial_res = if segments.len() == 1 {
             PartialRes::new(self.resolve_ident(path, segments[0].value))
-        } else if let Some(partial_res) = self.resolve_type_relative_path(path) {
+        } else if let Some(partial_res) = self.defer_type_relative_path(path) {
             partial_res
         } else {
             self.resolve_module_path(path)
@@ -152,20 +152,21 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         Res::Err
     }
 
-    fn resolve_type_relative_path(&mut self, path: &Path) -> Option<PartialRes> {
+    fn defer_type_relative_path(&mut self, path: &Path) -> Option<PartialRes> {
         let segments = &path.segments;
         let seg_count = segments.len();
 
-        // First segment as a type in the current module.
         let first_sym = segments[0].value;
         if let Some(resolution) = self.resolver.current_module().resolutions.get(&first_sym) {
             let type_def = resolution.best_binding().def_id;
             if self.is_type_def(type_def) && seg_count >= 2 {
-                return Some(self.resolve_assoc_segments(type_def, 0, &segments[1..], path));
+                return Some(PartialRes::with_unresolved_segments(
+                    Res::Def(type_def),
+                    seg_count - 1,
+                ));
             }
         }
 
-        // Longest module prefix, then type, then associated item.
         for prefix_len in (1..seg_count).rev() {
             let module_prefix = &segments[..prefix_len];
             let type_seg = &segments[prefix_len];
@@ -177,108 +178,16 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 .resolutions
                 .get(&type_seg.value)?;
             let type_def = type_resolution.best_binding().def_id;
-            if !self.is_type_def(type_def) {
+            if !self.is_type_def(type_def) || prefix_len + 1 >= seg_count {
                 continue;
             }
-            if prefix_len + 1 >= seg_count {
-                continue;
-            }
-            return Some(self.resolve_assoc_segments(
-                type_def,
-                module_node_idx,
-                &segments[prefix_len + 1..],
-                path,
+            return Some(PartialRes::with_unresolved_segments(
+                Res::Def(type_def),
+                seg_count - prefix_len - 1,
             ));
         }
 
         None
-    }
-
-    fn resolve_assoc_segments(
-        &mut self,
-        mut type_def: DefId,
-        module_node_idx: usize,
-        segments: &[crate::ast::Ident],
-        path: &Path,
-    ) -> PartialRes {
-        let mut base_res = Res::Def(type_def);
-        for (i, segment) in segments.iter().enumerate() {
-            let method_sym = segment.value;
-            let Some(binding) = self.lookup_struct_method(type_def, method_sym, module_node_idx)
-            else {
-                let msg = format!(
-                    "No associated item `{}` on `{}`",
-                    self.resolver.ctx.interner.lookup(segment.value),
-                    self.resolver.ctx.interner.lookup(
-                        self.resolver.defs[type_def.0 as usize]
-                            .name
-                            .expect("type has a name"),
-                    ),
-                );
-                self.report_path_error_at(segment.span, &msg);
-                return PartialRes::new(Res::Err);
-            };
-            if !self.check_assoc_visibility(binding, module_node_idx, segment.span) {
-                return PartialRes::new(Res::Err);
-            }
-            base_res = Res::Def(binding.def_id);
-            if i + 1 == segments.len() {
-                return PartialRes::new(base_res);
-            }
-            type_def = binding.def_id;
-            if !self.is_type_def(type_def) {
-                self.report_path_error(
-                    path,
-                    &format!(
-                        "`{}` is not a type",
-                        self.resolver.ctx.interner.lookup(segment.value)
-                    ),
-                );
-                return PartialRes::new(Res::Err);
-            }
-        }
-        PartialRes::new(base_res)
-    }
-
-    fn lookup_struct_method(
-        &self,
-        struct_def: DefId,
-        method_sym: Symbol,
-        module_node_idx: usize,
-    ) -> Option<NameBinding> {
-        self.resolver.modules[module_node_idx]
-            .struct_methods
-            .get(&struct_def)?
-            .get(&method_sym)
-            .copied()
-    }
-
-    fn check_assoc_visibility(
-        &mut self,
-        binding: NameBinding,
-        defining_module: usize,
-        span: Span,
-    ) -> bool {
-        if defining_module == self.resolver.module_idx {
-            return true;
-        }
-        if binding.visibility == crate::ast::Visibility::Public {
-            return true;
-        }
-        let module_id = self.resolver.source_module_id();
-        let loc_widget = LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
-            .expect("failed to create error");
-        let code_widget =
-            CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, self.resolver.ctx)
-                .expect("failed to create error");
-        let enable_printing = self.resolver.ctx.enable_printing;
-        self.resolver.ctx.errors.add(
-            builders::error("Associated item is private")
-                .add_widget(loc_widget)
-                .add_widget(code_widget),
-            enable_printing,
-        );
-        false
     }
 
     fn resolve_module_path(&mut self, path: &Path) -> PartialRes {
@@ -307,11 +216,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         let sym = last.value;
 
         if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
-            let res = res.best_binding().def_id;
-            if self.is_type_def(res) && segments.len() > 1 {
-                return PartialRes::with_unresolved_segments(Res::Def(res), 0);
-            }
-            return PartialRes::new(Res::Def(res));
+            return PartialRes::new(Res::Def(res.best_binding().def_id));
         }
 
         let err_str = format!(

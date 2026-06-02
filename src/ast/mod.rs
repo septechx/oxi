@@ -233,7 +233,7 @@ pub enum TypeKind {
     Never,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ident {
     pub value: Symbol,
     pub span: Span,
@@ -343,7 +343,7 @@ pub struct ImportTree {
 impl ImportTree {
     pub fn ident(&self) -> Option<Ident> {
         match &self.kind {
-            ImportTreeKind::Simple(Some(rename)) => Some(rename.clone()),
+            ImportTreeKind::Simple(Some(rename)) => Some(*rename),
             ImportTreeKind::Simple(None) => self.prefix.segments.last().cloned(),
             _ => None,
         }

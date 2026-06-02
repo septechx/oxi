@@ -41,8 +41,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let hir_id = self.next_hir_id();
         let kind = match &ty.kind {
             ast::TypeKind::Symbol(path) => {
-                let hir_path = self.lower_path(path, ty.node_id);
-                TyKind::Path(hir_path)
+                let qpath = self.lower_qpath(path, ty.node_id);
+                TyKind::Path(qpath)
             }
             ast::TypeKind::Pointer(inner, mutability) => {
                 TyKind::Ptr(Box::new(self.lower_type(inner)), *mutability)

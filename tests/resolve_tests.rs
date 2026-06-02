@@ -265,7 +265,7 @@ fn local_variable_resolves_to_local() {
 }
 
 #[test]
-fn struct_associated_fn_path_resolves() {
+fn struct_associated_fn_path_defers_type_relative_resolution() {
     let outputs = resolve_outputs(&[(
         "main.oxi",
         r#"
@@ -283,24 +283,28 @@ fn struct_associated_fn_path_resolves() {
         "#,
     )]);
     let foo_sym = intern("Foo");
-    let new_sym = intern("new");
     let foo_def = outputs.modules[0].resolutions[&foo_sym]
         .best_binding()
         .def_id;
-    let new_def = outputs.modules[0].struct_methods[&foo_def][&new_sym].def_id;
-    assert_eq!(outputs.defs[new_def.0 as usize].kind, DefKind::AssocFn);
-    let found = outputs
-        .res_map
-        .values()
-        .any(|res| res.full_res() == Some(Res::Def(new_def)));
+    let found = outputs.res_map.values().any(|partial| {
+        partial.base_res() == Res::Def(foo_def) && partial.unresolved_segments() == 1
+    });
     assert!(
         found,
-        "Foo::new should resolve to the associated function def"
+        "Foo::new should record PartialRes for Foo with one unresolved segment"
+    );
+    assert!(
+        !outputs
+            .res_map
+            .values()
+            .any(|partial| partial.full_res().is_some()
+                && partial.base_res() != partial.full_res().unwrap()),
+        "associated-item suffixes must stay unresolved in res_map"
     );
 }
 
 #[test]
-fn impl_associated_fn_path_resolves() {
+fn impl_associated_fn_path_defers_type_relative_resolution() {
     let outputs = resolve_outputs(&[(
         "main.oxi",
         r#"
@@ -324,18 +328,15 @@ fn impl_associated_fn_path_resolves() {
         "#,
     )]);
     let foo_sym = intern("Foo");
-    let new_sym = intern("new");
     let foo_def = outputs.modules[0].resolutions[&foo_sym]
         .best_binding()
         .def_id;
-    let new_def = outputs.modules[0].struct_methods[&foo_def][&new_sym].def_id;
-    let found = outputs
-        .res_map
-        .values()
-        .any(|res| res.full_res() == Some(Res::Def(new_def)));
+    let found = outputs.res_map.values().any(|partial| {
+        partial.base_res() == Res::Def(foo_def) && partial.unresolved_segments() == 1
+    });
     assert!(
         found,
-        "Foo::new should resolve to the impl method via PartialRes path resolution"
+        "Foo::new should defer associated-item resolution until type checking"
     );
 }
 
