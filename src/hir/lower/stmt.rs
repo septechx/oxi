@@ -1,6 +1,6 @@
 use crate::ast;
 use crate::hir::AstLoweringContext;
-use crate::hir::types::{Stmt, StmtKind, Ty, TyKind};
+use crate::hir::types::{Stmt, StmtKind};
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     pub(super) fn lower_stmt(&mut self, stmt: &ast::Stmt) -> Stmt {
@@ -34,41 +34,6 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             hir_id,
             kind,
             span: stmt.span,
-        }
-    }
-
-    pub(super) fn lower_type(&mut self, ty: &ast::Type) -> Ty {
-        let hir_id = self.next_hir_id();
-        let kind = match &ty.kind {
-            ast::TypeKind::Symbol(path) => {
-                let qpath = self.lower_qpath(path, ty.node_id);
-                TyKind::Path(qpath)
-            }
-            ast::TypeKind::Pointer(inner, mutability) => {
-                TyKind::Ptr(Box::new(self.lower_type(inner)), *mutability)
-            }
-            ast::TypeKind::Slice(inner) => TyKind::Slice(Box::new(self.lower_type(inner))),
-            ast::TypeKind::FixedArray(inner, size) => {
-                TyKind::Array(Box::new(self.lower_type(inner)), *size)
-            }
-            ast::TypeKind::Function { params, ret } => {
-                let params = params.iter().map(|p| self.lower_type(p)).collect();
-                TyKind::Fn {
-                    params,
-                    ret: Box::new(self.lower_type(ret)),
-                }
-            }
-            ast::TypeKind::Tuple(elements) => {
-                TyKind::Tuple(elements.iter().map(|e| self.lower_type(e)).collect())
-            }
-            ast::TypeKind::Infer => TyKind::Infer,
-            ast::TypeKind::Never => TyKind::Never,
-        };
-
-        Ty {
-            hir_id,
-            kind,
-            span: ty.span,
         }
     }
 }

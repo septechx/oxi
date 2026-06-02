@@ -52,6 +52,18 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 };
                 ExprKind::Postfix { left, op }
             }
+            ast::ExprKind::Assignment {
+                assignee,
+                operator,
+                value,
+            } => {
+                let target = self.lower_expr(assignee).into_box();
+                let value = self.lower_expr(value).into_box();
+                let Some(op) = self.lower_operator(operator, "assignment") else {
+                    return ExprKind::Error;
+                };
+                ExprKind::Assign { target, op, value }
+            }
             ast::ExprKind::FunctionCall { callee, parameters } => {
                 let callee = self.lower_expr(callee).into_box();
                 let params: ThinVec<Expr> = parameters
@@ -70,6 +82,22 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     .map(|(name, expr)| (name.value, self.lower_expr(expr)))
                     .collect();
                 ExprKind::StructInit { def, fields }
+            }
+            ast::ExprKind::ArrayLiteral {
+                underlying,
+                contents,
+            } => {
+                let ty = self.lower_type(underlying);
+                let contents: ThinVec<Expr> =
+                    contents.iter().map(|expr| self.lower_expr(expr)).collect();
+                ExprKind::ArrayInit { ty, contents }
+            }
+            ast::ExprKind::MemberAccess { base, member } => {
+                let base = self.lower_expr(base).into_box();
+                ExprKind::MemberAccess {
+                    member: member.value,
+                    base,
+                }
             }
             _ => todo!("Lowering of {:?} not yet implemented", expr.kind),
         }

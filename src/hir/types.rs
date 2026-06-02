@@ -273,7 +273,7 @@ pub enum ExprKind {
     },
     /// Array literal: []Type{value1, value2, ... }
     ArrayInit {
-        def: DefId,
+        ty: Ty,
         contents: ThinVec<Expr>,
     },
     /// Tuple literal: (value1, value2, ...)
