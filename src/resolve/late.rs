@@ -8,10 +8,10 @@ use crate::ast::{
 use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
-use crate::hir::DefId;
+use crate::hir::{DefId, DefKind};
 use crate::interner::Symbol;
 use crate::resolve::path::PathError;
-use crate::resolve::{PrimTy, Res, Resolver};
+use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver};
 use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
@@ -108,141 +108,269 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         }
     }
 
-    fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> Res {
+    fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> PartialRes {
         let segments = &path.segments;
-        if segments.len() == 1 {
-            let sym = segments[0].value;
-
-            // 1st check if path is a primitive type
-            if let Some(prim) = PrimTy::from_name(sym) {
-                let res = Res::PrimTy(prim);
-                self.resolver.res_map.insert(node_id, res);
-                return res;
-            }
-
-            // 2nd check in ribs if path is a local
-            let mut depth = 1;
-            while depth <= self.ribs.len() {
-                let rib_index = self.ribs.len() - depth;
-
-                if let Some(&res) = self.ribs[rib_index].bindings.get(&sym) {
-                    self.resolver.res_map.insert(node_id, res);
-                    return res;
-                }
-
-                if self.ribs[rib_index].kind.blocks_enclosing_locals() {
-                    break;
-                }
-
-                depth += 1;
-            }
-
-            // 3rd check if path is a module level item
-            if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
-                let res = Res::Def(res.best_binding().def_id);
-                self.resolver.res_map.insert(node_id, res);
-                return res;
-            };
-
-            // Not found, emit error
-            let module_id = self.resolver.source_module_id();
-            let loc_widget = LocationWidget::new_with_ctx(path.span, module_id, self.resolver.ctx)
-                .expect("failed to create error");
-            let code_widget = CodeWidget::new_with_ctx(
-                path.span,
-                module_id,
-                HighlightType::Error,
-                self.resolver.ctx,
-            )
-            .expect("failed to create error");
-            let enable_printing = self.resolver.ctx.enable_printing;
-            self.resolver.ctx.errors.add(
-                builders::error("Failed to resolve path")
-                    .add_widget(loc_widget)
-                    .add_widget(code_widget),
-                enable_printing,
-            );
-
-            Res::Err
+        let partial_res = if segments.len() == 1 {
+            PartialRes::new(self.resolve_ident(path, segments[0].value))
+        } else if let Some(partial_res) = self.resolve_type_relative_path(path) {
+            partial_res
         } else {
-            // Multi-segment path: walk the module tree using shared path resolution
-            let module_prefix = &segments[..segments.len() - 1];
-            let module_node_idx = match self
+            self.resolve_module_path(path)
+        };
+        self.resolver.res_map.insert(node_id, partial_res);
+        partial_res
+    }
+
+    fn resolve_ident(&mut self, path: &Path, sym: Symbol) -> Res {
+        // Check if the symbol is a primitive type.
+        if let Some(prim) = PrimTy::from_name(sym) {
+            return Res::PrimTy(prim);
+        }
+
+        // Check if the symbol is a local variable.
+        let mut depth = 1;
+        while depth <= self.ribs.len() {
+            let rib_index = self.ribs.len() - depth;
+
+            if let Some(&res) = self.ribs[rib_index].bindings.get(&sym) {
+                return res;
+            }
+
+            if self.ribs[rib_index].kind.blocks_enclosing_locals() {
+                break;
+            }
+
+            depth += 1;
+        }
+
+        // Check if the symbol is a module-level definition.
+        if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
+            return Res::Def(res.best_binding().def_id);
+        }
+
+        self.report_path_error(path, "Failed to resolve path");
+        Res::Err
+    }
+
+    fn resolve_type_relative_path(&mut self, path: &Path) -> Option<PartialRes> {
+        let segments = &path.segments;
+        let seg_count = segments.len();
+
+        // First segment as a type in the current module.
+        let first_sym = segments[0].value;
+        if let Some(resolution) = self.resolver.current_module().resolutions.get(&first_sym) {
+            let type_def = resolution.best_binding().def_id;
+            if self.is_type_def(type_def) && seg_count >= 2 {
+                return Some(self.resolve_assoc_segments(type_def, 0, &segments[1..], path));
+            }
+        }
+
+        // Longest module prefix, then type, then associated item.
+        for prefix_len in (1..seg_count).rev() {
+            let module_prefix = &segments[..prefix_len];
+            let type_seg = &segments[prefix_len];
+            let module_node_idx = self
                 .resolver
                 .resolve_module_path(self.resolver.module_idx, module_prefix)
-            {
-                Ok(idx) => idx,
-                Err(err) => {
-                    let (span, msg) = match err {
-                        PathError::NoParentForSuper { span } => {
-                            (span, "No parent module for `super`".into())
-                        }
-                        PathError::ModuleNotFound { name, span } => {
-                            (span, format!("Module `{name}` not found"))
-                        }
-                    };
-                    let module_id = self.resolver.source_module_id();
-                    let loc_widget =
-                        LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
-                            .expect("failed to create error");
-                    let code_widget = CodeWidget::new_with_ctx(
-                        span,
-                        module_id,
-                        HighlightType::Error,
-                        self.resolver.ctx,
-                    )
-                    .expect("failed to create error");
-                    let enable_printing = self.resolver.ctx.enable_printing;
-                    self.resolver.ctx.errors.add(
-                        builders::error(msg)
-                            .add_widget(loc_widget)
-                            .add_widget(code_widget),
-                        enable_printing,
-                    );
-                    return Res::Err;
-                }
-            };
-
-            // Last segment: look up in the target module's resolutions
-            let last = &segments[segments.len() - 1];
-            let sym = last.value;
-
-            if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
-                let res = Res::Def(res.best_binding().def_id);
-                self.resolver.res_map.insert(node_id, res);
-                return res;
-            };
-
-            // Error
-            let module_id = self.resolver.source_module_id();
-            let loc_widget = LocationWidget::new_with_ctx(last.span, module_id, self.resolver.ctx)
-                .expect("failed to create error");
-            let code_widget = CodeWidget::new_with_ctx(
-                last.span,
-                module_id,
-                HighlightType::Error,
-                self.resolver.ctx,
-            )
-            .expect("failed to create error");
-            let enable_printing = self.resolver.ctx.enable_printing;
-            let err_str = format!(
-                "Failed to resolve `{}` in module `{}`",
-                self.resolver.ctx.interner.lookup(last.value),
-                Path {
-                    segments: segments[..segments.len() - 1].into(),
-                    span: Span::new(0, 0),
-                }
-                .display(self.resolver.ctx)
-            );
-            self.resolver.ctx.errors.add(
-                builders::error(err_str)
-                    .add_widget(loc_widget)
-                    .add_widget(code_widget),
-                enable_printing,
-            );
-
-            Res::Err
+                .ok()?;
+            let type_resolution = self.resolver.modules[module_node_idx]
+                .resolutions
+                .get(&type_seg.value)?;
+            let type_def = type_resolution.best_binding().def_id;
+            if !self.is_type_def(type_def) {
+                continue;
+            }
+            if prefix_len + 1 >= seg_count {
+                continue;
+            }
+            return Some(self.resolve_assoc_segments(
+                type_def,
+                module_node_idx,
+                &segments[prefix_len + 1..],
+                path,
+            ));
         }
+
+        None
+    }
+
+    fn resolve_assoc_segments(
+        &mut self,
+        mut type_def: DefId,
+        module_node_idx: usize,
+        segments: &[crate::ast::Ident],
+        path: &Path,
+    ) -> PartialRes {
+        let mut base_res = Res::Def(type_def);
+        for (i, segment) in segments.iter().enumerate() {
+            let method_sym = segment.value;
+            let Some(binding) = self.lookup_struct_method(type_def, method_sym, module_node_idx)
+            else {
+                let msg = format!(
+                    "No associated item `{}` on `{}`",
+                    self.resolver.ctx.interner.lookup(segment.value),
+                    self.resolver.ctx.interner.lookup(
+                        self.resolver.defs[type_def.0 as usize]
+                            .name
+                            .expect("type has a name"),
+                    ),
+                );
+                self.report_path_error_at(segment.span, &msg);
+                return PartialRes::new(Res::Err);
+            };
+            if !self.check_assoc_visibility(binding, module_node_idx, segment.span) {
+                return PartialRes::new(Res::Err);
+            }
+            base_res = Res::Def(binding.def_id);
+            if i + 1 == segments.len() {
+                return PartialRes::new(base_res);
+            }
+            type_def = binding.def_id;
+            if !self.is_type_def(type_def) {
+                self.report_path_error(
+                    path,
+                    &format!(
+                        "`{}` is not a type",
+                        self.resolver.ctx.interner.lookup(segment.value)
+                    ),
+                );
+                return PartialRes::new(Res::Err);
+            }
+        }
+        PartialRes::new(base_res)
+    }
+
+    fn lookup_struct_method(
+        &self,
+        struct_def: DefId,
+        method_sym: Symbol,
+        module_node_idx: usize,
+    ) -> Option<NameBinding> {
+        self.resolver.modules[module_node_idx]
+            .struct_methods
+            .get(&struct_def)?
+            .get(&method_sym)
+            .copied()
+    }
+
+    fn check_assoc_visibility(
+        &mut self,
+        binding: NameBinding,
+        defining_module: usize,
+        span: Span,
+    ) -> bool {
+        if defining_module == self.resolver.module_idx {
+            return true;
+        }
+        if binding.visibility == crate::ast::Visibility::Public {
+            return true;
+        }
+        let module_id = self.resolver.source_module_id();
+        let loc_widget = LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
+            .expect("failed to create error");
+        let code_widget =
+            CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, self.resolver.ctx)
+                .expect("failed to create error");
+        let enable_printing = self.resolver.ctx.enable_printing;
+        self.resolver.ctx.errors.add(
+            builders::error("Associated item is private")
+                .add_widget(loc_widget)
+                .add_widget(code_widget),
+            enable_printing,
+        );
+        false
+    }
+
+    fn resolve_module_path(&mut self, path: &Path) -> PartialRes {
+        let segments = &path.segments;
+        let module_prefix = &segments[..segments.len() - 1];
+        let module_node_idx = match self
+            .resolver
+            .resolve_module_path(self.resolver.module_idx, module_prefix)
+        {
+            Ok(idx) => idx,
+            Err(err) => {
+                let (span, msg) = match err {
+                    PathError::NoParentForSuper { span } => {
+                        (span, "No parent module for `super`".into())
+                    }
+                    PathError::ModuleNotFound { name, span } => {
+                        (span, format!("Module `{name}` not found"))
+                    }
+                };
+                self.report_path_error_at(span, &msg);
+                return PartialRes::new(Res::Err);
+            }
+        };
+
+        let last = &segments[segments.len() - 1];
+        let sym = last.value;
+
+        if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
+            let res = res.best_binding().def_id;
+            if self.is_type_def(res) && segments.len() > 1 {
+                return PartialRes::with_unresolved_segments(Res::Def(res), 0);
+            }
+            return PartialRes::new(Res::Def(res));
+        }
+
+        let err_str = format!(
+            "Failed to resolve `{}` in module `{}`",
+            self.resolver.ctx.interner.lookup(last.value),
+            Path {
+                segments: segments[..segments.len() - 1].into(),
+                span: Span::new(0, 0),
+            }
+            .display(self.resolver.ctx)
+        );
+        self.report_path_error_at(last.span, &err_str);
+        PartialRes::new(Res::Err)
+    }
+
+    fn is_type_def(&self, def_id: DefId) -> bool {
+        matches!(
+            self.resolver.defs.get(def_id.0 as usize).map(|d| d.kind),
+            Some(DefKind::Struct | DefKind::Interface)
+        )
+    }
+
+    fn register_impl_methods(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
+        for item in items {
+            let AssocItemKind::Fn(f) = &item.kind;
+            let Some(method_def_id) = self.resolver.def_id_for_node(item.node_id) else {
+                continue;
+            };
+            let binding = NameBinding {
+                def_id: method_def_id,
+                visibility: item.visibility,
+            };
+            self.resolver
+                .current_module_mut()
+                .struct_methods
+                .entry(struct_def_id)
+                .or_default()
+                .insert(f.name.value, binding);
+        }
+    }
+
+    fn report_path_error(&mut self, path: &Path, msg: &str) {
+        self.report_path_error_at(path.span, msg);
+    }
+
+    fn report_path_error_at(&mut self, span: Span, msg: &str) {
+        let module_id = self.resolver.source_module_id();
+        let loc_widget = LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
+            .expect("failed to create error");
+        let code_widget =
+            CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, self.resolver.ctx)
+                .expect("failed to create error");
+        let enable_printing = self.resolver.ctx.enable_printing;
+        self.resolver.ctx.errors.add(
+            builders::error(msg)
+                .add_widget(loc_widget)
+                .add_widget(code_widget),
+            enable_printing,
+        );
     }
 
     fn inject_self_ty(&mut self, node_id: NodeId) {
@@ -293,9 +421,10 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
                 self.resolve_path(&interface.0, interface.1);
 
-                if let Res::Def(def_id) = self_ty_res {
+                if let Some(Res::Def(struct_def_id)) = self_ty_res.full_res() {
+                    self.register_impl_methods(struct_def_id, items);
                     self.with_rib(RibKind::Item, |this| {
-                        this.inject_self_ty_from_def_id(def_id);
+                        this.inject_self_ty_from_def_id(struct_def_id);
                         this.resolve_assoc_items(items);
                     });
                 }

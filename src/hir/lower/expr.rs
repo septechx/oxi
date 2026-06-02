@@ -76,9 +76,14 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     }
 
     fn resolve_def_id(&self, node_id: &NodeId) -> Option<DefId> {
-        match self.resolver.res_map.get(node_id) {
-            Some(Res::Def(def_id)) => Some(*def_id),
-            Some(Res::SelfTyAlias { alias_to }) => Some(*alias_to),
+        match self
+            .resolver
+            .res_map
+            .get(node_id)
+            .and_then(|p| p.full_res())
+        {
+            Some(Res::Def(def_id)) => Some(def_id),
+            Some(Res::SelfTyAlias { alias_to }) => Some(alias_to),
             _ => None,
         }
     }

@@ -15,7 +15,49 @@ mod late;
 mod mod_tree;
 mod path;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartialRes {
+    base_res: Res,
+    unresolved_segments: usize,
+}
+
+impl PartialRes {
+    pub fn new(base_res: Res) -> Self {
+        Self {
+            base_res,
+            unresolved_segments: 0,
+        }
+    }
+
+    pub fn with_unresolved_segments(base_res: Res, mut unresolved_segments: usize) -> Self {
+        if base_res == Res::Err {
+            unresolved_segments = 0;
+        }
+        Self {
+            base_res,
+            unresolved_segments,
+        }
+    }
+
+    pub fn base_res(&self) -> Res {
+        self.base_res
+    }
+
+    pub fn unresolved_segments(&self) -> usize {
+        self.unresolved_segments
+    }
+
+    pub fn full_res(&self) -> Option<Res> {
+        (self.unresolved_segments == 0).then_some(self.base_res)
+    }
+
+    pub fn expect_full_res(&self) -> Res {
+        self.full_res()
+            .expect("unexpected unresolved path segments")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Res<Id = NodeId> {
     /// Module-level def
     Def(DefId),
@@ -120,6 +162,7 @@ impl NameResolution {
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
     pub resolutions: FxHashMap<Symbol, NameResolution>,
+    pub struct_methods: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub qualified_name: String,
@@ -127,8 +170,8 @@ pub struct ModuleData {
 
 #[derive(Debug)]
 pub struct ResolverOutputs {
-    /// maps (path node id) -> (res)
-    pub res_map: NodeMap<Res>,
+    /// maps (path node id) -> (partial res)
+    pub res_map: NodeMap<PartialRes>,
     /// maps (def node id) -> (def id)
     pub def_map: NodeMap<DefId>,
     /// Arena\[DefId] -> Def
@@ -153,7 +196,7 @@ pub struct Resolver<'a, 'ctx> {
 
     // Late res
     /// maps (path node id) -> (res)
-    res_map: NodeMap<Res>,
+    res_map: NodeMap<PartialRes>,
 }
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {

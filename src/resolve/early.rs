@@ -22,12 +22,19 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     }
 
     /// Allocates a definition and registers its name resolution
-    fn create_def(&mut self, id: NodeId, name: Symbol, kind: DefKind, visibility: Visibility) {
+    fn create_def(
+        &mut self,
+        id: NodeId,
+        name: Symbol,
+        kind: DefKind,
+        visibility: Visibility,
+    ) -> DefId {
         let def_id = self.alloc_def(id, Some(name), kind, Some(visibility));
         let binding = NameBinding { def_id, visibility };
         self.current_module_mut()
             .resolutions
             .insert(name, NameResolution::non_glob_import(binding));
+        def_id
     }
 
     /// Allocates a definition without registering its name resolution
@@ -417,6 +424,26 @@ impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
     pub fn new(resolver: &'a mut Resolver<'res, 'ctx>) -> Self {
         Self { resolver }
     }
+
+    fn register_struct_method(&mut self, item: &AssocItem, struct_def_id: DefId) {
+        let AssocItemKind::Fn(f) = &item.kind;
+        let method_def_id = self.resolver.alloc_def(
+            item.node_id,
+            Some(f.name.value),
+            DefKind::AssocFn,
+            Some(item.visibility),
+        );
+        let binding = NameBinding {
+            def_id: method_def_id,
+            visibility: item.visibility,
+        };
+        self.resolver
+            .current_module_mut()
+            .struct_methods
+            .entry(struct_def_id)
+            .or_default()
+            .insert(f.name.value, binding);
+    }
 }
 
 impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
@@ -428,11 +455,15 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                     .create_def(item.node_id, sym, DefKind::Const, item.visibility);
                 VisitAction::SkipChildren
             }
-            ItemKind::Struct { name, .. } => {
+            ItemKind::Struct { name, items, .. } => {
                 let sym = name.value;
-                self.resolver
-                    .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
-                VisitAction::Continue
+                let struct_def_id =
+                    self.resolver
+                        .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
+                for assoc in items {
+                    self.register_struct_method(assoc, struct_def_id);
+                }
+                VisitAction::SkipChildren
             }
             ItemKind::Interface { name, .. } => {
                 let sym = name.value;
@@ -462,7 +493,7 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 self.resolver.alloc_def(
                     item.node_id,
                     Some(f.name.value),
-                    DefKind::Function,
+                    DefKind::AssocFn,
                     Some(item.visibility),
                 );
             }

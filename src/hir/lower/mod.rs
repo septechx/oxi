@@ -23,7 +23,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     }
 
     pub(super) fn lower_path(&self, path: &ast::Path, node_id: NodeId) -> Path {
-        let res = match self.resolver.res_map.get(&node_id).copied() {
+        let partial = self.resolver.res_map.get(&node_id).copied();
+        let res = match partial.and_then(|p| p.full_res()) {
             Some(Res::Def(def_id)) => Res::Def(def_id),
             Some(Res::PrimTy(prim)) => Res::PrimTy(prim),
             Some(Res::Local(local_node_id)) => match self.lookup_local(local_node_id) {
