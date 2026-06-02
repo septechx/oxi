@@ -9,7 +9,7 @@ use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind};
-use crate::interner::Symbol;
+use crate::interner::{Symbol, sym};
 use crate::resolve::path::PathError;
 use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver};
 use crate::span::Span;
@@ -121,9 +121,9 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         partial_res
     }
 
-    fn resolve_ident(&mut self, path: &Path, sym: Symbol) -> Res {
+    fn resolve_ident(&mut self, path: &Path, name: Symbol) -> Res {
         // Check if the symbol is a primitive type.
-        if let Some(prim) = PrimTy::from_name(sym) {
+        if let Some(prim) = PrimTy::from_name(name) {
             return Res::PrimTy(prim);
         }
 
@@ -132,11 +132,11 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         while depth <= self.ribs.len() {
             let rib_index = self.ribs.len() - depth;
 
-            if let Some(&res) = self.ribs[rib_index].bindings.get(&sym) {
+            if let Some(&res) = self.ribs[rib_index].bindings.get(&name) {
                 return res;
             }
 
-            if self.ribs[rib_index].kind.blocks_enclosing_locals() {
+            if name != sym::Self_ && self.ribs[rib_index].kind.blocks_enclosing_locals() {
                 break;
             }
 
@@ -144,7 +144,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         }
 
         // Check if the symbol is a module-level definition.
-        if let Some(res) = self.resolver.current_module().resolutions.get(&sym) {
+        if let Some(res) = self.resolver.current_module().resolutions.get(&name) {
             return Res::Def(res.best_binding().def_id);
         }
 
