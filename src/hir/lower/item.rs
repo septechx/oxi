@@ -1,6 +1,6 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, Visibility};
+use crate::ast::{self, Ident, NodeId, Visibility};
 use crate::hashmap::FxHashMap;
 use crate::hir::owner::{HirId, MaybeOwner, OwnerInfo, OwnerNodes, ParentedNode};
 use crate::hir::types::*;
@@ -23,7 +23,18 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 ast::ItemKind::Interface { name, items } => {
                     this.lower_interface(def_id, name, items, item.span, item.visibility)
                 }
-                ast::ItemKind::Impl { .. } => todo!("Implement lowering of impl items"),
+                ast::ItemKind::Impl {
+                    self_ty,
+                    interface,
+                    items,
+                } => this.lower_impl(
+                    def_id,
+                    self_ty,
+                    interface,
+                    items,
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Import(_) | ast::ItemKind::Module { .. } => return None,
             })
         })
@@ -42,6 +53,68 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 }
             })
         })
+    }
+
+    fn lower_impl(
+        &mut self,
+        def_id: DefId,
+        self_ty: &(ast::Path, NodeId),
+        interface: &(ast::Path, NodeId),
+        items: &'a ThinVec<ast::AssocItem>,
+        span: Span,
+        visibility: Visibility,
+    ) -> OwnerInfo {
+        let owner_id = OwnerId(def_id.0);
+        let hir_id = HirId::make_owner(def_id);
+
+        let items: ThinVec<DefId> = items
+            .iter()
+            .map(|item| {
+                *self
+                    .resolver
+                    .def_map
+                    .get(&item.node_id)
+                    .expect("assoc item has DefId")
+            })
+            .collect();
+
+        let self_ty = self.lower_resolved_path(
+            &self_ty.0,
+            self.resolver
+                .res_map
+                .get(&self_ty.1)
+                .expect("resolution exists")
+                .expect_full_res(),
+        );
+
+        let interface_ty = self.lower_resolved_path(
+            &interface.0,
+            self.resolver
+                .res_map
+                .get(&interface.1)
+                .expect("resolution exists")
+                .expect_full_res(),
+        );
+
+        OwnerInfo {
+            nodes: OwnerNodes {
+                nodes: vec![ParentedNode {
+                    parent: ItemLocalId::ZERO,
+                    node: Node::Item(Box::new(Item {
+                        hir_id,
+                        owner_id,
+                        kind: ItemKind::Impl {
+                            self_ty,
+                            interface_ty,
+                            items,
+                        },
+                        span,
+                        visibility,
+                    })),
+                }],
+                bodies: FxHashMap::default(),
+            },
+        }
     }
 
     fn lower_interface(
