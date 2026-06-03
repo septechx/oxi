@@ -20,7 +20,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     items,
                 } => this.lower_struct(def_id, name, fields, items, item.span, item.visibility),
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
-                ast::ItemKind::Interface { .. } => todo!("Implement lowering of interface items"),
+                ast::ItemKind::Interface { name, items } => {
+                    this.lower_interface(def_id, name, items, item.span, item.visibility)
+                }
                 ast::ItemKind::Impl { .. } => todo!("Implement lowering of impl items"),
                 ast::ItemKind::Import(_) | ast::ItemKind::Module { .. } => return None,
             })
@@ -40,6 +42,48 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 }
             })
         })
+    }
+
+    fn lower_interface(
+        &mut self,
+        def_id: DefId,
+        name: &'a Ident,
+        items: &'a ThinVec<ast::AssocItem>,
+        span: Span,
+        visibility: Visibility,
+    ) -> OwnerInfo {
+        let owner_id = OwnerId(def_id.0);
+        let hir_id = HirId::make_owner(def_id);
+
+        let items: ThinVec<DefId> = items
+            .iter()
+            .map(|item| {
+                *self
+                    .resolver
+                    .def_map
+                    .get(&item.node_id)
+                    .expect("assoc item has DefId")
+            })
+            .collect();
+
+        OwnerInfo {
+            nodes: OwnerNodes {
+                nodes: vec![ParentedNode {
+                    parent: ItemLocalId::ZERO,
+                    node: Node::Item(Box::new(Item {
+                        hir_id,
+                        owner_id,
+                        kind: ItemKind::Interface {
+                            name: name.value,
+                            items,
+                        },
+                        span,
+                        visibility,
+                    })),
+                }],
+                bodies: FxHashMap::default(),
+            },
+        }
     }
 
     fn lower_struct(

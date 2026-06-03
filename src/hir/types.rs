@@ -136,9 +136,13 @@ pub enum ItemKind {
     },
     Interface {
         name: Symbol,
-        methods: ThinVec<InterfaceMethod>,
+        items: ThinVec<DefId>,
     },
-    Impl(ImplBlock),
+    Impl {
+        self_ty: Path,
+        interface_ty: Path,
+        items: ThinVec<DefId>,
+    },
     Const {
         name: Symbol,
         ty: Ty,
@@ -165,24 +169,10 @@ pub enum AssocItemKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct ImplBlock {
-    pub self_ty: Ty,
-    pub interface_ty: Ty,
-    pub items: ThinVec<DefId>,
-}
-
-#[derive(Debug, Clone)]
 pub struct StructField {
     pub name: Symbol,
     pub ty: Ty,
     pub visibility: Visibility,
-}
-
-#[derive(Debug, Clone)]
-pub struct InterfaceMethod {
-    pub name: Symbol,
-    pub params: ThinVec<Ty>,
-    pub ret: Ty,
 }
 
 #[derive(Debug, Clone)]
