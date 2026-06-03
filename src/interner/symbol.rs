@@ -18,7 +18,7 @@ macro_rules! declare_symbols {
         declare_symbols!(@step $idx + 1u32; $($rest),*);
     };
     (@step $idx:expr; Self, $($rest:tt),*) => {
-        pub const self_: Symbol = $idx;
+        pub const Self_: Symbol = $idx;
         declare_symbols!(@step $idx + 1u32; $($rest),*);
     };
     (@step $idx:expr; $name:ident, $($rest:tt),*) => {
