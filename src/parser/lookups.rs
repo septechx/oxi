@@ -129,6 +129,13 @@ pub fn create_token_lookups() {
             &mut bp_lu,
             &mut led_lu,
         );
+        led(
+            T::Pipe,
+            BP::Logical,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
 
         // Relational
         led(

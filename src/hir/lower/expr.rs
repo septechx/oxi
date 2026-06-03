@@ -1,8 +1,10 @@
+use thin_vec::{ThinVec, thin_vec};
+
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
 use crate::hir::types::{Block, Expr, ExprKind, FromToken};
 use crate::hir::{AstLoweringContext, DefId};
-use crate::lexer::token::Token;
+use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -28,12 +30,34 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 operator,
                 right,
             } => {
-                let left = self.lower_expr(left).into_box();
-                let right = self.lower_expr(right).into_box();
-                let Some(op) = self.lower_operator(operator, "binary") else {
-                    return ExprKind::Error;
-                };
-                ExprKind::Binary { left, op, right }
+                let left = self.lower_expr(left);
+                let right = self.lower_expr(right);
+                if operator.kind == TokenKind::Pipe {
+                    match right.kind {
+                        ExprKind::Call { callee, params } => {
+                            let mut new_params = ThinVec::with_capacity(params.len() + 1);
+                            new_params.push(left);
+                            new_params.extend(params);
+                            ExprKind::Call {
+                                params: new_params,
+                                callee,
+                            }
+                        }
+                        _ => ExprKind::Call {
+                            callee: right.into_box(),
+                            params: thin_vec![left],
+                        },
+                    }
+                } else {
+                    let Some(op) = self.lower_operator(operator, "binary") else {
+                        return ExprKind::Error;
+                    };
+                    ExprKind::Binary {
+                        left: left.into_box(),
+                        op,
+                        right: right.into_box(),
+                    }
+                }
             }
             ast::ExprKind::Prefix { operator, right } => {
                 let right = self.lower_expr(right).into_box();

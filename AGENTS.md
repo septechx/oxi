@@ -1,3 +1,7 @@
+# Deprecated modules
+
+The `src/hir2` and `src/codegen` are deprecated
+
 # Usuful commands
 
 - Run test suite: `just test`

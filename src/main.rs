@@ -1,7 +1,5 @@
 #![deny(clippy::unwrap_used)]
 
-mod hir2;
-
 pub mod ast;
 pub mod backend;
 pub mod bindings;

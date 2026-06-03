@@ -209,7 +209,7 @@ fn initialize_regexes() {
             regex_handler!(r"^::", def T::ColonColon),
             regex_handler!(r"^->", def T::Arrow),
             regex_handler!(r"^&&", def T::And),
-            regex_handler!(r"^\|\>", def T::Pipe),
+            regex_handler!(r"^\|>", def T::Pipe),
             regex_handler!(r"^\|\|", def T::Or),
             regex_handler!(r"^\.\.", def T::DotDot),
             regex_handler!(r"^<=", def T::LessEquals),
