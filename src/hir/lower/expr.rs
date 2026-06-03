@@ -2,7 +2,7 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
-use crate::hir::types::{Block, Expr, ExprKind, FromToken};
+use crate::hir::types::{Block, Expr, ExprKind, FromToken, Stmt, StmtKind};
 use crate::hir::{AstLoweringContext, DefId};
 use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
@@ -147,8 +147,42 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 let block = self.lower_block(block);
                 ExprKind::Loop(block)
             }
-            ast::ExprKind::While { .. } => {
-                todo!("lower while loop to if + loop")
+            ast::ExprKind::While { condition, body } => {
+                let cond = self.lower_expr(condition).into_box();
+                let span = cond.span;
+                let cond_check = Stmt {
+                    kind: StmtKind::Semi(Expr {
+                        kind: ExprKind::If {
+                            then_branch: Block {
+                                stmts: thin_vec![Stmt {
+                                    kind: StmtKind::Semi(Expr {
+                                        kind: ExprKind::Break(None),
+                                        hir_id: self.next_hir_id(),
+                                        span,
+                                    }),
+                                    hir_id: self.next_hir_id(),
+                                    span,
+                                }],
+                                span,
+                            },
+                            else_branch: None,
+                            cond,
+                        },
+                        hir_id: self.next_hir_id(),
+                        span,
+                    }),
+                    hir_id: self.next_hir_id(),
+                    span,
+                };
+
+                let mut new_body = ThinVec::with_capacity(body.stmts.len() + 1);
+                new_body.push(cond_check);
+                new_body.extend(body.stmts.iter().map(|stmt| self.lower_stmt(stmt)));
+
+                ExprKind::Loop(Block {
+                    stmts: new_body,
+                    span: body.span,
+                })
             }
             ast::ExprKind::Return(val) => {
                 let val = val.as_ref().map(|expr| self.lower_expr(expr).into_box());
