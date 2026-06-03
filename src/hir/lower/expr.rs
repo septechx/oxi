@@ -139,6 +139,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     else_branch,
                 }
             }
+            ast::ExprKind::Return(val) => {
+                let val = val.as_ref().map(|expr| self.lower_expr(expr).into_box());
+                ExprKind::Return(val)
+            }
             _ => todo!("Lowering of {:?} not yet implemented", expr.kind),
         }
     }
