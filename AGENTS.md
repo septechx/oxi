@@ -1,6 +1,6 @@
 # Deprecated modules
 
-The `src/hir2` and `src/codegen` are deprecated
+The `src/codegen` module is deprecated
 
 # Usuful commands
 
