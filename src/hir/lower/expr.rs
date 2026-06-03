@@ -112,6 +112,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 let contents = contents.iter().map(|expr| self.lower_expr(expr)).collect();
                 ExprKind::ArrayInit { ty, contents }
             }
+            ast::ExprKind::TupleLiteral { elements } => {
+                let elements = elements.iter().map(|expr| self.lower_expr(expr)).collect();
+                ExprKind::TupleInit(elements)
+            }
             ast::ExprKind::MemberAccess { base, member } => {
                 let base = self.lower_expr(base).into_box();
                 ExprKind::MemberAccess {
@@ -139,11 +143,26 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     else_branch,
                 }
             }
+            ast::ExprKind::Loop(block) => {
+                let block = self.lower_block(block);
+                ExprKind::Loop(block)
+            }
+            ast::ExprKind::While { .. } => {
+                todo!("lower while loop to if + loop")
+            }
             ast::ExprKind::Return(val) => {
                 let val = val.as_ref().map(|expr| self.lower_expr(expr).into_box());
                 ExprKind::Return(val)
             }
-            _ => todo!("Lowering of {:?} not yet implemented", expr.kind),
+            ast::ExprKind::Break(val) => {
+                let val = val.as_ref().map(|expr| self.lower_expr(expr).into_box());
+                ExprKind::Break(val)
+            }
+            ast::ExprKind::As { expr, ty } => {
+                let expr = self.lower_expr(expr).into_box();
+                let ty = self.lower_type(ty);
+                ExprKind::As { expr, ty }
+            }
         }
     }
 
