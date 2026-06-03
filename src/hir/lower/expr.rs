@@ -1,10 +1,7 @@
-use thin_vec::ThinVec;
-
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
-use crate::hir::types::{Expr, ExprKind, FromToken};
+use crate::hir::types::{Block, Expr, ExprKind, FromToken};
 use crate::hir::{AstLoweringContext, DefId};
-use crate::interner::Symbol;
 use crate::lexer::token::Token;
 use crate::resolve::Res;
 
@@ -66,7 +63,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             }
             ast::ExprKind::FunctionCall { callee, parameters } => {
                 let callee = self.lower_expr(callee).into_box();
-                let params: ThinVec<Expr> = parameters
+                let params = parameters
                     .iter()
                     .map(|expr| self.lower_expr(expr))
                     .collect();
@@ -77,7 +74,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     Some(def_id) => def_id,
                     _ => return ExprKind::Error,
                 };
-                let fields: ThinVec<(Symbol, Expr)> = fields
+                let fields = fields
                     .iter()
                     .map(|(name, expr)| (name.value, self.lower_expr(expr)))
                     .collect();
@@ -88,8 +85,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 contents,
             } => {
                 let ty = self.lower_type(underlying);
-                let contents: ThinVec<Expr> =
-                    contents.iter().map(|expr| self.lower_expr(expr)).collect();
+                let contents = contents.iter().map(|expr| self.lower_expr(expr)).collect();
                 ExprKind::ArrayInit { ty, contents }
             }
             ast::ExprKind::MemberAccess { base, member } => {
@@ -99,7 +95,39 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     base,
                 }
             }
+            ast::ExprKind::Block(block) => {
+                let block = self.lower_block(block);
+                ExprKind::Block(block)
+            }
+            ast::ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = self.lower_expr(condition).into_box();
+                let then_branch = self.lower_block(then_branch);
+                let else_branch = else_branch
+                    .as_ref()
+                    .map(|expr| self.lower_expr(expr).into_box());
+                ExprKind::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                }
+            }
             _ => todo!("Lowering of {:?} not yet implemented", expr.kind),
+        }
+    }
+
+    fn lower_block(&mut self, block: &ast::Block) -> Block {
+        let stmts = block
+            .stmts
+            .iter()
+            .map(|stmt| self.lower_stmt(stmt))
+            .collect();
+        Block {
+            stmts,
+            span: block.span,
         }
     }
 
