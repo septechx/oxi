@@ -69,7 +69,7 @@ pub struct Cli {
         long,
         value_enum,
         default_value_t = ColorChoice::Auto,
-        help = "When to use colors: auto, always, never. Default: auto"
+        help = "When to use colors"
     )]
     pub color: ColorChoice,
 
@@ -78,17 +78,19 @@ pub struct Cli {
 
     #[clap(
         long = "Dcpu",
-        help = "Select a CPU architecture to target. Default: x86-64"
+        help = "Select a CPU architecture to target",
+        default_value = "x86-64"
     )]
     pub cpu: Option<String>,
 
     #[clap(
         long = "Dfeatures",
-        help = "Select a feature set to enable. Default: +avx2"
+        help = "Select a feature set to enable",
+        default_value = "+avx2"
     )]
     pub features: Option<String>,
 
-    #[clap(short = 'O', help = "Set optimization level. Default: 3")]
+    #[clap(short = 'O', help = "Set optimization level", default_value = "3")]
     pub opt: Option<OptLevel>,
 
     #[clap(long = "no-pie", help = "Disable position independent executable")]
