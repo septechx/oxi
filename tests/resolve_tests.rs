@@ -53,6 +53,10 @@ fn resolve_outputs(files: &[(&str, &str)]) -> ResolverOutputs {
         asts.push(ast);
     }
 
+    with_ctx_mut(|ctx| {
+        Resolver::assign_node_ids(ctx, &mut asts);
+    });
+
     let module_tree = build_module_tree(&asts, &file_paths).expect("Module tree building failed");
 
     with_ctx(|ctx| {
@@ -65,7 +69,6 @@ fn resolve_outputs(files: &[(&str, &str)]) -> ResolverOutputs {
         }
     });
 
-    Resolver::assign_node_ids(&mut asts);
     with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &module_tree, ctx);
         resolver.resolve();

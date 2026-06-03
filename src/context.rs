@@ -8,6 +8,7 @@ pub struct Ctx {
     pub source_maps: SourceMapManager,
     pub interner: Interner,
     pub enable_printing: bool,
+    pub next_node_id: u32,
 }
 
 impl Ctx {
@@ -17,6 +18,7 @@ impl Ctx {
             source_maps: SourceMapManager::default(),
             interner: Interner::new(),
             enable_printing: true,
+            next_node_id: 0,
         }
     }
 }

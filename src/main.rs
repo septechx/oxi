@@ -85,33 +85,34 @@ fn build_file(cli: Cli) -> Result<()> {
         let ast = parse(tokens, file_path)?;
         check_for_errors();
 
-        if cli.print_ast {
-            let use_color = match cli.color {
-                cli::ColorChoice::Always => true,
-                cli::ColorChoice::Never => false,
-                cli::ColorChoice::Auto => {
-                    std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
-                }
-            };
-            colored::control::set_override(use_color);
-            logln!("{}", ast.display(use_color)?);
-        }
-
         validate_ast(&ast, module_id);
         check_for_errors();
 
         asts.push(ast);
     }
 
+    with_ctx_mut(|ctx| {
+        Resolver::assign_node_ids(ctx, &mut asts);
+    });
+
     if cli.print_ast {
+        let use_color = match cli.color {
+            cli::ColorChoice::Always => true,
+            cli::ColorChoice::Never => false,
+            cli::ColorChoice::Auto => {
+                std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
+            }
+        };
+        colored::control::set_override(use_color);
+
+        for ast in asts {
+            logln!("{}", ast.display(use_color)?);
+        }
+
         return Ok(());
     }
 
-    let file_paths: Vec<_> = cli.input.clone();
-
-    Resolver::assign_node_ids(&mut asts);
-
-    let module_tree = match build_module_tree(&asts, &file_paths) {
+    let module_tree = match build_module_tree(&asts, &cli.input) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };

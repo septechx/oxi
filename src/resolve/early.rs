@@ -5,6 +5,7 @@ use crate::ast::{
     AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
     NodeId, Path, Stmt, Type, Visibility, idents_to_string,
 };
+use crate::context::Ctx;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
 use crate::hir::{DefId, ModuleId};
@@ -14,8 +15,8 @@ use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, R
 use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
-    pub fn assign_node_ids(asts: &mut ThinVec<Ast>) {
-        let mut ass = NodeIdAssigner::new();
+    pub fn assign_node_ids(ctx: &mut Ctx, asts: &mut ThinVec<Ast>) {
+        let mut ass = NodeIdAssigner::new(ctx);
         for ast in asts.iter_mut() {
             ast.visit_mut(&mut ass);
         }
@@ -340,18 +341,18 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 }
 
 #[derive(Debug)]
-struct NodeIdAssigner {
-    next_node_id: u32,
+struct NodeIdAssigner<'ctx> {
+    ctx: &'ctx mut Ctx,
 }
 
-impl NodeIdAssigner {
-    pub fn new() -> Self {
-        Self { next_node_id: 0 }
+impl<'ctx> NodeIdAssigner<'ctx> {
+    pub fn new(ctx: &'ctx mut Ctx) -> Self {
+        Self { ctx }
     }
 
     fn next_node_id(&mut self) -> NodeId {
-        let id = self.next_node_id;
-        self.next_node_id += 1;
+        let id = self.ctx.next_node_id;
+        self.ctx.next_node_id += 1;
         NodeId(id)
     }
 
@@ -370,7 +371,7 @@ impl NodeIdAssigner {
     }
 }
 
-impl VisitorMut for NodeIdAssigner {
+impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
         item.node_id = self.next_node_id();
 

@@ -151,6 +151,10 @@ impl Drop for Test {
             asts.push(ast);
         }
 
+        with_ctx_mut(|ctx| {
+            Resolver::assign_node_ids(ctx, &mut asts);
+        });
+
         // Phase 2: Build module tree
         let module_tree = match build_module_tree(&asts, &file_paths) {
             Ok(tree) => tree,
@@ -167,7 +171,6 @@ impl Drop for Test {
         }
 
         // Phase 3: Run name resolution
-        Resolver::assign_node_ids(&mut asts);
         with_ctx_mut(|ctx| {
             let mut resolver = Resolver::new(&asts, &module_tree, ctx);
             resolver.resolve();
