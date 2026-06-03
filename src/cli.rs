@@ -53,6 +53,9 @@ pub struct Cli {
     #[clap(short, long)]
     pub output: Option<PathBuf>,
 
+    #[clap(long, help = "Module to use as the crate root", default_value = "main")]
+    pub entrypoint: String,
+
     #[clap(long, help = "Emit LLVM IR")]
     pub emit_llvm: bool,
 

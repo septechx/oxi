@@ -156,7 +156,7 @@ impl Drop for Test {
         });
 
         // Phase 2: Build module tree
-        let module_tree = match build_module_tree(&asts, &file_paths) {
+        let module_tree = match build_module_tree(&asts, &file_paths, "main") {
             Ok(tree) => tree,
             Err(_) => {
                 if self.should_succeed == Some(false) {

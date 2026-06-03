@@ -28,31 +28,33 @@ pub struct ModuleNode {
     pub inline_body: Option<ThinVec<Item>>,
 }
 
-pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleTree> {
+pub fn build_module_tree(
+    asts: &[Ast],
+    file_paths: &[PathBuf],
+    entrypoint: &str,
+) -> Result<ModuleTree> {
     let file_index: FxHashMap<PathBuf, usize> = file_paths
         .iter()
         .enumerate()
         .map(|(i, p)| (p.canonicalize().unwrap_or_else(|_| p.to_owned()), i))
         .collect();
 
-    let root_name = file_paths[0]
-        .file_stem()
-        .expect("file stem")
-        .to_string_lossy()
-        .to_string();
-
+    let root_idx = file_paths
+        .iter()
+        .position(|path| path.file_stem().is_some_and(|stem| stem == entrypoint))
+        .ok_or_else(|| anyhow!("Entrypoint not found"))?;
     let mut tree = ModuleTree { nodes: Vec::new() };
     tree.nodes.push(ModuleNode {
-        ast_idx: Some(0),
-        name: root_name.clone(),
-        qualified_name: root_name,
+        ast_idx: Some(root_idx),
+        name: entrypoint.to_owned(),
+        qualified_name: entrypoint.to_owned(),
         parent: None,
         children: Vec::new(),
         inline_body: None,
     });
 
     let mut claimed_files: FxHashMap<usize, usize> = FxHashMap::default();
-    claimed_files.insert(0, 0);
+    claimed_files.insert(root_idx, 0);
 
     process_ast_items(
         asts,
@@ -61,8 +63,8 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
         &mut tree,
         0,
         &mut claimed_files,
-        &asts[0].items,
-        &file_paths[0],
+        &asts[root_idx].items,
+        &file_paths[root_idx],
     )?;
 
     for (ast_idx, _) in file_paths.iter().enumerate() {

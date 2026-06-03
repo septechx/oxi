@@ -112,7 +112,7 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let module_tree = match build_module_tree(&asts, &cli.input) {
+    let module_tree = match build_module_tree(&asts, &cli.input, &cli.entrypoint) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };
