@@ -1,6 +1,7 @@
 use thin_vec::ThinVec;
 
 use crate::ast::{self, Ident, NodeId, Visibility};
+use crate::errors::builders;
 use crate::hashmap::FxHashMap;
 use crate::hir::owner::{HirId, MaybeOwner, OwnerInfo, OwnerNodes, ParentedNode};
 use crate::hir::types::*;
@@ -78,23 +79,55 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             })
             .collect();
 
-        let self_ty = self.lower_resolved_path(
-            &self_ty.0,
-            self.resolver
-                .res_map
-                .get(&self_ty.1)
-                .expect("resolution exists")
-                .expect_full_res(),
-        );
+        let self_res = self
+            .resolver
+            .res_map
+            .get(&self_ty.1)
+            .expect("resolution exists")
+            .full_res();
+        let Some(self_res) = self_res else {
+            // We cannot use a location or code widget as we do not have a module id
+            self.ctx.errors.add(
+                builders::error(format!(
+                    "Expected path to struct, found `{}`",
+                    self_ty.0.display(self.ctx)
+                )),
+                self.ctx.enable_printing,
+            );
+            return OwnerInfo {
+                nodes: OwnerNodes {
+                    nodes: Vec::new(),
+                    bodies: FxHashMap::default(),
+                },
+            };
+        };
 
-        let interface_ty = self.lower_resolved_path(
-            &interface.0,
-            self.resolver
-                .res_map
-                .get(&interface.1)
-                .expect("resolution exists")
-                .expect_full_res(),
-        );
+        let self_ty = self.lower_resolved_path(&self_ty.0, self_res);
+
+        let interface_res = self
+            .resolver
+            .res_map
+            .get(&interface.1)
+            .expect("resolution exists")
+            .full_res();
+        let Some(interface_res) = interface_res else {
+            // We cannot use a location or code widget as we do not have a module id
+            self.ctx.errors.add(
+                builders::error(format!(
+                    "Expected path to interface, found `{}`",
+                    interface.0.display(self.ctx)
+                )),
+                self.ctx.enable_printing,
+            );
+            return OwnerInfo {
+                nodes: OwnerNodes {
+                    nodes: Vec::new(),
+                    bodies: FxHashMap::default(),
+                },
+            };
+        };
+
+        let interface_ty = self.lower_resolved_path(&interface.0, interface_res);
 
         OwnerInfo {
             nodes: OwnerNodes {

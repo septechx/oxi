@@ -50,11 +50,6 @@ impl PartialRes {
     pub fn full_res(&self) -> Option<Res> {
         (self.unresolved_segments == 0).then_some(self.base_res)
     }
-
-    pub fn expect_full_res(&self) -> Res {
-        self.full_res()
-            .expect("unexpected unresolved path segments")
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

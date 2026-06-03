@@ -2,7 +2,7 @@
 
 The `src/codegen` module is deprecated
 
-# Usuful commands
+# Useful commands
 
 - Run test suite: `just test`
 - Run lint: `just lint`. If formatting issues are reported, fix them with `cargo fmt`

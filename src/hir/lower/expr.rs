@@ -2,7 +2,7 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
-use crate::hir::types::{Block, Expr, ExprKind, FromToken, Stmt, StmtKind};
+use crate::hir::types::{Block, Expr, ExprKind, FromToken, PreOp, Stmt, StmtKind};
 use crate::hir::{AstLoweringContext, DefId};
 use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
@@ -165,8 +165,15 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                                 }],
                                 span,
                             },
+                            cond: Box::new(Expr {
+                                kind: ExprKind::Prefix {
+                                    op: PreOp::Not,
+                                    right: cond,
+                                },
+                                hir_id: self.next_hir_id(),
+                                span,
+                            }),
                             else_branch: None,
-                            cond,
                         },
                         hir_id: self.next_hir_id(),
                         span,

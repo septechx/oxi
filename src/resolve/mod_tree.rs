@@ -35,23 +35,24 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
         .map(|(i, p)| (p.canonicalize().unwrap_or_else(|_| p.to_owned()), i))
         .collect();
 
-    let root_idx = file_paths
-        .iter()
-        .position(|p| p.file_stem().map(|s| s == "main").unwrap_or(false))
-        .ok_or_else(|| anyhow!("main.oxi not found among provided files"))?;
+    let root_name = file_paths[0]
+        .file_stem()
+        .expect("file stem")
+        .to_string_lossy()
+        .to_string();
 
     let mut tree = ModuleTree { nodes: Vec::new() };
     tree.nodes.push(ModuleNode {
-        ast_idx: Some(root_idx),
-        name: "main".into(),
-        qualified_name: "main".into(),
+        ast_idx: Some(0),
+        name: root_name.clone(),
+        qualified_name: root_name,
         parent: None,
         children: Vec::new(),
         inline_body: None,
     });
 
     let mut claimed_files: FxHashMap<usize, usize> = FxHashMap::default();
-    claimed_files.insert(root_idx, 0);
+    claimed_files.insert(0, 0);
 
     process_ast_items(
         asts,
@@ -60,8 +61,8 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
         &mut tree,
         0,
         &mut claimed_files,
-        &asts[root_idx].items,
-        &file_paths[root_idx],
+        &asts[0].items,
+        &file_paths[0],
     )?;
 
     for (ast_idx, _) in file_paths.iter().enumerate() {
