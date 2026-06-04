@@ -2,6 +2,7 @@ macro_rules! declare_symbols {
     (@prefill crate) => { "crate" };
     (@prefill super) => { "super" };
     (@prefill self) => { "self" };
+    (@prefill Self) => { "Self" };
     (@prefill $name:ident) => { stringify!($name) };
 
     (@step $idx:expr; crate, $($rest:tt),*) => {
@@ -16,6 +17,10 @@ macro_rules! declare_symbols {
         pub const self_: Symbol = $idx;
         declare_symbols!(@step $idx + 1u32; $($rest),*);
     };
+    (@step $idx:expr; Self, $($rest:tt),*) => {
+        pub const Self_: Symbol = $idx;
+        declare_symbols!(@step $idx + 1u32; $($rest),*);
+    };
     (@step $idx:expr; $name:ident, $($rest:tt),*) => {
         pub const $name: Symbol = $idx;
         declare_symbols!(@step $idx + 1u32; $($rest),*);
@@ -24,6 +29,7 @@ macro_rules! declare_symbols {
     (@step $idx:expr; crate) => { pub const crate_: Symbol = $idx; };
     (@step $idx:expr; super) => { pub const super_: Symbol = $idx; };
     (@step $idx:expr; self) => { pub const self_: Symbol = $idx; };
+    (@step $idx:expr; Self) => { pub const Self_: Symbol = $idx; };
     (@step $idx:expr; $name:ident) => { pub const $name: Symbol = $idx; };
 
     ($($name:tt),* $(,)?) => {
@@ -45,4 +51,5 @@ declare_symbols! {
     f16, f32, f64, f128,
     bool, void,
     crate, super, self,
+    Self,
 }

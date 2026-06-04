@@ -8,8 +8,6 @@ use crate::{
     context::with_ctx,
     errors::builders,
     hashmap::FxHashMap,
-    hir::ModuleId,
-    span::Span,
 };
 
 #[derive(Debug)]
@@ -28,7 +26,11 @@ pub struct ModuleNode {
     pub inline_body: Option<ThinVec<Item>>,
 }
 
-pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleTree> {
+pub fn build_module_tree(
+    asts: &[Ast],
+    file_paths: &[PathBuf],
+    entrypoint: &str,
+) -> Result<ModuleTree> {
     let file_index: FxHashMap<PathBuf, usize> = file_paths
         .iter()
         .enumerate()
@@ -37,14 +39,18 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
 
     let root_idx = file_paths
         .iter()
-        .position(|p| p.file_stem().map(|s| s == "main").unwrap_or(false))
-        .ok_or_else(|| anyhow!("main.oxi not found among provided files"))?;
-
+        .position(|path| path_matches_qualified(path, entrypoint))
+        .ok_or_else(|| anyhow!("Entrypoint not found"))?;
+    let root_name = entrypoint
+        .rsplit("::")
+        .next()
+        .unwrap_or(entrypoint)
+        .to_owned();
     let mut tree = ModuleTree { nodes: Vec::new() };
     tree.nodes.push(ModuleNode {
         ast_idx: Some(root_idx),
-        name: "main".into(),
-        qualified_name: "main".into(),
+        name: root_name,
+        qualified_name: entrypoint.to_owned(),
         parent: None,
         children: Vec::new(),
         inline_body: None,
@@ -69,15 +75,10 @@ pub fn build_module_tree(asts: &[Ast], file_paths: &[PathBuf]) -> Result<ModuleT
             crate::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::warning_at(
-                        format!(
-                            "Provided file `{}` is not referenced by any `mod` declaration",
-                            file_paths[ast_idx].display()
-                        ),
-                        ModuleId(ast_idx as u32),
-                        Span::new(0, 0),
-                        ctx,
-                    ),
+                    builders::warning(format!(
+                        "Provided file `{}` is not referenced by any `mod` declaration",
+                        file_paths[ast_idx].display()
+                    )),
                     enable_printing,
                 );
             });
@@ -203,4 +204,36 @@ fn process_ast_items(
 
 fn canonicalize_or(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_owned())
+}
+
+fn path_matches_qualified(path: &Path, qualified: &str) -> bool {
+    let target: Vec<&str> = qualified.split("::").collect();
+    if target.is_empty() || target.iter().any(|s| s.is_empty()) {
+        return false;
+    }
+
+    let mut segments: Vec<String> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .map(String::from)
+        .collect();
+
+    if let Some(last) = segments.last_mut()
+        && let Some(stem) = Path::new(last.as_str())
+            .file_stem()
+            .and_then(|s| s.to_str())
+    {
+        *last = stem.to_string();
+    }
+
+    if segments.last().map(String::as_str) == Some("mod") {
+        segments.pop();
+    }
+
+    if segments.len() < target.len() {
+        return false;
+    }
+
+    let suffix = &segments[segments.len() - target.len()..];
+    suffix.iter().zip(target.iter()).all(|(a, b)| a == b)
 }

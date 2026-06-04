@@ -27,6 +27,7 @@ use thin_vec::ThinVec;
 use crate::ast::validate::validate_ast;
 use crate::cli::Cli;
 use crate::context::{Ctx, with_ctx_mut};
+use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
 use crate::resolve::{Resolver, build_module_tree};
@@ -84,45 +85,58 @@ fn build_file(cli: Cli) -> Result<()> {
         let ast = parse(tokens, file_path)?;
         check_for_errors();
 
-        if cli.print_ast {
-            let use_color = match cli.color {
-                cli::ColorChoice::Always => true,
-                cli::ColorChoice::Never => false,
-                cli::ColorChoice::Auto => {
-                    std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
-                }
-            };
-            colored::control::set_override(use_color);
-            logln!("{}", ast.display(use_color)?);
-        }
-
         validate_ast(&ast, module_id);
         check_for_errors();
 
         asts.push(ast);
     }
 
+    with_ctx_mut(|ctx| {
+        Resolver::assign_node_ids(ctx, &mut asts);
+    });
+
     if cli.print_ast {
+        let use_color = match cli.color {
+            cli::ColorChoice::Always => true,
+            cli::ColorChoice::Never => false,
+            cli::ColorChoice::Auto => {
+                std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
+            }
+        };
+        colored::control::set_override(use_color);
+
+        for ast in asts {
+            logln!("{}", ast.display(use_color)?);
+        }
+
         return Ok(());
     }
 
-    let file_paths: Vec<_> = cli.input.clone();
-    let module_tree = match build_module_tree(&asts, &file_paths) {
+    let module_tree = match build_module_tree(&asts, &cli.input, &cli.entrypoint) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };
     check_for_errors();
 
-    Resolver::assign_node_ids(&mut asts);
-    let resolver_outputs = with_ctx_mut(|ctx| {
+    let resolver = with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &module_tree, ctx);
         resolver.resolve();
         resolver.into_resolver_outputs()
     });
+    check_for_errors();
 
-    dbg!(resolver_outputs);
+    let hir_crate = with_ctx_mut(|ctx| {
+        let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
+        lowering_ctx.lower_crate()
+    });
+    check_for_errors();
 
-    println!("Module resolution completed successfully.");
+    with_ctx_mut(|ctx| {
+        dbg!(&hir_crate);
+        dbg!(&ctx.interner);
+    });
+
+    println!("AST lowering completed successfully.");
 
     Ok(())
 }

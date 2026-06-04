@@ -550,18 +550,21 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             }
         }
         ExprKind::Literal(lit) => {
-            write!(
-                out,
-                "{}: {}",
-                "Literal".with_color(ctx.color),
-                match lit {
-                    Literal::Integer(i) => number_with_color(&i.to_string(), ctx.color),
-                    Literal::Float(f) => number_with_color(&f.to_string(), ctx.color),
-                    Literal::String(s) => string_with_color(s, ctx.color),
-                    Literal::Char(c) => string_with_color(&c.to_string(), ctx.color),
-                    Literal::Bool(b) => string_with_color(&b.to_string(), ctx.color),
-                }
-            )?;
+            with_ctx(|gctx| -> std::fmt::Result {
+                write!(
+                    out,
+                    "{}: {}",
+                    "Literal".with_color(ctx.color),
+                    match lit {
+                        Literal::Integer(i) => number_with_color(&i.to_string(), ctx.color),
+                        Literal::Float(f) => number_with_color(&f.to_string(), ctx.color),
+                        Literal::String(s) =>
+                            string_with_color(gctx.interner.lookup(*s), ctx.color),
+                        Literal::Char(c) => string_with_color(&c.to_string(), ctx.color),
+                        Literal::Bool(b) => string_with_color(&b.to_string(), ctx.color),
+                    }
+                )
+            })?;
         }
         ExprKind::Symbol(s) => {
             write!(

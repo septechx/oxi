@@ -1,8 +1,10 @@
+use crate::context::with_ctx_mut;
 use crate::errors::builders;
 use crate::hir::ModuleId;
+use crate::interner::Symbol;
 use crate::span::Span;
 
-pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> String {
+pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> Symbol {
     let mut builder = String::new();
 
     let mut escaped = false;
@@ -44,5 +46,5 @@ pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> String {
         builder.push(c);
     }
 
-    builder
+    with_ctx_mut(|ctx| ctx.interner.intern(builder))
 }

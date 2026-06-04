@@ -148,6 +148,7 @@ pub fn parse_struct_decl_item(
                     }),
                     span: stmt.span,
                     visibility,
+                    node_id: NodeId::default(),
                 })
             };
             continue;
@@ -270,6 +271,7 @@ pub fn parse_interface_decl_item(
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Private,
                 span: stmt.span,
+                node_id: NodeId::default(),
             });
 
             parser.expect(TokenKind::Comma)?;
@@ -351,7 +353,10 @@ pub fn parse_fn_decl_item(
         parser.advance();
         let (stmts, body_span) = parse_body(parser, start_span)?;
         end_span = body_span;
-        body = Some(Block { stmts });
+        body = Some(Block {
+            stmts,
+            span: body_span,
+        });
     } else {
         match parser.current_token().kind {
             TokenKind::Semicolon => {
@@ -441,6 +446,7 @@ pub fn parse_impl_item(
                 kind: AssocItemKind::Fn(fn_decl),
                 visibility: Visibility::Public,
                 span: stmt.span,
+                node_id: NodeId::default(),
             });
         }
     }

@@ -36,12 +36,24 @@ impl From<OptLevel> for OptimizationLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum ColorChoice {
     #[default]
     Auto,
     Always,
     Never,
+}
+
+impl FromStr for ColorChoice {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "auto" => Ok(ColorChoice::Auto),
+            "always" => Ok(ColorChoice::Always),
+            "never" => Ok(ColorChoice::Never),
+            other => Err(anyhow!("invalid color choice: {}", other)),
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -52,6 +64,13 @@ pub struct Cli {
 
     #[clap(short, long)]
     pub output: Option<PathBuf>,
+
+    #[clap(
+        long,
+        help = "Qualified path of the module to use as the crate root",
+        default_value = "main"
+    )]
+    pub entrypoint: String,
 
     #[clap(long, help = "Emit LLVM IR")]
     pub emit_llvm: bool,
@@ -64,9 +83,8 @@ pub struct Cli {
 
     #[clap(
         long,
-        value_enum,
-        default_value_t = ColorChoice::Auto,
-        help = "When to use colors: auto, always, never. Default: auto"
+        help = "When to use colors [possible values: auto, always, never]",
+        default_value = "auto"
     )]
     pub color: ColorChoice,
 
@@ -75,18 +93,25 @@ pub struct Cli {
 
     #[clap(
         long = "Dcpu",
-        help = "Select a CPU architecture to target. Default: x86-64"
+        help = "Select a CPU architecture to target",
+        default_value = "x86-64"
     )]
-    pub cpu: Option<String>,
+    pub cpu: String,
 
     #[clap(
         long = "Dfeatures",
-        help = "Select a feature set to enable. Default: +avx2"
+        help = "Select a feature set to enable",
+        default_value = "+avx2"
     )]
-    pub features: Option<String>,
+    pub features: String,
 
-    #[clap(short = 'O', help = "Set optimization level. Default: 3")]
-    pub opt: Option<OptLevel>,
+    #[clap(
+        short = 'O',
+        long = "Doptimize",
+        help = "Set optimization level [possible values: 0, 1, 2, 3]",
+        default_value = "3"
+    )]
+    pub opt: OptLevel,
 
     #[clap(long = "no-pie", help = "Disable position independent executable")]
     pub no_pie: bool,

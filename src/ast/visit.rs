@@ -22,6 +22,10 @@ pub trait Visitor {
         _ = item;
         VisitAction::Continue
     }
+    fn visit_assoc_item(&mut self, item: &AssocItem) -> VisitAction {
+        _ = item;
+        VisitAction::Continue
+    }
     fn visit_stmt(&mut self, stmt: &Stmt) -> VisitAction {
         _ = stmt;
         VisitAction::Continue
@@ -38,6 +42,10 @@ pub trait Visitor {
 
 pub trait VisitorMut {
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
+        _ = item;
+        VisitAction::Continue
+    }
+    fn visit_assoc_item(&mut self, item: &mut AssocItem) -> VisitAction {
         _ = item;
         VisitAction::Continue
     }
@@ -224,11 +232,17 @@ impl Visitable for Item {
 
 impl Visitable for AssocItem {
     fn visit(&self, visitor: &mut impl Visitor) {
-        self.kind.visit(visitor);
+        match visitor.visit_assoc_item(self) {
+            VisitAction::Continue => self.kind.visit(visitor),
+            VisitAction::SkipChildren => {}
+        }
     }
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
-        self.kind.visit_mut(visitor);
+        match visitor.visit_assoc_item(self) {
+            VisitAction::Continue => self.kind.visit_mut(visitor),
+            VisitAction::SkipChildren => {}
+        }
     }
 }
 

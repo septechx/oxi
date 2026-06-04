@@ -7,9 +7,9 @@ use std::{
 use oxic::{
     ast::Visibility,
     context::{with_ctx, with_ctx_mut},
-    hir::{IntTy, PrimTy},
+    hir::{DefKind, IntTy, PrimTy},
     interner::Symbol,
-    resolve::{DefKind, Res, Resolver, ResolverOutputs, build_module_tree},
+    resolve::{Res, Resolver, ResolverOutputs, build_module_tree},
 };
 use thin_vec::ThinVec;
 
@@ -53,7 +53,12 @@ fn resolve_outputs(files: &[(&str, &str)]) -> ResolverOutputs {
         asts.push(ast);
     }
 
-    let module_tree = build_module_tree(&asts, &file_paths).expect("Module tree building failed");
+    with_ctx_mut(|ctx| {
+        Resolver::assign_node_ids(ctx, &mut asts);
+    });
+
+    let module_tree =
+        build_module_tree(&asts, &file_paths, "main").expect("Module tree building failed");
 
     with_ctx(|ctx| {
         if ctx
@@ -65,7 +70,6 @@ fn resolve_outputs(files: &[(&str, &str)]) -> ResolverOutputs {
         }
     });
 
-    Resolver::assign_node_ids(&mut asts);
     with_ctx_mut(|ctx| {
         let mut resolver = Resolver::new(&asts, &module_tree, ctx);
         resolver.resolve();
@@ -95,9 +99,9 @@ fn function_def_is_recorded() {
     let outputs = resolve_outputs(&[("main.oxi", "pub fn foo() void {}")]);
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Function);
-    assert_eq!(outputs.defs[0].visibility, Visibility::Public);
+    assert_eq!(outputs.defs[0].visibility, Some(Visibility::Public));
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "foo");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "foo");
     });
 }
 
@@ -106,7 +110,7 @@ fn private_function_def_has_private_visibility() {
     let outputs = resolve_outputs(&[("main.oxi", "fn foo() void {}")]);
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Function);
-    assert_eq!(outputs.defs[0].visibility, Visibility::Private);
+    assert_eq!(outputs.defs[0].visibility, Some(Visibility::Private));
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn struct_def_is_recorded() {
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Struct);
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "Foo");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "Foo");
     });
 }
 
@@ -125,7 +129,7 @@ fn const_def_is_recorded() {
     assert_eq!(outputs.defs.len(), 1);
     assert_eq!(outputs.defs[0].kind, DefKind::Const);
     with_ctx(|ctx| {
-        assert_eq!(ctx.interner.lookup(outputs.defs[0].name), "X");
+        assert_eq!(ctx.interner.lookup(outputs.defs[0].name.unwrap()), "X");
     });
 }
 
@@ -207,7 +211,7 @@ fn function_call_path_resolves_to_def() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(0))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(0)))));
     assert!(
         found,
         "res_map should contain an entry resolving bar to DefId(0)"
@@ -220,7 +224,7 @@ fn primitive_type_i32_resolves_to_prim_ty() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::PrimTy(PrimTy::Int(IntTy::I32))));
+        .any(|res| matches!(res.full_res(), Some(Res::PrimTy(PrimTy::Int(IntTy::I32)))));
     assert!(
         found,
         "res_map should contain a PrimTy(I32) entry for the `i32` type annotation"
@@ -242,7 +246,7 @@ fn struct_instantiation_path_resolves_to_def() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(id) if *id == foo_def_id));
+        .any(|res| res.full_res() == Some(Res::Def(foo_def_id)));
     assert!(
         found,
         "res_map should contain Foo → DefId(0); defs={}, res_map={}",
@@ -257,10 +261,86 @@ fn local_variable_resolves_to_local() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Local(_)));
+        .any(|res| matches!(res.full_res(), Some(Res::Local(_))));
     assert!(
         found,
         "res_map should contain a Local entry for the variable `x`"
+    );
+}
+
+#[test]
+fn struct_associated_fn_path_defers_type_relative_resolution() {
+    let outputs = resolve_outputs(&[(
+        "main.oxi",
+        r#"
+        struct Foo {
+            a: i32,
+
+            fn new() Foo {
+                return Foo { a: 0 };
+            }
+        }
+
+        pub fn main() void {
+            Foo::new();
+        }
+        "#,
+    )]);
+    let foo_sym = intern("Foo");
+    let foo_def = outputs.modules[0].resolutions[&foo_sym]
+        .best_binding()
+        .def_id;
+    let found = outputs.res_map.values().any(|partial| {
+        partial.base_res() == Res::Def(foo_def) && partial.unresolved_segments() == 1
+    });
+    assert!(
+        found,
+        "Foo::new should record PartialRes for Foo with one unresolved segment"
+    );
+    assert!(
+        !outputs
+            .res_map
+            .values()
+            .any(|partial| partial.full_res().is_some()
+                && partial.base_res() != partial.full_res().unwrap()),
+        "associated-item suffixes must stay unresolved in res_map"
+    );
+}
+
+#[test]
+fn impl_associated_fn_path_defers_type_relative_resolution() {
+    let outputs = resolve_outputs(&[(
+        "main.oxi",
+        r#"
+        interface Maker {
+            fn new() Foo,
+        }
+
+        struct Foo {
+            a: i32,
+        }
+
+        impl Maker for Foo {
+            fn new() Foo {
+                return Foo { a: 0 };
+            }
+        }
+
+        pub fn main() void {
+            Foo::new();
+        }
+        "#,
+    )]);
+    let foo_sym = intern("Foo");
+    let foo_def = outputs.modules[0].resolutions[&foo_sym]
+        .best_binding()
+        .def_id;
+    let found = outputs.res_map.values().any(|partial| {
+        partial.base_res() == Res::Def(foo_def) && partial.unresolved_segments() == 1
+    });
+    assert!(
+        found,
+        "Foo::new should defer associated-item resolution until type checking"
     );
 }
 
@@ -354,7 +434,7 @@ fn import_adds_entry_to_module_resolutions() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(found, "res_map should have `bar` → DefId(1) from the call");
 }
 
@@ -402,7 +482,7 @@ fn crate_path_resolves_correctly() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(found, "res_map should contain crate::foo::bar → DefId(1)");
 }
 
@@ -422,7 +502,7 @@ fn crate_path_with_inline_module() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(found, "crate::math::add should resolve to DefId(1)");
 }
 
@@ -452,7 +532,7 @@ fn super_path_in_child_module() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(0))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(0)))));
     assert!(found, "res_map should contain super::top_level → DefId(0)");
 }
 
@@ -477,7 +557,7 @@ fn self_path_resolves_within_module() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(found, "self::helper should resolve to DefId(1)");
 }
 
@@ -545,7 +625,7 @@ fn struct_name_does_not_resolve_to_prim_ty() {
     let found_def = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(0))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(0)))));
     assert!(
         found_def,
         "Foo struct instantiation should resolve to Def(DefId(0))"
@@ -603,7 +683,7 @@ fn re_exported_name_resolves_from_downstream_module() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(found, "bar() call should resolve to DefId(1)");
 }
 
@@ -777,7 +857,7 @@ fn glob_imported_item_resolves_in_body() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     assert!(
         found,
         "res_map should contain `bar` → DefId(1) from the call"
@@ -813,7 +893,7 @@ fn non_glob_import_shadows_glob_import() {
     let found = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(3))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(3)))));
     assert!(found, "baz() call should resolve to bar::baz (DefId(3))");
 }
 
@@ -1024,11 +1104,11 @@ fn nested_re_export_through_module() {
     let found_bar = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     let found_baz = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(2))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(2)))));
     assert!(found_bar, "bar() call should resolve to DefId(1)");
     assert!(found_baz, "baz() call should resolve to DefId(2)");
 }
@@ -1065,11 +1145,11 @@ fn nested_import_items_resolve_in_body() {
     let found_bar = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(1))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(1)))));
     let found_baz = outputs
         .res_map
         .values()
-        .any(|res| matches!(res, Res::Def(DefId(2))));
+        .any(|res| matches!(res.full_res(), Some(Res::Def(DefId(2)))));
     assert!(found_bar, "bar() call should resolve to DefId(1)");
     assert!(found_baz, "baz() call should resolve to DefId(2)");
 }

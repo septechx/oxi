@@ -5,11 +5,10 @@ use thin_vec::{ThinVec, thin_vec};
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::{DefId, ModuleId, PrimTy};
+use crate::hir::{Def, DefId, DefKind, ModuleId, PrimTy};
 use crate::interner::Symbol;
-use crate::resolve::mod_tree::ModuleTree;
 
-pub use mod_tree::build_module_tree;
+pub use mod_tree::{ModuleTree, build_module_tree};
 
 mod early;
 mod late;
@@ -17,26 +16,51 @@ mod mod_tree;
 mod path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DefKind {
-    Function,
-    Struct,
-    Interface,
-    Const,
+pub struct PartialRes {
+    base_res: Res,
+    unresolved_segments: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Def {
-    pub name: Symbol,
-    pub kind: DefKind,
-    pub visibility: Visibility,
+impl PartialRes {
+    pub fn new(base_res: Res) -> Self {
+        Self {
+            base_res,
+            unresolved_segments: 0,
+        }
+    }
+
+    pub fn with_unresolved_segments(base_res: Res, mut unresolved_segments: usize) -> Self {
+        if base_res == Res::Err {
+            unresolved_segments = 0;
+        }
+        Self {
+            base_res,
+            unresolved_segments,
+        }
+    }
+
+    pub fn base_res(&self) -> Res {
+        self.base_res
+    }
+
+    pub fn unresolved_segments(&self) -> usize {
+        self.unresolved_segments
+    }
+
+    pub fn full_res(&self) -> Option<Res> {
+        (self.unresolved_segments == 0).then_some(self.base_res)
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Res {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Res<Id = NodeId> {
     /// Module-level def
     Def(DefId),
     /// Local definition in function body
-    Local(NodeId),
+    ///
+    /// Id is generic to allow for AST NodeId's during name resolution and then HIR HirId's during
+    /// AST lowering
+    Local(Id),
     /// Primitive type, like `i32`
     PrimTy(PrimTy),
     /// Self param in struct or impl
@@ -133,6 +157,7 @@ impl NameResolution {
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
     pub resolutions: FxHashMap<Symbol, NameResolution>,
+    pub struct_methods: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub qualified_name: String,
@@ -140,8 +165,8 @@ pub struct ModuleData {
 
 #[derive(Debug)]
 pub struct ResolverOutputs {
-    /// maps (path node id) -> (res)
-    pub res_map: NodeMap<Res>,
+    /// maps (path node id) -> (partial res)
+    pub res_map: NodeMap<PartialRes>,
     /// maps (def node id) -> (def id)
     pub def_map: NodeMap<DefId>,
     /// Arena\[DefId] -> Def
@@ -166,7 +191,7 @@ pub struct Resolver<'a, 'ctx> {
 
     // Late res
     /// maps (path node id) -> (res)
-    res_map: NodeMap<Res>,
+    res_map: NodeMap<PartialRes>,
 }
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {

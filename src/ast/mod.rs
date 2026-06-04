@@ -118,6 +118,7 @@ pub struct AssocItem {
     pub kind: AssocItemKind,
     pub visibility: Visibility,
     pub span: Span,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -201,11 +202,11 @@ pub enum ExprKind {
     Return(Option<Box<Expr>>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Literal {
     Integer(i64),
     Float(f64),
-    String(Box<str>),
+    String(Symbol),
     Char(char),
     Bool(bool),
 }
@@ -232,7 +233,7 @@ pub enum TypeKind {
     Never,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ident {
     pub value: Symbol,
     pub span: Span,
@@ -265,6 +266,7 @@ pub enum Mutability {
 #[derive(Debug, Clone)]
 pub struct Block {
     pub stmts: ThinVec<Stmt>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -341,7 +343,7 @@ pub struct ImportTree {
 impl ImportTree {
     pub fn ident(&self) -> Option<Ident> {
         match &self.kind {
-            ImportTreeKind::Simple(Some(rename)) => Some(rename.clone()),
+            ImportTreeKind::Simple(Some(rename)) => Some(*rename),
             ImportTreeKind::Simple(None) => self.prefix.segments.last().cloned(),
             _ => None,
         }

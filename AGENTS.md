@@ -1,4 +1,8 @@
-# Usuful commands
+# Deprecated modules
+
+The `src/codegen` module is deprecated
+
+# Useful commands
 
 - Run test suite: `just test`
 - Run lint: `just lint`. If formatting issues are reported, fix them with `cargo fmt`
