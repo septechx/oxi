@@ -8,8 +8,6 @@ use crate::{
     context::with_ctx,
     errors::builders,
     hashmap::FxHashMap,
-    hir::ModuleId,
-    span::Span,
 };
 
 #[derive(Debug)]
