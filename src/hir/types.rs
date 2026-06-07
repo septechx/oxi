@@ -1,6 +1,7 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, Literal, Mutability, Visibility};
+use crate::ast::{self, Ident, Literal, Mutability, Visibility, idents_to_string};
+use crate::context::Ctx;
 use crate::hir::owner::HirId;
 use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
 use crate::interner::Symbol;
@@ -249,7 +250,7 @@ pub enum ExprKind {
     MethodCall {
         receiver: Box<Expr>,
         method: Symbol,
-        args: ThinVec<Expr>,
+        params: ThinVec<Expr>,
     },
     /// Field access: base.field
     Field {
@@ -377,6 +378,12 @@ pub struct Path {
     pub res: Res<HirId>,
     pub segments: ThinVec<Ident>,
     pub span: Span,
+}
+
+impl Path {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        idents_to_string(&self.segments, &ctx.interner)
+    }
 }
 
 /// A path that may still have associated-item suffixes to resolve during type checking.

@@ -6,6 +6,7 @@ The `src/codegen` module is deprecated
 
 - Run test suite: `just test`
 - Run lint: `just lint`. If formatting issues are reported, fix them with `cargo fmt`
+- Run compiler: `just run`. If the file is not named `main.oxi`, you will need to pass the `--entrypoint` flag. E.g. `just run x.oxi --entrypoint x`
 
 # Language syntax
 

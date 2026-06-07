@@ -2,9 +2,11 @@ use oxic::{
     ast::validate::validate_ast,
     context::{with_ctx, with_ctx_mut},
     errors::ErrorLevel,
+    hir::AstLoweringContext,
     lexer::tokenize,
     parser::parse,
     resolve::{Resolver, build_module_tree},
+    typeck::typeck_crate,
 };
 use std::{
     fs,
@@ -171,18 +173,30 @@ impl Drop for Test {
         }
 
         // Phase 3: Run name resolution
-        with_ctx_mut(|ctx| {
+        let resolver = with_ctx_mut(|ctx| {
             let mut resolver = Resolver::new(&asts, &module_tree, ctx);
             resolver.resolve();
+            resolver.into_resolver_outputs()
         });
 
         if self.should_succeed == Some(false) {
             if !self.check_for_errors() {
                 panic!("Resolution succeeded but was expected to fail");
             }
-        } else {
-            self.handle_error_check();
+            return;
         }
+        self.handle_error_check();
+
+        // Phase 4: Lower to HIR
+        let mut hir_crate = with_ctx_mut(|ctx| {
+            let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
+            lowering_ctx.lower_crate()
+        });
+        self.handle_error_check();
+
+        // Phase 5: Type check
+        let _typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
+        self.handle_error_check();
     }
 }
 

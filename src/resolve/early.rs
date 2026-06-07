@@ -473,8 +473,10 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 VisitAction::Continue
             }
             ItemKind::Impl { .. } => {
-                self.resolver
+                let def_id = self
+                    .resolver
                     .alloc_def(item.node_id, None, DefKind::Impl, None);
+                self.resolver.current_module_mut().impls.push(def_id);
                 VisitAction::Continue
             }
             ItemKind::Fn(f) => {
@@ -491,12 +493,13 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     fn visit_assoc_item(&mut self, item: &AssocItem) -> VisitAction {
         match &item.kind {
             AssocItemKind::Fn(f) => {
-                self.resolver.alloc_def(
+                let def_id = self.resolver.alloc_def(
                     item.node_id,
                     Some(f.name.value),
                     DefKind::AssocFn,
                     Some(item.visibility),
                 );
+                self.resolver.current_module_mut().methods.push(def_id);
             }
         }
         VisitAction::SkipChildren

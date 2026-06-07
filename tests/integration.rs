@@ -206,7 +206,7 @@ fn struct_declaration_and_initialization() {
             a: i32,
         }
 
-        pub fn main() isize {
+        pub fn main() i32 {
             let foo = Foo {
                 a: 1,
             };
@@ -251,12 +251,12 @@ fn struct_with_methods() {
                 }
             }
 
-            pub fn main() isize {
+            pub fn main() i32 {
                 let foo = Foo {
                     a: 1,
                 };
 
-                return foo.a - foo.bar(2, 1);
+                return foo.a - Foo::bar(2, 1);
             }
         "#,
         )
@@ -353,7 +353,7 @@ fn struct_shorthand_initialization() {
                 y: i32,
             }
 
-            pub fn main() isize {
+            pub fn main() i32 {
                 let x = 10;
                 let foo = Foo {
                     x,
@@ -553,6 +553,100 @@ fn mod_crate_path_root() {
             r#"
             pub fn bar() i32 {
                 return 10;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_autoborrow_self_ref() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 7 };
+                return foo.get_val();
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn pipe_call_autoborrow_first_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn new(val: i32) Self {
+                    return Self { val };
+                }
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                return Foo::new(3) |> Foo::get_val;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn function_call_autoborrow_first_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            fn id(x: &i32, y: i32) i32 {
+                return y;
+            }
+
+            pub fn main() i32 {
+                return id(5, 6);
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_value_receiver_unchanged() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn get(self: Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 9 };
+                return foo.get();
             }
             "#,
         )

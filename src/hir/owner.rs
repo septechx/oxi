@@ -89,14 +89,14 @@ impl MaybeOwner {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Crate {
     pub owners: Vec<MaybeOwner>,
 }
 
 impl Crate {
     pub fn new() -> Self {
-        Crate { owners: Vec::new() }
+        Self::default()
     }
 
     pub fn with_capacity(cap: usize) -> Self {
