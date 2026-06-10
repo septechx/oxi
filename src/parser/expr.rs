@@ -48,7 +48,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
             .unwrap_or_else(|| unexpected_token(token_kind.clone()));
 
         left = led_fn(parser, left.clone(), current_bp)?;
-        end_span = Span::new(start_span.start(), parser.current_token().span.end());
+        end_span = left.span;
     }
 
     left.span = Span::new(start_span.start(), end_span.end());

@@ -350,8 +350,9 @@ pub fn parse_fn_decl_item(
 
     let mut body: Option<Block> = None;
     if parser.current_token().kind == TokenKind::OpenCurly {
+        let open_brace_span = parser.current_token().span;
         parser.advance();
-        let (stmts, body_span) = parse_body(parser, start_span)?;
+        let (stmts, body_span) = parse_body(parser, open_brace_span)?;
         end_span = body_span;
         body = Some(Block {
             stmts,

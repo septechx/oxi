@@ -73,6 +73,16 @@ impl SourceMap {
         let (line, column) = self.line_column(span.start());
         (self.path.clone(), line, column, span.len() as usize)
     }
+
+    pub fn span_end_location(&self, span: &Span) -> (usize, usize) {
+        self.line_column(span.start() + span.len())
+    }
+
+    pub fn get_lines(&self, start_line: usize, end_line: usize) -> Vec<(usize, &str)> {
+        (start_line..=end_line)
+            .filter_map(|line| Some((line, self.get_line(line)?)))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Default)]

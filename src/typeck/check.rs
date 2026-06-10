@@ -25,6 +25,20 @@ struct BlockTyRes {
     early: Option<Ty>,
 }
 
+fn tail_span(expr: &Expr) -> Span {
+    match &expr.kind {
+        ExprKind::Block(block) => block
+            .stmts
+            .last()
+            .and_then(|stmt| match &stmt.kind {
+                StmtKind::Expr(expr) => Some(expr.span),
+                _ => None,
+            })
+            .unwrap_or(expr.span),
+        _ => expr.span,
+    }
+}
+
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(super) fn check_bodies(&mut self) {
         let mut icx = InferCtx::default();
@@ -187,7 +201,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 self.icx,
                 &expected,
                 &body_ty,
-                body.value.span,
+                tail_span(&body.value),
                 self.module_id,
             )
         {
