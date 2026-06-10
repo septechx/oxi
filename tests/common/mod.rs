@@ -179,23 +179,28 @@ impl Drop for Test {
             resolver.into_resolver_outputs()
         });
 
-        if self.should_succeed == Some(false) {
-            if !self.check_for_errors() {
-                panic!("Resolution succeeded but was expected to fail");
-            }
+        if self.handle_error_check() {
             return;
         }
-        self.handle_error_check();
 
         // Phase 4: Lower to HIR
         let mut hir_crate = with_ctx_mut(|ctx| {
             let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
             lowering_ctx.lower_crate()
         });
-        self.handle_error_check();
+
+        if self.handle_error_check() {
+            return;
+        }
 
         // Phase 5: Type check
         let _typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
+        if self.should_succeed == Some(false) {
+            if !self.check_for_errors() {
+                panic!("Expected a type error but none occurred");
+            }
+            return;
+        }
         self.handle_error_check();
     }
 }

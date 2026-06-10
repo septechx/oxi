@@ -17,6 +17,14 @@ use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, UnifyResult, unify};
 use crate::typeck::{CoherenceTable, MemberRes, MethodKind, Typeck};
 
+// Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
+// catch uses of `break` outside of loops
+#[derive(Debug)]
+struct BlockTyRes {
+    tail: Ty,
+    early: Option<Ty>,
+}
+
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(super) fn check_bodies(&mut self) {
         let mut icx = InferCtx::default();
@@ -174,6 +182,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let expected = Ty::from_hir(self.icx, &decl.ret);
         self.check_expr(&body.value);
         self.check_return_values(&body.value, &expected, body.value.span);
+        if let Some(body_ty) = self.node_types.get(&body.value.hir_id).cloned()
+            && let Err(err) = unify(
+                self.icx,
+                &expected,
+                &body_ty,
+                body.value.span,
+                self.module_id,
+            )
+        {
+            self.report_type_error(err);
+        }
         self.env.pop();
     }
 
@@ -247,12 +266,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::TupleInit(elements) => {
                 Ty::Tuple(elements.iter().map(|expr| self.check_expr(expr)).collect())
             }
-            ExprKind::Block(block) => self.check_block(block),
-            ExprKind::Loop(block) => {
-                // FIXME: Loops should be able to return things using `break`
-                self.check_block(block);
-                Ty::Prim(PrimTy::Void)
-            }
+            ExprKind::Block(block) => self.check_block(block).tail,
+            ExprKind::Loop(block) => self.check_loop(block),
             ExprKind::If {
                 cond,
                 then_branch,
@@ -264,7 +279,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     self.report_type_error(err);
                 }
                 let then_span = then_branch.span;
-                let then_ty = self.check_block(then_branch);
+                let then_ty = self.check_block(then_branch).tail;
                 let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
                 match else_ty {
                     Some(else_ty) => {
@@ -657,8 +672,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         struct_ty
     }
 
-    fn check_block(&mut self, block: &Block) -> Ty {
+    fn check_block(&mut self, block: &Block) -> BlockTyRes {
         self.env.push();
+        let mut break_ty = None;
         let mut last_ty = Ty::Prim(PrimTy::Void);
         let mut diverged = false;
         for stmt in &block.stmts {
@@ -691,12 +707,58 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     self.icx.pop_level();
                 }
                 StmtKind::Expr(expr) => {
+                    'blk: {
+                        if let ExprKind::Break(break_expr) = &expr.kind {
+                            let break_value_ty = break_expr
+                                .as_ref()
+                                .map_or(Ty::Prim(PrimTy::Void), |expr| self.check_expr(expr));
+
+                            if let Some(existing_break_ty) = &break_ty
+                                && let Err(err) = unify(
+                                    self.icx,
+                                    existing_break_ty,
+                                    &break_value_ty,
+                                    expr.span,
+                                    self.module_id,
+                                )
+                            {
+                                self.report_type_error(err);
+                                break 'blk;
+                            }
+
+                            break_ty = Some(break_value_ty);
+                        }
+                    }
+
                     last_ty = self.check_expr(expr);
                     if matches!(last_ty, Ty::Never) {
                         diverged = true;
                     }
                 }
                 StmtKind::Semi(expr) => {
+                    'blk: {
+                        if let ExprKind::Break(break_expr) = &expr.kind {
+                            let break_value_ty = break_expr
+                                .as_ref()
+                                .map_or(Ty::Prim(PrimTy::Void), |expr| self.check_expr(expr));
+
+                            if let Some(existing_break_ty) = &break_ty
+                                && let Err(err) = unify(
+                                    self.icx,
+                                    existing_break_ty,
+                                    &break_value_ty,
+                                    expr.span,
+                                    self.module_id,
+                                )
+                            {
+                                self.report_type_error(err);
+                                break 'blk;
+                            }
+
+                            break_ty = Some(break_value_ty);
+                        }
+                    }
+
                     let expr = self.check_expr(expr);
                     if matches!(expr, Ty::Never) {
                         last_ty = Ty::Never;
@@ -708,7 +770,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
         self.env.pop();
-        if diverged { Ty::Never } else { last_ty }
+        BlockTyRes {
+            tail: if diverged { Ty::Never } else { last_ty },
+            early: break_ty,
+        }
+    }
+
+    fn check_loop(&mut self, block: &Block) -> Ty {
+        self.check_block(block)
+            .early
+            .unwrap_or_else(|| Ty::Prim(PrimTy::Void))
     }
 
     fn check_member_access(&mut self, member: Symbol, base: &Expr, hir_id: HirId) -> Ty {

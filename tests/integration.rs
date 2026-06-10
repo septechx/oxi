@@ -4,6 +4,39 @@ use common::it;
 use oxic::errors::ErrorLevel;
 
 #[test]
+fn type_error_on_binary_tail_in_void_fn() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                loop {
+                    break 12;
+                } + true
+            }
+            "#,
+        )
+        .succeeds(false)
+        .expect_type_error();
+    })
+}
+
+#[test]
+fn no_type_error_on_literal_tail_matching_return() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
 fn can_compile_nested_block_with_implicit_returns() {
     it(|ctx| {
         ctx.add_source(
