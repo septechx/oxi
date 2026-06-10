@@ -226,7 +226,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn check_expr_kind(&mut self, kind: &ExprKind, hir_id: HirId, expr_span: Span) -> Ty {
         match kind {
             ExprKind::Error => Ty::Error,
-            ExprKind::Literal(lit) => self.check_lit(lit),
+            ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
             ExprKind::Prefix { op, right } => self.check_prefix(*op, right),
@@ -304,13 +304,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
-    fn check_lit(&mut self, lit: &Literal) -> Ty {
+    fn check_lit(&mut self, lit: &Literal, span: Span) -> Ty {
         match lit {
-            Literal::Integer(_) => {
-                // FIXME: proper span stored for literal
-                Ty::Var(self.icx.next_int_var(Span::new(0, 0), self.module_id))
-            }
-            Literal::Float(_) => Ty::Var(self.icx.next_float_var(Span::new(0, 0), self.module_id)),
+            Literal::Integer(_) => Ty::Var(self.icx.next_int_var(span, self.module_id)),
+            Literal::Float(_) => Ty::Var(self.icx.next_float_var(span, self.module_id)),
             Literal::Bool(_) => Ty::Prim(PrimTy::Bool),
             Literal::Char(_) => Ty::Prim(PrimTy::Uint(UintTy::U8)),
             Literal::String(_) => Ty::Slice(Ty::Prim(PrimTy::Uint(UintTy::U8)).into_box()),
