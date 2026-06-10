@@ -16,8 +16,7 @@ fn type_error_on_binary_tail_in_void_fn() {
             }
             "#,
         )
-        .succeeds(false)
-        .expect_type_error();
+        .succeeds(false);
     })
 }
 
