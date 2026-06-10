@@ -260,7 +260,7 @@ pub enum ExprKind {
     /// Struct literal: Struct { field: value, ... }
     StructInit {
         def: DefId,
-        fields: ThinVec<(Symbol, Expr)>,
+        fields: ThinVec<(Ident, Expr)>,
     },
     /// Array literal: []Type{value1, value2, ... }
     ArrayInit {

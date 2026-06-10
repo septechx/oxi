@@ -10,7 +10,7 @@ mod unify;
 
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::{Crate, DefId, HirId};
+use crate::hir::{Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
 use crate::typeck::types::{Scheme, Ty};
@@ -41,10 +41,13 @@ struct Typeck<'ctx, 'hir, 'res> {
     interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
     /// maps (item def id) -> (scheme)
     item_schemes: FxHashMap<DefId, Scheme>,
+    /// maps (def id) -> (module id)
+    def_to_module: FxHashMap<DefId, ModuleId>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn new(ctx: &'ctx mut Ctx, krate: &'hir mut Crate, resolver: &'res ResolverOutputs) -> Self {
+        let def_to_module = build_def_to_module(resolver);
         Self {
             ctx,
             krate,
@@ -55,6 +58,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             inherent_methods: FxHashMap::default(),
             interface_methods: FxHashMap::default(),
             item_schemes: FxHashMap::default(),
+            def_to_module,
         }
     }
 
@@ -76,6 +80,27 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             item_schemes: self.item_schemes,
         }
     }
+}
+
+fn build_def_to_module(resolver: &ResolverOutputs) -> FxHashMap<DefId, ModuleId> {
+    let mut map: FxHashMap<DefId, ModuleId> = FxHashMap::default();
+    for (i, module) in resolver.modules.iter().enumerate() {
+        for res in module.resolutions.values() {
+            map.insert(res.best_binding().def_id, ModuleId(i as u32));
+        }
+        for methods in module.struct_methods.values() {
+            for binding in methods.values() {
+                map.insert(binding.def_id, ModuleId(i as u32));
+            }
+        }
+        for &impl_def_id in &module.impls {
+            map.insert(impl_def_id, ModuleId(i as u32));
+        }
+        for &method_def_id in &module.methods {
+            map.insert(method_def_id, ModuleId(i as u32));
+        }
+    }
+    map
 }
 
 #[derive(Debug)]

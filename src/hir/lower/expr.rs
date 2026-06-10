@@ -100,7 +100,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 };
                 let fields = fields
                     .iter()
-                    .map(|(name, expr)| (name.value, self.lower_expr(expr)))
+                    .map(|(name, expr)| (*name, self.lower_expr(expr)))
                     .collect();
                 ExprKind::StructInit { def, fields }
             }

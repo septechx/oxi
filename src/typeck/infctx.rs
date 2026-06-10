@@ -1,6 +1,8 @@
 use thin_vec::ThinVec;
 
 use crate::hashmap::{FxHashMap, FxHashSet};
+use crate::hir::ModuleId;
+use crate::span::Span;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
 
@@ -19,6 +21,8 @@ pub struct TyVar {
     /// Some() if this var has been bound
     root: Option<Ty>,
     source: TyVarSource,
+    span: Option<Span>,
+    module_id: Option<ModuleId>,
 }
 
 #[derive(Debug, Default)]
@@ -42,23 +46,45 @@ impl InferCtx {
     }
 
     pub fn next_ty_var(&mut self) -> TyVarId {
-        self.next_ty_var_at(self.current_level(), TyVarSource::Generic)
+        self.next_ty_var_at(self.current_level(), TyVarSource::Generic, None, None)
     }
 
-    pub fn next_int_var(&mut self) -> TyVarId {
-        self.next_ty_var_at(self.current_level(), TyVarSource::IntLit)
+    pub fn next_ty_var_at_span(&mut self, span: Span) -> TyVarId {
+        self.next_ty_var_at(self.current_level(), TyVarSource::Generic, Some(span), None)
     }
 
-    pub fn next_float_var(&mut self) -> TyVarId {
-        self.next_ty_var_at(self.current_level(), TyVarSource::FloatLit)
+    pub fn next_int_var(&mut self, span: Span, module_id: ModuleId) -> TyVarId {
+        self.next_ty_var_at(
+            self.current_level(),
+            TyVarSource::IntLit,
+            Some(span),
+            Some(module_id),
+        )
     }
 
-    fn next_ty_var_at(&mut self, level: u32, source: TyVarSource) -> TyVarId {
+    pub fn next_float_var(&mut self, span: Span, module_id: ModuleId) -> TyVarId {
+        self.next_ty_var_at(
+            self.current_level(),
+            TyVarSource::FloatLit,
+            Some(span),
+            Some(module_id),
+        )
+    }
+
+    fn next_ty_var_at(
+        &mut self,
+        level: u32,
+        source: TyVarSource,
+        span: Option<Span>,
+        module_id: Option<ModuleId>,
+    ) -> TyVarId {
         let id = TyVarId(self.vars.len() as u32);
         self.vars.push(TyVar {
             level,
             root: None,
             source,
+            span,
+            module_id,
         });
         id
     }
@@ -69,6 +95,14 @@ impl InferCtx {
 
     pub fn ty_var_mut(&mut self, ty_var: TyVarId) -> &mut TyVar {
         &mut self.vars[ty_var.0 as usize]
+    }
+
+    pub fn ty_var_span(&self, ty_var: TyVarId) -> Option<Span> {
+        self.ty_var(ty_var).span
+    }
+
+    pub fn ty_var_module(&self, ty_var: TyVarId) -> ModuleId {
+        self.ty_var(ty_var).module_id.unwrap_or(ModuleId(0))
     }
 
     pub fn set_root(&mut self, ty_var: TyVarId, ty: Ty) {

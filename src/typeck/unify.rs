@@ -1,57 +1,74 @@
+use crate::hir::ModuleId;
+use crate::span::Span;
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 
 #[derive(Debug, Clone)]
 pub enum UnifyError {
     /// Cannot unify `expected` and `found`
-    Mismatch { expected: Ty, found: Ty },
+    Mismatch {
+        expected: Ty,
+        found: Ty,
+        span: Span,
+        module_id: ModuleId,
+    },
     /// Unification variable contains itself
-    OcurrsCheck(TyVarId),
+    OcurrsCheck {
+        var: TyVarId,
+        span: Span,
+        module_id: ModuleId,
+    },
 }
 
 pub type UnifyResult<T> = Result<T, UnifyError>;
 
-pub fn unify(icx: &mut InferCtx, a: &Ty, b: &Ty) -> UnifyResult<()> {
+pub fn unify(
+    icx: &mut InferCtx,
+    a: &Ty,
+    b: &Ty,
+    span: Span,
+    module_id: ModuleId,
+) -> UnifyResult<()> {
     let a = icx.resolve(a);
     let b = icx.resolve(b);
     match (&a, &b) {
         (Ty::Error, _) | (_, Ty::Error) => Ok(()),
         (Ty::Never, _) | (_, Ty::Never) => Ok(()),
-        (Ty::Var(v), t) | (t, Ty::Var(v)) => bind(icx, *v, t),
+        (Ty::Var(v), t) | (t, Ty::Var(v)) => bind(icx, *v, t, span, module_id),
         (Ty::Prim(p1), Ty::Prim(p2)) => {
             if p1 == p2 {
                 Ok(())
             } else {
-                Err(mismatch(icx, a, b))
+                Err(mismatch(a, b, span, module_id))
             }
         }
         (Ty::Ptr(i1, m1), Ty::Ptr(i2, m2)) => {
             if m1 == m2 {
-                unify(icx, i1, i2)
+                unify(icx, i1, i2, span, module_id)
             } else {
-                Err(mismatch(icx, a, b))
+                Err(mismatch(a, b, span, module_id))
             }
         }
-        (Ty::Slice(i1), Ty::Slice(i2)) => unify(icx, i1, i2),
+        (Ty::Slice(i1), Ty::Slice(i2)) => unify(icx, i1, i2, span, module_id),
         (Ty::Adt(d1), Ty::Adt(d2)) => {
             if d1 == d2 {
                 Ok(())
             } else {
-                Err(mismatch(icx, a, b))
+                Err(mismatch(a, b, span, module_id))
             }
         }
         (Ty::Interface(d1), Ty::Interface(d2)) => {
             if d1 == d2 {
                 Ok(())
             } else {
-                Err(mismatch(icx, a, b))
+                Err(mismatch(a, b, span, module_id))
             }
         }
         (Ty::Array(i1, n1), Ty::Array(i2, n2)) => {
             if n1 == n2 {
-                unify(icx, i1, i2)
+                unify(icx, i1, i2, span, module_id)
             } else {
-                Err(mismatch(icx, a, b))
+                Err(mismatch(a, b, span, module_id))
             }
         }
         (
@@ -65,27 +82,33 @@ pub fn unify(icx: &mut InferCtx, a: &Ty, b: &Ty) -> UnifyResult<()> {
             },
         ) => {
             if p1.len() != p2.len() {
-                return Err(mismatch(icx, a, b));
+                return Err(mismatch(a, b, span, module_id));
             }
             for (a, b) in p1.iter().zip(p2) {
-                unify(icx, a, b)?;
+                unify(icx, a, b, span, module_id)?;
             }
-            unify(icx, r1, r2)
+            unify(icx, r1, r2, span, module_id)
         }
         (Ty::Tuple(e1), Ty::Tuple(e2)) => {
             if e1.len() != e2.len() {
-                return Err(mismatch(icx, a, b));
+                return Err(mismatch(a, b, span, module_id));
             }
             for (a, b) in e1.iter().zip(e2) {
-                unify(icx, a, b)?;
+                unify(icx, a, b, span, module_id)?;
             }
             Ok(())
         }
-        _ => Err(mismatch(icx, a, b)),
+        _ => Err(mismatch(a, b, span, module_id)),
     }
 }
 
-fn bind(icx: &mut InferCtx, var: TyVarId, to: &Ty) -> UnifyResult<()> {
+fn bind(
+    icx: &mut InferCtx,
+    var: TyVarId,
+    to: &Ty,
+    span: Span,
+    module_id: ModuleId,
+) -> UnifyResult<()> {
     let to = icx.resolve(to);
     if let Ty::Var(other) = &to
         && *other == var
@@ -93,7 +116,11 @@ fn bind(icx: &mut InferCtx, var: TyVarId, to: &Ty) -> UnifyResult<()> {
         return Ok(());
     }
     if occurs(icx, var, &to) {
-        return Err(UnifyError::OcurrsCheck(var));
+        return Err(UnifyError::OcurrsCheck {
+            var,
+            span,
+            module_id,
+        });
     }
     let var_level = icx.ty_var(var).level;
     let adjusted = icx.adjust(&to, var_level + 1);
@@ -121,8 +148,13 @@ fn occurs(icx: &InferCtx, var: TyVarId, to: &Ty) -> bool {
     }
 }
 
-fn mismatch(_icx: &mut InferCtx, expected: Ty, found: Ty) -> UnifyError {
-    UnifyError::Mismatch { expected, found }
+fn mismatch(expected: Ty, found: Ty, span: Span, module_id: ModuleId) -> UnifyError {
+    UnifyError::Mismatch {
+        expected,
+        found,
+        span,
+        module_id,
+    }
 }
 
 #[cfg(test)]
@@ -130,6 +162,12 @@ mod tests {
     use super::*;
     use crate::hir::{DefId, IntTy, PrimTy, UintTy};
     use thin_vec::thin_vec;
+
+    const NO_MODULE: ModuleId = ModuleId(0);
+
+    fn no_span() -> Span {
+        Span::new(0, 0)
+    }
 
     fn int() -> Ty {
         Ty::Prim(PrimTy::Int(IntTy::I32))
@@ -139,7 +177,7 @@ mod tests {
     fn unify_same_prim() {
         let mut icx = InferCtx::default();
         icx.push_level();
-        assert!(unify(&mut icx, &int(), &int()).is_ok());
+        assert!(unify(&mut icx, &int(), &int(), no_span(), NO_MODULE).is_ok());
     }
 
     #[test]
@@ -147,7 +185,7 @@ mod tests {
         let mut icx = InferCtx::default();
         icx.push_level();
         let u8 = Ty::Prim(PrimTy::Uint(UintTy::U8));
-        assert!(unify(&mut icx, &int(), &u8).is_err());
+        assert!(unify(&mut icx, &int(), &u8, no_span(), NO_MODULE).is_err());
     }
 
     #[test]
@@ -155,7 +193,7 @@ mod tests {
         let mut icx = InferCtx::default();
         icx.push_level();
         let v = icx.next_ty_var();
-        assert!(unify(&mut icx, &Ty::Var(v), &int()).is_ok());
+        assert!(unify(&mut icx, &Ty::Var(v), &int(), no_span(), NO_MODULE).is_ok());
         assert!(matches!(
             icx.resolve(&Ty::Var(v)),
             Ty::Prim(PrimTy::Int(IntTy::I32))
@@ -168,7 +206,7 @@ mod tests {
         icx.push_level();
         let a = icx.next_ty_var();
         let b = icx.next_ty_var();
-        assert!(unify(&mut icx, &Ty::Var(a), &Ty::Var(b)).is_ok());
+        assert!(unify(&mut icx, &Ty::Var(a), &Ty::Var(b), no_span(), NO_MODULE).is_ok());
         let ra = icx.resolve(&Ty::Var(a));
         let rb = icx.resolve(&Ty::Var(b));
         assert!(matches!(ra, Ty::Var(_)));
@@ -187,7 +225,7 @@ mod tests {
             params: thin_vec![int()],
             ret: Box::new(int()),
         };
-        assert!(unify(&mut icx, &a, &b).is_ok());
+        assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_ok());
     }
 
     #[test]
@@ -202,7 +240,7 @@ mod tests {
             params: thin_vec![],
             ret: Box::new(int()),
         };
-        assert!(unify(&mut icx, &a, &b).is_err());
+        assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_err());
     }
 
     #[test]
@@ -214,24 +252,24 @@ mod tests {
             params: thin_vec![Ty::Var(v)],
             ret: Box::new(int()),
         };
-        assert!(unify(&mut icx, &Ty::Var(v), &bad).is_err());
+        assert!(unify(&mut icx, &Ty::Var(v), &bad, no_span(), NO_MODULE).is_err());
     }
 
     #[test]
     fn error_ty_unifies_with_anything() {
         let mut icx = InferCtx::default();
         icx.push_level();
-        assert!(unify(&mut icx, &Ty::Error, &int()).is_ok());
-        assert!(unify(&mut icx, &int(), &Ty::Error).is_ok());
+        assert!(unify(&mut icx, &Ty::Error, &int(), no_span(), NO_MODULE).is_ok());
+        assert!(unify(&mut icx, &int(), &Ty::Error, no_span(), NO_MODULE).is_ok());
     }
 
     #[test]
     fn never_unifies_with_everything() {
         let mut icx = InferCtx::default();
         icx.push_level();
-        assert!(unify(&mut icx, &Ty::Never, &int()).is_ok());
+        assert!(unify(&mut icx, &Ty::Never, &int(), no_span(), NO_MODULE).is_ok());
         let v = icx.next_ty_var();
-        assert!(unify(&mut icx, &Ty::Var(v), &Ty::Never).is_ok());
+        assert!(unify(&mut icx, &Ty::Var(v), &Ty::Never, no_span(), NO_MODULE).is_ok());
     }
 
     #[test]
@@ -240,7 +278,7 @@ mod tests {
         icx.push_level();
         let a = Ty::Adt(DefId(7));
         let b = Ty::Adt(DefId(7));
-        assert!(unify(&mut icx, &a, &b).is_ok());
+        assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_ok());
     }
 
     #[test]
@@ -249,7 +287,7 @@ mod tests {
         icx.push_level();
         let a = Ty::Adt(DefId(7));
         let b = Ty::Adt(DefId(8));
-        assert!(unify(&mut icx, &a, &b).is_err());
+        assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_err());
     }
 
     #[test]
@@ -265,6 +303,6 @@ mod tests {
             Ty::Ptr(i, _) => i.as_ref().clone(),
             _ => unreachable!(),
         };
-        assert!(unify(&mut icx, &inner, &arg).is_ok());
+        assert!(unify(&mut icx, &inner, &arg, no_span(), NO_MODULE).is_ok());
     }
 }

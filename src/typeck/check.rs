@@ -1,15 +1,15 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{Literal, Mutability};
+use crate::ast::{Ident, Literal, Mutability};
 use crate::context::Ctx;
 use crate::errors::builders;
-use crate::hashmap::FxHashMap;
+use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
     ItemKind, MaybeOwner, ModuleId, Node, PosOp, PreOp, PrimTy, QPath, StmtKind, UintTy,
 };
 use crate::interner::Symbol;
-use crate::resolve::Res;
+use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
@@ -22,8 +22,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut icx = InferCtx::default();
         icx.push_level();
 
-        let def_to_module = self.build_def_to_module();
-
         let mut node_types: FxHashMap<HirId, Ty> = FxHashMap::default();
         let mut member_res: FxHashMap<HirId, MemberRes> = FxHashMap::default();
         let mut local_schemes: FxHashMap<HirId, Scheme> = FxHashMap::default();
@@ -35,6 +33,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             inherent_methods: &mut self.inherent_methods,
             interface_methods: &mut self.interface_methods,
             coherence: &mut self.coherence,
+            resolver: self.resolver,
             node_types: &mut node_types,
             member_res: &mut member_res,
             local_schemes: &mut local_schemes,
@@ -49,7 +48,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 continue;
             };
 
-            let module_id = def_to_module.get(&def_id).expect("contains def id");
+            let module_id = self.def_to_module.get(&def_id).expect("contains def id");
             checker.module_id = *module_id;
 
             match &info.nodes.nodes[0].node {
@@ -88,7 +87,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             if icx.is_bound(var) {
                 continue;
             }
-            if let Err(err) = unify(&mut icx, &Ty::Var(var), &i32_ty) {
+            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = icx.ty_var_module(var);
+            if let Err(err) = unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module) {
                 icx.errors.push(err);
             }
         }
@@ -98,7 +99,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             if icx.is_bound(var) {
                 continue;
             }
-            if let Err(err) = unify(&mut icx, &Ty::Var(var), &f64_ty) {
+            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = icx.ty_var_module(var);
+            if let Err(err) = unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module) {
                 icx.errors.push(err);
             }
         }
@@ -112,43 +115,25 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.member_res.extend(member_res);
 
         let errors = icx.take_errors();
+        let resolver = self.resolver;
         for err in errors {
-            let msg = format_unify_error(err);
-            self.ctx
-                .errors
-                .add(builders::error(msg), self.ctx.enable_printing);
+            let (msg, span, module_id) = format_unify_error(&err, resolver, &self.ctx.interner);
+            self.ctx.errors.add(
+                builders::error_at(msg, module_id, span, self.ctx),
+                self.ctx.enable_printing,
+            );
         }
-    }
-
-    fn build_def_to_module(&self) -> FxHashMap<DefId, ModuleId> {
-        let mut map: FxHashMap<DefId, ModuleId> = FxHashMap::default();
-        for (i, module) in self.resolver.modules.iter().enumerate() {
-            for res in module.resolutions.values() {
-                map.insert(res.best_binding().def_id, ModuleId(i as u32));
-            }
-            for methods in module.struct_methods.values() {
-                for binding in methods.values() {
-                    map.insert(binding.def_id, ModuleId(i as u32));
-                }
-            }
-            for &impl_def_id in &module.impls {
-                map.insert(impl_def_id, ModuleId(i as u32));
-            }
-            for &method_def_id in &module.methods {
-                map.insert(method_def_id, ModuleId(i as u32));
-            }
-        }
-        map
     }
 }
 
-struct BodyChecker<'a, 'b, 'ctx> {
+struct BodyChecker<'a, 'b, 'ctx, 'res> {
     icx: &'a mut InferCtx,
     item_schemes: &'b mut FxHashMap<DefId, Scheme>,
     inherent_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     interface_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
     coherence: &'b mut CoherenceTable,
     ctx: &'ctx mut Ctx,
+    resolver: &'res ResolverOutputs,
     node_types: &'a mut FxHashMap<HirId, Ty>,
     member_res: &'a mut FxHashMap<HirId, MemberRes>,
     local_schemes: &'a mut FxHashMap<HirId, Scheme>,
@@ -156,23 +141,29 @@ struct BodyChecker<'a, 'b, 'ctx> {
     module_id: ModuleId,
 }
 
-impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
-    fn unify_with_autoref(&mut self, param: &Ty, arg: &Ty) -> UnifyResult<()> {
+impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
+    fn unify_with_autoref(&mut self, param: &Ty, arg: &Ty, span: Span) -> UnifyResult<()> {
         let arg_r = self.icx.resolve(arg);
         let param_r = self.icx.resolve(param);
         if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
             && let Ty::Ptr(inner, _) = &param_r
         {
-            return unify(self.icx, inner, arg);
+            return unify(self.icx, inner, arg, span, self.module_id);
         }
-        unify(self.icx, param, arg)
+        unify(self.icx, param, arg, span, self.module_id)
     }
 
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
         let expected = Ty::from_hir(self.icx, ty);
         let body_ty = self.check_expr(&body.value);
-        if let Err(err) = unify(self.icx, &expected, &body_ty) {
-            self.report_type_error(body.value.span, err);
+        if let Err(err) = unify(
+            self.icx,
+            &expected,
+            &body_ty,
+            body.value.span,
+            self.module_id,
+        ) {
+            self.report_type_error(err);
         }
     }
 
@@ -201,8 +192,8 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
                 } else {
                     Ty::Prim(PrimTy::Void)
                 };
-                if let Err(err) = unify(self.icx, expected, &inner) {
-                    self.report_type_error(span, err);
+                if let Err(err) = unify(self.icx, expected, &inner, span, self.module_id) {
+                    self.report_type_error(err);
                 }
             }
             ExprKind::If {
@@ -231,12 +222,12 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
 
     fn check_expr(&mut self, expr: &Expr) -> Ty {
         let id = expr.hir_id;
-        let ty = self.check_expr_kind(&expr.kind, id);
+        let ty = self.check_expr_kind(&expr.kind, id, expr.span);
         self.node_types.insert(id, ty.clone());
         ty
     }
 
-    fn check_expr_kind(&mut self, kind: &ExprKind, hir_id: HirId) -> Ty {
+    fn check_expr_kind(&mut self, kind: &ExprKind, hir_id: HirId, expr_span: Span) -> Ty {
         match kind {
             ExprKind::Error => Ty::Error,
             ExprKind::Literal(lit) => self.check_lit(lit),
@@ -244,14 +235,15 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
             ExprKind::Prefix { op, right } => self.check_prefix(*op, right),
             ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
-            ExprKind::Call { callee, params } => self.check_call(callee, params),
-            ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields),
+            ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
+            ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
             ExprKind::ArrayInit { ty, contents } => {
                 let elem_ty = Ty::from_hir(self.icx, ty);
                 for expr in contents {
                     let expr_ty = self.check_expr(expr);
-                    if let Err(err) = unify(self.icx, &elem_ty, &expr_ty) {
-                        self.report_type_error(expr.span, err);
+                    if let Err(err) = unify(self.icx, &elem_ty, &expr_ty, expr.span, self.module_id)
+                    {
+                        self.report_type_error(err);
                     }
                 }
                 Ty::Slice(elem_ty.into_box())
@@ -272,18 +264,20 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
             } => {
                 let cond_ty = self.check_expr(cond);
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &cond_ty) {
-                    self.report_type_error(cond.span, err);
+                if let Err(err) = unify(self.icx, &bool_ty, &cond_ty, cond.span, self.module_id) {
+                    self.report_type_error(err);
                 }
-                let then_branch = self.check_block(then_branch);
-                let else_branch = else_branch.as_ref().map(|expr| self.check_expr(expr));
-                match else_branch {
-                    Some(else_branch) => {
-                        if let Err(err) = unify(self.icx, &then_branch, &else_branch) {
-                            // FIXME: Use the correct span
-                            self.report_type_error(Span::new(0, 0), err);
+                let then_span = then_branch.span;
+                let then_ty = self.check_block(then_branch);
+                let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
+                match else_ty {
+                    Some(else_ty) => {
+                        if let Err(err) =
+                            unify(self.icx, &then_ty, &else_ty, then_span, self.module_id)
+                        {
+                            self.report_type_error(err);
                         }
-                        then_branch
+                        then_ty
                     }
                     None => Ty::Prim(PrimTy::Void),
                 }
@@ -297,8 +291,9 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
             ExprKind::Assign { target, value, .. } => {
                 let target_ty = self.check_expr(target);
                 let value_ty = self.check_expr(value);
-                if let Err(err) = unify(self.icx, &target_ty, &value_ty) {
-                    self.report_type_error(value.span, err);
+                if let Err(err) = unify(self.icx, &target_ty, &value_ty, value.span, self.module_id)
+                {
+                    self.report_type_error(err);
                 }
                 Ty::Prim(PrimTy::Void)
             }
@@ -315,8 +310,11 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
 
     fn check_lit(&mut self, lit: &Literal) -> Ty {
         match lit {
-            Literal::Integer(_) => Ty::Var(self.icx.next_int_var()),
-            Literal::Float(_) => Ty::Var(self.icx.next_float_var()),
+            Literal::Integer(_) => {
+                // FIXME: proper span stored for literal
+                Ty::Var(self.icx.next_int_var(Span::new(0, 0), self.module_id))
+            }
+            Literal::Float(_) => Ty::Var(self.icx.next_float_var(Span::new(0, 0), self.module_id)),
             Literal::Bool(_) => Ty::Prim(PrimTy::Bool),
             Literal::Char(_) => Ty::Prim(PrimTy::Uint(UintTy::U8)),
             Literal::String(_) => Ty::Slice(Ty::Prim(PrimTy::Uint(UintTy::U8)).into_box()),
@@ -363,27 +361,29 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
     }
 
     fn check_binary(&mut self, left: &Expr, op: BinOp, right: &Expr) -> Ty {
+        let left_span = left.span;
+        let right_span = right.span;
         let left = self.check_expr(left);
         let right = self.check_expr(right);
         match op {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if let Err(err) = unify(self.icx, &left, &right) {
+                if let Err(err) = unify(self.icx, &left, &right, left_span, self.module_id) {
                     self.icx.errors.push(err);
                 }
                 Ty::Prim(PrimTy::Bool)
             }
             BinOp::And | BinOp::Or => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &left) {
+                if let Err(err) = unify(self.icx, &bool_ty, &left, left_span, self.module_id) {
                     self.icx.errors.push(err);
                 };
-                if let Err(err) = unify(self.icx, &bool_ty, &right) {
+                if let Err(err) = unify(self.icx, &bool_ty, &right, right_span, self.module_id) {
                     self.icx.errors.push(err);
                 }
                 bool_ty
             }
             _ => {
-                if let Err(err) = unify(self.icx, &left, &right) {
+                if let Err(err) = unify(self.icx, &left, &right, left_span, self.module_id) {
                     self.icx.errors.push(err);
                 }
                 left
@@ -392,11 +392,12 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
     }
 
     fn check_prefix(&mut self, op: PreOp, right: &Expr) -> Ty {
+        let right_span = right.span;
         let right = self.check_expr(right);
         match op {
             PreOp::Not => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &right) {
+                if let Err(err) = unify(self.icx, &bool_ty, &right, right_span, self.module_id) {
                     self.icx.errors.push(err);
                 }
                 bool_ty
@@ -413,104 +414,189 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
     }
 
     fn check_postfix(&mut self, left: &Expr, _op: PosOp) -> Ty {
+        let span = left.span;
         let left = self.check_expr(left);
         match left {
             Ty::Ptr(inner, _) => (*inner).clone(),
             _ => {
-                // TODO: Better error reporting, needs ModuleId in Span
-                panic!("ERROR: Cannot dereference non pointer type");
+                self.ctx.errors.add(
+                    builders::error_at(
+                        "Cannot dereference non-pointer type",
+                        self.module_id,
+                        span,
+                        self.ctx,
+                    ),
+                    self.ctx.enable_printing,
+                );
+                Ty::Error
             }
         }
     }
 
-    fn check_call(&mut self, callee: &Expr, params: &ThinVec<Expr>) -> Ty {
-        let call_info: Option<(Ty, Symbol, bool)> = match &callee.kind {
+    fn check_call(&mut self, callee: &Expr, params: &ThinVec<Expr>, call_span: Span) -> Ty {
+        let callee_span = callee.span;
+
+        if let Some((recv_ty, member, is_method_call)) = match &callee.kind {
             ExprKind::MemberAccess { base, member } => Some((self.check_expr(base), *member, true)),
-            ExprKind::Path(QPath::TypeRelative { qself, segment }) => {
-                self.qpath_recv_ty(qself).map(|t| (t, segment.value, false))
-            }
+            ExprKind::Path(QPath::TypeRelative { qself, segment }) => self
+                .qpath_recv_ty(qself)
+                .map(|ty| (ty, segment.value, false)),
             _ => None,
-        };
-        if let Some((recv_ty, member, is_method_call)) = call_info {
-            if let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) {
-                let scheme = match self.item_schemes.get(&def_id) {
-                    Some(scheme) => scheme.clone(),
-                    None => return Ty::Error,
-                };
-                let instantiated = self.icx.instantiate(&scheme);
-                let (param_tys, ret) = match instantiated {
-                    Ty::Fn { params, ret } => (params, *ret),
-                    _ => return Ty::Error,
-                };
-                if param_tys.is_empty() {
-                    if !params.is_empty() {
-                        // TODO: Better error reporting, needs ModuleId in Span
-                        panic!("ERROR: Function arity mismatch");
-                    }
-                    self.member_res
-                        .insert(callee.hir_id, MemberRes::Method { def_id, kind });
-                    return ret;
-                }
-                if is_method_call {
-                    if !params.is_empty() {
-                        // TODO: Better error reporting, needs ModuleId in Span
-                        panic!("ERROR: Function arity mismatch");
-                    }
-                    if let Err(err) = self.unify_with_autoref(&param_tys[0], &recv_ty) {
-                        self.icx.errors.push(err);
-                    }
-                } else {
-                    if param_tys.len() != params.len() {
-                        // TODO: Better error reporting, needs ModuleId in Span
-                        panic!("ERROR: Function arity mismatch");
-                    }
-                    for (i, param) in params.iter().enumerate() {
-                        let param = self.check_expr(param);
-                        if i == 0 {
-                            if let Err(err) = self.unify_with_autoref(&param_tys[i], &param) {
-                                self.icx.errors.push(err);
-                            }
-                        } else if let Err(err) = unify(self.icx, &param_tys[i], &param) {
-                            self.icx.errors.push(err);
-                        }
-                    }
-                }
-                self.member_res
-                    .insert(callee.hir_id, MemberRes::Method { def_id, kind });
-                return ret;
-            } else {
-                // TODO: Better error reporting, needs ModuleId in Span
-                panic!("ERROR: Method not found");
-            }
+        } {
+            return self.check_member_call(
+                callee,
+                callee_span,
+                call_span,
+                recv_ty,
+                member,
+                is_method_call,
+                params,
+            );
         }
 
-        let callee = self.check_expr(callee);
-        match callee {
+        self.check_direct_call(callee, callee_span, call_span, params)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_member_call(
+        &mut self,
+        callee: &Expr,
+        callee_span: Span,
+        call_span: Span,
+        recv_ty: Ty,
+        member: Symbol,
+        is_method_call: bool,
+        params: &ThinVec<Expr>,
+    ) -> Ty {
+        let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
+            self.ctx.errors.add(
+                builders::error_at("Method not found", self.module_id, callee_span, self.ctx),
+                self.ctx.enable_printing,
+            );
+            return Ty::Error;
+        };
+
+        let Some(scheme) = self.item_schemes.get(&def_id).cloned() else {
+            return Ty::Error;
+        };
+
+        let instantiated = self.icx.instantiate(&scheme);
+        let Ty::Fn {
+            params: param_tys,
+            ret,
+        } = instantiated
+        else {
+            return Ty::Error;
+        };
+
+        if !self.check_call_args(
+            params,
+            &param_tys,
+            Some(&recv_ty),
+            is_method_call,
+            call_span,
+        ) {
+            return Ty::Error;
+        }
+
+        self.member_res
+            .insert(callee.hir_id, MemberRes::Method { def_id, kind });
+
+        *ret
+    }
+
+    fn check_direct_call(
+        &mut self,
+        callee: &Expr,
+        callee_span: Span,
+        call_span: Span,
+        params: &ThinVec<Expr>,
+    ) -> Ty {
+        let callee_ty = self.check_expr(callee);
+
+        match callee_ty {
             Ty::Fn {
                 params: param_tys,
                 ret,
             } => {
-                if param_tys.len() != params.len() {
-                    // TODO: Better error reporting, needs ModuleId in Span
-                    panic!("ERROR: Function arity mismatch");
+                if !self.check_call_args(params, &param_tys, None, false, call_span) {
+                    return Ty::Error;
                 }
-                for (i, param) in params.iter().enumerate() {
-                    let param = self.check_expr(param);
-                    if i == 0 {
-                        if let Err(err) = self.unify_with_autoref(&param_tys[i], &param) {
-                            self.icx.errors.push(err);
-                        }
-                    } else if let Err(err) = unify(self.icx, &param_tys[i], &param) {
-                        self.icx.errors.push(err);
-                    }
-                }
+
                 *ret
             }
             _ => {
-                // TODO: Better error reporting, needs ModuleId in Span
-                panic!("ERROR: Cannot call non-function expression");
+                self.ctx.errors.add(
+                    builders::error_at(
+                        "Cannot call non-function expression",
+                        self.module_id,
+                        callee_span,
+                        self.ctx,
+                    ),
+                    self.ctx.enable_printing,
+                );
+                Ty::Error
             }
         }
+    }
+
+    fn check_call_args(
+        &mut self,
+        args: &ThinVec<Expr>,
+        param_tys: &[Ty],
+        recv_ty: Option<&Ty>,
+        is_method_call: bool,
+        call_span: Span,
+    ) -> bool {
+        let arg_tys = if is_method_call && !param_tys.is_empty() {
+            &param_tys[1..]
+        } else {
+            param_tys
+        };
+
+        if args.len() != arg_tys.len() {
+            let expected = arg_tys.len();
+            let err = format!(
+                "expected {} parameter{}, found {}",
+                expected,
+                if expected == 1 { "" } else { "s" },
+                args.len(),
+            );
+            self.ctx.errors.add(
+                builders::error_at(err, self.module_id, call_span, self.ctx),
+                self.ctx.enable_printing,
+            );
+            return false;
+        }
+
+        if let Some(recv_ty) = recv_ty
+            && is_method_call
+            && !param_tys.is_empty()
+        {
+            let first = param_tys.first().expect("method has at least 1 param");
+
+            if let Err(err) = self.unify_with_autoref(first, recv_ty, call_span) {
+                self.icx.errors.push(err);
+            }
+        }
+
+        for (i, arg) in args.iter().enumerate() {
+            let arg_span = arg.span;
+            let arg_ty = self.check_expr(arg);
+            let expected_ty = &arg_tys[i];
+
+            let result = if i == 0 {
+                self.unify_with_autoref(expected_ty, &arg_ty, arg_span)
+            } else {
+                unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id)
+            };
+
+            if let Err(err) = result {
+                self.icx.errors.push(err);
+            }
+        }
+
+        true
     }
 
     fn resolve_method(&self, recv_ty: &Ty, member: Symbol) -> Option<(DefId, MethodKind)> {
@@ -538,8 +624,7 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
         None
     }
 
-    fn check_struct_init(&mut self, def: DefId, fields: &ThinVec<(Symbol, Expr)>) -> Ty {
-        //  FIXME: Check for extra/missing fields
+    fn check_struct_init(&mut self, def: DefId, fields: &ThinVec<(Ident, Expr)>, span: Span) -> Ty {
         let struct_ty = Ty::Adt(def);
         let field_table = self
             .coherence
@@ -547,15 +632,48 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
             .get(&def)
             .cloned()
             .unwrap_or_default();
-        let field_types: Vec<_> = field_table.values().collect();
-        for (i, (_, expr)) in fields.iter().enumerate() {
+
+        let sym_to_span: FxHashMap<Symbol, Span> = fields
+            .iter()
+            .map(|(name, _)| (name.value, name.span))
+            .collect();
+        let init_names: FxHashSet<Symbol> = fields.iter().map(|(name, _)| name.value).collect();
+        let struct_names: FxHashSet<Symbol> = field_table.keys().copied().collect();
+
+        for name in init_names.difference(&struct_names) {
+            self.ctx.errors.add(
+                builders::error_at(
+                    format!("unknown field `{}`", self.ctx.interner.lookup(*name)),
+                    self.module_id,
+                    *sym_to_span.get(name).expect("field exists"),
+                    self.ctx,
+                ),
+                self.ctx.enable_printing,
+            );
+        }
+
+        for name in struct_names.difference(&init_names) {
+            self.ctx.errors.add(
+                builders::error_at(
+                    format!("missing field `{}`", self.ctx.interner.lookup(*name)),
+                    self.module_id,
+                    span,
+                    self.ctx,
+                ),
+                self.ctx.enable_printing,
+            );
+        }
+
+        for (name, expr) in fields {
+            let expr_span = expr.span;
             let expr = self.check_expr(expr);
-            if let Some(field_ty) = field_types.get(i)
-                && let Err(err) = unify(self.icx, field_ty, &expr)
+            if let Some(field_ty) = field_table.get(&name.value)
+                && let Err(err) = unify(self.icx, field_ty, &expr, expr_span, self.module_id)
             {
                 self.icx.errors.push(err);
             }
         }
+
         struct_ty
     }
 
@@ -573,12 +691,13 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
                 } => {
                     let ty = Ty::from_hir(self.icx, ty);
                     self.icx.push_level();
+                    let init_span = init.as_ref().map(|e| e.span).unwrap_or(stmt.span);
                     let bound = init
                         .as_ref()
                         .map(|expr| self.check_expr(expr))
                         .unwrap_or_else(|| ty.clone());
-                    if let Err(err) = unify(self.icx, &ty, &bound) {
-                        self.report_type_error(stmt.span, err);
+                    if let Err(err) = unify(self.icx, &ty, &bound, init_span, self.module_id) {
+                        self.report_type_error(err);
                     }
                     let scope = self.icx.current_level();
                     let parent = scope.saturating_sub(1);
@@ -631,27 +750,42 @@ impl<'a, 'b, 'ctx> BodyChecker<'a, 'b, 'ctx> {
         Ty::Error
     }
 
-    fn report_type_error(&mut self, span: Span, err: UnifyError) {
-        let msg = format_unify_error(err);
+    fn report_type_error(&mut self, err: UnifyError) {
+        let (msg, span, module_id) = format_unify_error(&err, self.resolver, &self.ctx.interner);
         self.ctx.errors.add(
-            builders::error_at(msg, self.module_id, span, self.ctx),
+            builders::error_at(msg, module_id, span, self.ctx),
             self.ctx.enable_printing,
         );
     }
 }
 
-fn format_unify_error(err: UnifyError) -> String {
+fn format_unify_error(
+    err: &UnifyError,
+    resolver: &ResolverOutputs,
+    interner: &crate::interner::Interner,
+) -> (String, Span, ModuleId) {
     match err {
-        UnifyError::Mismatch { expected, found } => format!(
-            "Type mismatch: expected `{}', found `{}`",
-            ty_display(&expected),
-            ty_display(&found)
+        UnifyError::Mismatch {
+            expected,
+            found,
+            span,
+            module_id,
+        } => (
+            format!(
+                "Type mismatch: expected `{}`, found `{}`",
+                ty_display(expected, resolver, interner),
+                ty_display(found, resolver, interner)
+            ),
+            *span,
+            *module_id,
         ),
-        UnifyError::OcurrsCheck(_) => "Recursive type detected".to_string(),
+        UnifyError::OcurrsCheck {
+            span, module_id, ..
+        } => ("Recursive type detected".to_string(), *span, *module_id),
     }
 }
 
-fn ty_display(ty: &Ty) -> String {
+fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &crate::interner::Interner) -> String {
     match ty {
         Ty::Var(_) => "<var>".to_string(),
         Ty::Prim(p) => p.name_str().to_string(),
@@ -662,20 +796,36 @@ fn ty_display(ty: &Ty) -> String {
             } else {
                 ""
             },
-            ty_display(inner)
+            ty_display(inner, resolver, interner)
         ),
-        Ty::Slice(inner) => format!("[]{}", ty_display(inner)),
-        Ty::Array(inner, n) => format!("[{}]{}", n, ty_display(inner)),
+        Ty::Slice(inner) => format!("[]{}", ty_display(inner, resolver, interner)),
+        Ty::Array(inner, n) => format!("[{}]{}", n, ty_display(inner, resolver, interner)),
         Ty::Fn { params, ret } => {
-            let ps: Vec<String> = params.iter().map(ty_display).collect();
-            format!("({}) -> {}", ps.join(", "), ty_display(ret))
+            let ps: Vec<String> = params
+                .iter()
+                .map(|t| ty_display(t, resolver, interner))
+                .collect();
+            format!(
+                "({}) -> {}",
+                ps.join(", "),
+                ty_display(ret, resolver, interner)
+            )
         }
         Ty::Tuple(elements) => {
-            let es: Vec<String> = elements.iter().map(ty_display).collect();
+            let es: Vec<String> = elements
+                .iter()
+                .map(|t| ty_display(t, resolver, interner))
+                .collect();
             format!("({})", es.join(", "))
         }
-        Ty::Adt(d) => format!("Struct#{}", d.0),
-        Ty::Interface(d) => format!("Interface#{}", d.0),
+        Ty::Adt(d) => resolver.defs[d.0 as usize]
+            .name
+            .map(|sym| interner.lookup(sym).to_string())
+            .unwrap_or_else(|| format!("Struct#{}", d.0)),
+        Ty::Interface(d) => resolver.defs[d.0 as usize]
+            .name
+            .map(|sym| interner.lookup(sym).to_string())
+            .unwrap_or_else(|| format!("Interface#{}", d.0)),
         Ty::Never => "!".to_string(),
         Ty::Error => "<error>".to_string(),
     }
