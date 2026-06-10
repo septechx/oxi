@@ -14,7 +14,7 @@ use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
-use crate::typeck::unify::{UnifyError, UnifyResult, unify};
+use crate::typeck::unify::{OrPushErr, UnifyError, UnifyResult, unify};
 use crate::typeck::{CoherenceTable, MemberRes, MethodKind, Typeck};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -89,9 +89,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let var_module = icx.ty_var_module(var);
-            if let Err(err) = unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module) {
-                icx.errors.push(err);
-            }
+            unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module).or_push_err(&mut icx);
         }
         let float_ids = icx.vars_with_source(TyVarSource::FloatLit);
         let f64_ty = Ty::Prim(PrimTy::Float(FloatTy::F64));
@@ -101,9 +99,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let var_module = icx.ty_var_module(var);
-            if let Err(err) = unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module) {
-                icx.errors.push(err);
-            }
+            unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module).or_push_err(&mut icx);
         }
 
         let resolved: FxHashMap<HirId, Ty> = node_types
@@ -367,25 +363,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let right = self.check_expr(right);
         match op {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if let Err(err) = unify(self.icx, &left, &right, left_span, self.module_id) {
-                    self.icx.errors.push(err);
-                }
+                unify(self.icx, &left, &right, left_span, self.module_id).or_push_err(self.icx);
                 Ty::Prim(PrimTy::Bool)
             }
             BinOp::And | BinOp::Or => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &left, left_span, self.module_id) {
-                    self.icx.errors.push(err);
-                };
-                if let Err(err) = unify(self.icx, &bool_ty, &right, right_span, self.module_id) {
-                    self.icx.errors.push(err);
-                }
+                unify(self.icx, &bool_ty, &left, left_span, self.module_id).or_push_err(self.icx);
+                unify(self.icx, &bool_ty, &right, right_span, self.module_id).or_push_err(self.icx);
                 bool_ty
             }
             _ => {
-                if let Err(err) = unify(self.icx, &left, &right, left_span, self.module_id) {
-                    self.icx.errors.push(err);
-                }
+                unify(self.icx, &left, &right, left_span, self.module_id).or_push_err(self.icx);
                 left
             }
         }
@@ -397,9 +385,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         match op {
             PreOp::Not => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &right, right_span, self.module_id) {
-                    self.icx.errors.push(err);
-                }
+                unify(self.icx, &bool_ty, &right, right_span, self.module_id).or_push_err(self.icx);
                 bool_ty
             }
             PreOp::Neg => {
@@ -575,9 +561,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         {
             let first = param_tys.first().expect("method has at least 1 param");
 
-            if let Err(err) = self.unify_with_autoref(first, recv_ty, call_span) {
-                self.icx.errors.push(err);
-            }
+            self.unify_with_autoref(first, recv_ty, call_span)
+                .or_push_err(self.icx);
         }
 
         for (i, arg) in args.iter().enumerate() {
@@ -585,14 +570,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let arg_ty = self.check_expr(arg);
             let expected_ty = &arg_tys[i];
 
-            let result = if i == 0 {
+            if i == 0 {
                 self.unify_with_autoref(expected_ty, &arg_ty, arg_span)
+                    .or_push_err(self.icx);
             } else {
                 unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id)
-            };
-
-            if let Err(err) = result {
-                self.icx.errors.push(err);
+                    .or_push_err(self.icx);
             }
         }
 

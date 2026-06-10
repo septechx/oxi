@@ -22,6 +22,18 @@ pub enum UnifyError {
 
 pub type UnifyResult<T> = Result<T, UnifyError>;
 
+pub trait OrPushErr {
+    fn or_push_err(self, icx: &mut InferCtx);
+}
+
+impl<T> OrPushErr for UnifyResult<T> {
+    fn or_push_err(self, icx: &mut InferCtx) {
+        if let Err(err) = self {
+            icx.errors.push(err);
+        }
+    }
+}
+
 pub fn unify(
     icx: &mut InferCtx,
     a: &Ty,
