@@ -401,10 +401,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 bool_ty
             }
             _ => {
-                if !left.is_numeric() {
+                if !left.is_numeric(self.icx) {
                     self.numerical_error(left_span);
                     return Ty::Error;
-                } else if !right.is_numeric() {
+                } else if !right.is_numeric(self.icx) {
                     self.numerical_error(right_span);
                     return Ty::Error;
                 }
@@ -438,7 +438,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             PreOp::Neg => {
                 let resolved = self.icx.resolve(&right);
-                if !resolved.is_numeric() {
+                if !resolved.is_numeric(self.icx) {
                     self.numerical_error(right_span);
                     return Ty::Error;
                 }

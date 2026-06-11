@@ -3,7 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::Mutability;
 use crate::hir::{self, DefId, PrimTy, QPath, TyKind};
 use crate::resolve::Res;
-use crate::typeck::infctx::{InferCtx, TyVarId};
+use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
 #[derive(Debug, Clone)]
 pub enum Ty {
@@ -62,13 +62,18 @@ impl Ty {
         }
     }
 
-    pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
-            Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_) | PrimTy::Float(_))
-            // Var might later resolve to a numeric type
-            | Ty::Var(_)
-        )
+    pub fn is_numeric(&self, icx: &InferCtx) -> bool {
+        match self {
+            Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_) | PrimTy::Float(_)) => true,
+            Ty::Var(id) => match icx.root_of(*id) {
+                Some(resolved) => resolved.is_numeric(icx),
+                None => matches!(
+                    icx.ty_var_source(*id),
+                    TyVarSource::IntLit | TyVarSource::FloatLit
+                ),
+            },
+            _ => false,
+        }
     }
 
     pub fn into_box(self) -> Box<Self> {

@@ -117,6 +117,10 @@ impl InferCtx {
         self.ty_var(ty_var).root.as_ref()
     }
 
+    pub fn ty_var_source(&self, ty_var: TyVarId) -> &TyVarSource {
+        &self.ty_var(ty_var).source
+    }
+
     pub fn take_errors(&mut self) -> Vec<UnifyError> {
         std::mem::take(&mut self.errors)
     }
