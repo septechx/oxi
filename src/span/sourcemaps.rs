@@ -39,8 +39,13 @@ impl SourceMap {
         };
 
         let line_start = self.line_starts[line_idx] as usize;
-        let column = offset.saturating_sub(line_start);
-        (line_idx + 1, column + 1)
+        let byte_col = offset.saturating_sub(line_start);
+        let line_content = &self.content[line_start..];
+        let char_col = line_content
+            .get(..byte_col)
+            .map(|s| s.chars().count())
+            .unwrap_or(byte_col);
+        (line_idx + 1, char_col + 1)
     }
 
     pub fn get_line(&self, line: usize) -> Option<&str> {
@@ -71,11 +76,24 @@ impl SourceMap {
 
     pub fn span_to_source_location(&self, span: &Span) -> (PathBuf, usize, usize, usize) {
         let (line, column) = self.line_column(span.start());
-        (self.path.clone(), line, column, span.len() as usize)
+        let char_len = self.byte_range_to_char_count(span.start(), span.len());
+        (self.path.clone(), line, column, char_len)
     }
 
     pub fn span_end_location(&self, span: &Span) -> (usize, usize) {
         self.line_column(span.start() + span.len())
+    }
+
+    fn byte_range_to_char_count(&self, byte_offset: u32, byte_len: u32) -> usize {
+        if byte_len == 0 {
+            return 0;
+        }
+        let start = byte_offset as usize;
+        let end = (start + byte_len as usize).min(self.content.len());
+        self.content
+            .get(start..end)
+            .map(|s| s.chars().count())
+            .unwrap_or(byte_len as usize)
     }
 
     pub fn get_lines(&self, start_line: usize, end_line: usize) -> Vec<(usize, &str)> {

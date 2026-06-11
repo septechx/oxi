@@ -81,14 +81,15 @@ impl Lexer {
 
             if !matched {
                 let next_char = remaining.chars().next().unwrap_or('\0');
-                let span = Span::new(current_pos as u32, (current_pos + 1) as u32);
+                let char_len = next_char.len_utf8();
+                let span = Span::new(current_pos as u32, (current_pos + char_len) as u32);
                 tokens.push(Token {
                     kind: TokenKind::Illegal,
                     span,
                     module_id,
                     value: next_char.to_string().into(),
                 });
-                match_len = 1;
+                match_len = char_len;
             }
 
             self.advance(match_len);
