@@ -68,7 +68,8 @@ pub struct Cli {
     #[clap(
         long,
         help = "Qualified path of the module to use as the crate root",
-        default_value = "main"
+        default_value = "main",
+        visible_alias = "entry"
     )]
     pub entrypoint: String,
 
