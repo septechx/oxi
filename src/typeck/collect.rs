@@ -1,5 +1,7 @@
 use thin_vec::ThinVec;
 
+use super::check::format_unify_error;
+use crate::errors::builders;
 use crate::hir::{AssocItemKind, DefId, FnDecl, ItemKind, MaybeOwner, Node, OwnerInfo};
 use crate::interner::Symbol;
 use crate::typeck::Typeck;
@@ -57,10 +59,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 _ => {}
             }
 
-            assert!(
-                icx.errors.is_empty(),
-                "Cannot produce errors in signature collection phase"
-            )
+            let errors = icx.take_errors();
+            for err in errors {
+                let (msg, span, module_id) =
+                    format_unify_error(&err, self.resolver, &self.ctx.interner);
+                self.ctx.errors.add(
+                    builders::error_at(msg, module_id, span, self.ctx),
+                    self.ctx.enable_printing,
+                );
+            }
         }
     }
 

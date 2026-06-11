@@ -133,9 +133,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.member_res.extend(member_res);
 
         let errors = icx.take_errors();
-        let resolver = self.resolver;
         for err in errors {
-            let (msg, span, module_id) = format_unify_error(&err, resolver, &self.ctx.interner);
+            let (msg, span, module_id) =
+                format_unify_error(&err, self.resolver, &self.ctx.interner);
             self.ctx.errors.add(
                 builders::error_at(msg, module_id, span, self.ctx),
                 self.ctx.enable_printing,
@@ -896,7 +896,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 }
 
-fn format_unify_error(
+pub(super) fn format_unify_error(
     err: &UnifyError,
     resolver: &ResolverOutputs,
     interner: &crate::interner::Interner,

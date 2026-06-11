@@ -129,7 +129,7 @@ impl InferCtx {
         match ty {
             Ty::Var(var) => {
                 let level = self.ty_var(*var).level;
-                if level >= bound {
+                if level <= bound {
                     ty.clone()
                 } else {
                     self.ty_var_mut(*var).level = bound;
