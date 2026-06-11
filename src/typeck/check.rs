@@ -399,10 +399,30 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 bool_ty
             }
             _ => {
+                if !left.is_numeric() {
+                    self.numerical_error(left_span);
+                    return Ty::Error;
+                } else if !right.is_numeric() {
+                    self.numerical_error(right_span);
+                    return Ty::Error;
+                }
+
                 unify(self.icx, &left, &right, left_span, self.module_id).or_push_err(self.icx);
                 left
             }
         }
+    }
+
+    fn numerical_error(&mut self, span: Span) {
+        self.ctx.errors.add(
+            builders::error_at(
+                "Cannot call numerical operator on non-numeric operand",
+                self.module_id,
+                span,
+                self.ctx,
+            ),
+            self.ctx.enable_printing,
+        );
     }
 
     fn check_prefix(&mut self, op: PreOp, right: &Expr) -> Ty {
@@ -416,10 +436,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             PreOp::Neg => {
                 let resolved = self.icx.resolve(&right);
-                if let Ty::Prim(PrimTy::Int(_) | PrimTy::Float(_)) = resolved {
-                    return resolved;
+                if !resolved.is_numeric() {
+                    self.numerical_error(right_span);
+                    return Ty::Error;
                 }
-                right
+                resolved
             }
             PreOp::Ref => Ty::Ptr(right.into_box(), Mutability::Constant),
         }

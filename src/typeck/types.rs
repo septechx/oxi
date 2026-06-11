@@ -62,6 +62,15 @@ impl Ty {
         }
     }
 
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_) | PrimTy::Float(_))
+            // Var might later resolve to a numeric type
+            | Ty::Var(_)
+        )
+    }
+
     pub fn into_box(self) -> Box<Self> {
         Box::new(self)
     }
