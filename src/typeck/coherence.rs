@@ -118,13 +118,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             for (name, interface_method) in interface_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
                     let iface_span = self.resolver.defs[interface_method.0 as usize].span;
+                    let iface_module = self
+                        .def_to_module
+                        .get(interface_method)
+                        .copied()
+                        .unwrap_or(impl_module);
                     self.ctx.errors.add(
                         builders::error_at(
                             format!(
                                 "Missing implementation of interface method `{}`",
                                 self.ctx.interner.lookup(*name)
                             ),
-                            impl_module,
+                            iface_module,
                             iface_span,
                             self.ctx,
                         ),

@@ -13,7 +13,7 @@ pub enum UnifyError {
         module_id: ModuleId,
     },
     /// Unification variable contains itself
-    OcurrsCheck {
+    OccursCheck {
         var: TyVarId,
         span: Span,
         module_id: ModuleId,
@@ -128,7 +128,7 @@ fn bind(
         return Ok(());
     }
     if occurs(icx, var, &to) {
-        return Err(UnifyError::OcurrsCheck {
+        return Err(UnifyError::OccursCheck {
             var,
             span,
             module_id,

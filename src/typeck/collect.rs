@@ -29,8 +29,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                     ItemKind::Struct { fields, .. } => {
                         let entry = self.coherence.struct_fields.entry(def_id).or_default();
-                        for field in fields {
-                            entry.insert(field.name, Ty::from_hir(&mut icx, &field.ty));
+                        for (index, field) in fields.iter().enumerate() {
+                            entry.insert(field.name, (Ty::from_hir(&mut icx, &field.ty), index));
                         }
                     }
                     ItemKind::Interface { items, .. } => {
@@ -57,7 +57,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 _ => {}
             }
 
-            assert!(icx.take_errors().is_empty())
+            assert!(
+                icx.errors.is_empty(),
+                "Cannot produce errors in signature collection phase"
+            )
         }
     }
 

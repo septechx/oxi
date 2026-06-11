@@ -327,7 +327,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             ExprKind::As { ty, .. } => Ty::from_hir(self.icx, ty),
             ExprKind::MethodCall { .. } | ExprKind::Field { .. } => {
-                // MethodCall and Field cannot exitst yet
+                // MethodCall and Field cannot exist yet
                 unreachable!()
             }
         }
@@ -670,7 +670,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for (name, expr) in fields {
             let expr_span = expr.span;
             let expr = self.check_expr(expr);
-            if let Some(field_ty) = field_table.get(&name.value)
+            if let Some((field_ty, _)) = field_table.get(&name.value)
                 && let Err(err) = unify(self.icx, field_ty, &expr, expr_span, self.module_id)
             {
                 self.icx.errors.push(err);
@@ -795,15 +795,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let recv_ty = self.icx.resolve(&recv_ty);
         if let Ty::Adt(struct_id) = &recv_ty
             && let Some(fields) = self.coherence.struct_fields.get(struct_id)
-            && let Some(field_ty) = fields.get(&member)
+            && let Some((field_ty, index)) = fields.get(&member)
         {
-            let index = fields
-                .keys()
-                .enumerate()
-                .find_map(|(i, &name)| if name == member { Some(i) } else { None });
-            if let Some(index) = index {
-                self.member_res.insert(hir_id, MemberRes::Field { index });
-            }
+            self.member_res
+                .insert(hir_id, MemberRes::Field { index: *index });
             return field_ty.clone();
         }
         Ty::Error
@@ -838,7 +833,7 @@ fn format_unify_error(
             *span,
             *module_id,
         ),
-        UnifyError::OcurrsCheck {
+        UnifyError::OccursCheck {
             span, module_id, ..
         } => ("Recursive type detected".to_string(), *span, *module_id),
     }

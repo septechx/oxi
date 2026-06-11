@@ -139,7 +139,8 @@ pub struct CoherenceTable {
     /// maps (method def id) -> (owning interface def id)
     pub method_to_interface: FxHashMap<DefId, DefId>,
     /// maps (struct def id) -> (maps (field name) -> (type))
-    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, Ty>>,
+    /// maps (struct def id) -> (maps (field name) -> (type, index))
+    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (Ty, usize)>>,
 }
 
 impl CoherenceTable {

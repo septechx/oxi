@@ -19,6 +19,7 @@ impl ScopeEnv {
     }
 
     pub fn pop(&mut self) {
+        assert!(self.frames.len() > 1, "Cannot pop the root frame");
         self.frames.pop();
     }
 

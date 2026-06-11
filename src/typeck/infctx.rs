@@ -42,7 +42,7 @@ impl InferCtx {
     }
 
     pub fn current_level(&self) -> u32 {
-        *self.levels.last().expect("level exits")
+        *self.levels.last().expect("level exists")
     }
 
     pub fn next_ty_var(&mut self) -> TyVarId {
