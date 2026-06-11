@@ -33,7 +33,7 @@ impl SourceMap {
         }
         if offset == self.content.len() {
             let last_line_index = self.line_starts.len();
-            let last_line_start = *self.line_starts.last().unwrap() as usize;
+            let last_line_start = *self.line_starts.last().expect("has line start") as usize;
             let column = 1 + offset - last_line_start;
             return (last_line_index, column);
         }

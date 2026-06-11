@@ -205,7 +205,7 @@ impl Drop for Test {
     }
 }
 
-pub fn it(f: impl FnOnce(&mut Test)) {
+pub fn with(f: impl FnOnce(&mut Test)) {
     let mut test = Test::new();
     f(&mut test);
 }

@@ -1,11 +1,31 @@
 mod common;
 
-use common::it;
+use common::with;
 use oxic::errors::ErrorLevel;
 
 #[test]
+fn slice_member_access_with_extra() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: usize,
+            }
+
+            fn main() usize {
+                let a = []Foo{Foo { val: 21 }};
+                a.ptr@.val + a.len
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
 fn type_error_on_binary_tail_in_void_fn() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -22,7 +42,7 @@ fn type_error_on_binary_tail_in_void_fn() {
 
 #[test]
 fn no_type_error_on_literal_tail_matching_return() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -37,7 +57,7 @@ fn no_type_error_on_literal_tail_matching_return() {
 
 #[test]
 fn can_compile_nested_block_with_implicit_returns() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -56,7 +76,7 @@ fn can_compile_nested_block_with_implicit_returns() {
 
 #[test]
 fn can_compile_simple_nested_block() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -75,7 +95,7 @@ fn can_compile_simple_nested_block() {
 
 #[test]
 fn duplicate_struct_property_fails() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -93,7 +113,7 @@ fn duplicate_struct_property_fails() {
 
 #[test]
 fn can_compile_program_with_shebang() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -107,14 +127,14 @@ fn can_compile_program_with_shebang() {
 
 #[test]
 fn can_compile_empty_program() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source("main.oxi", "").succeeds(true);
     })
 }
 
 #[test]
 fn slice_literals() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -129,12 +149,12 @@ fn slice_literals() {
 
 #[test]
 fn test_attribute_works() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[test]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 42;
                 }
                 "#,
@@ -146,12 +166,12 @@ fn test_attribute_works() {
 
 #[test]
 fn attribute_with_arguments() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[foo(bar, baz)]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 10;
                 }
                 "#,
@@ -163,13 +183,13 @@ fn attribute_with_arguments() {
 
 #[test]
 fn multiple_attributes() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[test]
                 #[foo]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 5;
                 }
                 "#,
@@ -181,11 +201,11 @@ fn multiple_attributes() {
 
 #[test]
 fn main_fn_declaration() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             return 0;
         }
     "#,
@@ -196,11 +216,11 @@ fn main_fn_declaration() {
 
 #[test]
 fn variable_declaration() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             let a = 2;
             return a;
         }
@@ -212,11 +232,11 @@ fn variable_declaration() {
 
 #[test]
 fn multiple_variables_and_addition() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             let a = 1;
             let b = 2;
             let c = a + b;
@@ -230,7 +250,7 @@ fn multiple_variables_and_addition() {
 
 #[test]
 fn struct_declaration_and_initialization() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -253,11 +273,11 @@ fn struct_declaration_and_initialization() {
 
 #[test]
 fn string_literals_and_slice_operations() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() i64 {
+        pub fn main() usize {
             let s = "Hello world!";
             let ptr = s.ptr;
             let len = s.len;
@@ -271,7 +291,7 @@ fn string_literals_and_slice_operations() {
 
 #[test]
 fn struct_with_methods() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -298,7 +318,7 @@ fn struct_with_methods() {
 
 #[test]
 fn main_function_return_void() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -311,7 +331,7 @@ fn main_function_return_void() {
 
 #[test]
 fn integer_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -328,7 +348,7 @@ fn integer_literals() {
 
 #[test]
 fn boolean_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -344,7 +364,7 @@ fn boolean_literals() {
 
 #[test]
 fn char_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -360,11 +380,11 @@ fn char_literals() {
 
 #[test]
 fn string_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
-            fn main() isize {
+            fn main() usize {
                 let s: []u8 = "hello";
                 return s.len;
             }
@@ -376,7 +396,7 @@ fn string_literals() {
 
 #[test]
 fn struct_shorthand_initialization() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -402,7 +422,7 @@ fn struct_shorthand_initialization() {
 
 #[test]
 fn float_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -419,7 +439,7 @@ fn float_literals() {
 
 #[test]
 fn mod_declaration_file_based() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -444,7 +464,7 @@ fn mod_declaration_file_based() {
 
 #[test]
 fn mod_directory_convention() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -469,7 +489,7 @@ fn mod_directory_convention() {
 
 #[test]
 fn mod_inline() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -490,7 +510,7 @@ fn mod_inline() {
 
 #[test]
 fn mod_nested_file_based() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -525,7 +545,7 @@ fn mod_nested_file_based() {
 
 #[test]
 fn mod_nested_with_inline_child() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -552,7 +572,7 @@ fn mod_nested_with_inline_child() {
 
 #[test]
 fn mod_unmatched_declaration_fails() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -569,7 +589,7 @@ fn mod_unmatched_declaration_fails() {
 
 #[test]
 fn mod_crate_path_root() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -594,7 +614,7 @@ fn mod_crate_path_root() {
 
 #[test]
 fn method_call_autoborrow_self_ref() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -618,7 +638,7 @@ fn method_call_autoborrow_self_ref() {
 
 #[test]
 fn pipe_call_autoborrow_first_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -645,7 +665,7 @@ fn pipe_call_autoborrow_first_arg() {
 
 #[test]
 fn pipe_call_explicit_ref_first_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -672,7 +692,7 @@ fn pipe_call_explicit_ref_first_arg() {
 
 #[test]
 fn function_call_no_autoborrow_first_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -692,7 +712,7 @@ fn function_call_no_autoborrow_first_arg() {
 
 #[test]
 fn function_call_explicit_ref_first_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -711,7 +731,7 @@ fn function_call_explicit_ref_first_arg() {
 
 #[test]
 fn method_call_value_receiver_unchanged() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -735,7 +755,7 @@ fn method_call_value_receiver_unchanged() {
 
 #[test]
 fn method_call_no_autoborrow_explicit_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -760,7 +780,7 @@ fn method_call_no_autoborrow_explicit_arg() {
 
 #[test]
 fn method_call_explicit_ref_arg() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"

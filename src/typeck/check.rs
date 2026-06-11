@@ -323,7 +323,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 Ty::Prim(PrimTy::Void)
             }
             ExprKind::MemberAccess { base, member } => {
-                self.check_member_access(*member, base, hir_id)
+                self.check_member_access(*member, base, expr_span, hir_id)
             }
             ExprKind::As { ty, .. } => Ty::from_hir(self.icx, ty),
             ExprKind::MethodCall { .. } | ExprKind::Field { .. } => {
@@ -790,7 +790,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             .unwrap_or_else(|| Ty::Prim(PrimTy::Void))
     }
 
-    fn check_member_access(&mut self, member: Symbol, base: &Expr, hir_id: HirId) -> Ty {
+    fn check_member_access(
+        &mut self,
+        member: Symbol,
+        base: &Expr,
+        expr_span: Span,
+        hir_id: HirId,
+    ) -> Ty {
+        let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
         let recv_ty = self.icx.resolve(&recv_ty);
         if let Ty::Adt(struct_id) = &recv_ty
@@ -800,6 +807,61 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             self.member_res
                 .insert(hir_id, MemberRes::Field { index: *index });
             return field_ty.clone();
+        }
+        match recv_ty {
+            Ty::Adt(_) => {
+                self.ctx.errors.add(
+                    builders::error_at(
+                        format!("unknown field `{}`", self.ctx.interner.lookup(member)),
+                        self.module_id,
+                        member_span,
+                        self.ctx,
+                    ),
+                    self.ctx.enable_printing,
+                );
+            }
+            Ty::Ptr(inner, _) => {
+                if let Ty::Adt(struct_id) = inner.as_ref()
+                    && let Some(fields) = self.coherence.struct_fields.get(struct_id)
+                    && let Some((field_ty, index)) = fields.get(&member)
+                {
+                    self.member_res
+                        .insert(hir_id, MemberRes::Field { index: *index });
+                    return field_ty.clone();
+                }
+            }
+            Ty::Slice(elem) => {
+                let interner = &self.ctx.interner;
+                if interner.lookup(member) == "len" {
+                    return Ty::Prim(PrimTy::Uint(UintTy::Usize));
+                }
+                if interner.lookup(member) == "ptr" {
+                    return Ty::Ptr(elem.clone(), Mutability::Constant);
+                }
+                self.ctx.errors.add(
+                    builders::error_at(
+                        format!("unknown field `{}` of slice", interner.lookup(member)),
+                        self.module_id,
+                        member_span,
+                        self.ctx,
+                    ),
+                    self.ctx.enable_printing,
+                );
+            }
+            _ => {
+                self.ctx.errors.add(
+                    builders::error_at(
+                        format!(
+                            "cannot access field `{}` on type which has no fields",
+                            self.ctx.interner.lookup(member)
+                        ),
+                        self.module_id,
+                        member_span,
+                        self.ctx,
+                    ),
+                    self.ctx.enable_printing,
+                );
+            }
         }
         Ty::Error
     }
