@@ -852,6 +852,30 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .insert(hir_id, MemberRes::Field { index: *index });
                     return field_ty.clone();
                 }
+                if let Ty::Adt(_) = inner.as_ref() {
+                    self.ctx.errors.add(
+                        builders::error_at(
+                            format!("unknown field `{}`", self.ctx.interner.lookup(member)),
+                            self.module_id,
+                            member_span,
+                            self.ctx,
+                        ),
+                        self.ctx.enable_printing,
+                    );
+                } else {
+                    self.ctx.errors.add(
+                        builders::error_at(
+                            format!(
+                                "cannot access field `{}` on type which has no fields",
+                                self.ctx.interner.lookup(member)
+                            ),
+                            self.module_id,
+                            member_span,
+                            self.ctx,
+                        ),
+                        self.ctx.enable_printing,
+                    );
+                }
             }
             Ty::Slice(elem) => {
                 let interner = &self.ctx.interner;

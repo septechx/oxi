@@ -819,6 +819,46 @@ fn valid_cast_expr() {
 }
 
 #[test]
+fn pointer_to_struct_unknown_field() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                let p = &foo;
+                return p.nonexistent;
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn pointer_to_primitive_field_access() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn foo(x: &i32) i32 {
+                return x.bar;
+            }
+
+            pub fn main() i32 {
+                return foo(&5);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
 fn invalid_cast_operand_type_error() {
     with(|ctx| {
         ctx.add_source(
