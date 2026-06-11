@@ -22,17 +22,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             match &info.nodes.nodes[0].node {
                 Node::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
-                        let ty = self.fn_ty(&mut icx, &fun.decl);
+                        let ty = self.fn_ty(&mut icx, &fun.decl).reject_vars();
                         self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Const { ty, .. } => {
-                        let ty = Ty::from_hir(&mut icx, ty);
+                        let ty = Ty::from_hir(&mut icx, ty).reject_vars();
                         self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Struct { fields, .. } => {
                         let entry = self.coherence.struct_fields.entry(def_id).or_default();
                         for (index, field) in fields.iter().enumerate() {
-                            entry.insert(field.name, (Ty::from_hir(&mut icx, &field.ty), index));
+                            entry.insert(
+                                field.name,
+                                (Ty::from_hir(&mut icx, &field.ty).reject_vars(), index),
+                            );
                         }
                     }
                     ItemKind::Interface { items, .. } => {
@@ -42,7 +45,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 && let Node::AssocItem(_) = &method_info.nodes.nodes[0].node
                                 && let Some(name) = self.resolver.defs[item.0 as usize].name
                             {
-                                let ty = self.fn_ty_for_owner(&mut icx, method_info);
+                                let ty = self.fn_ty_for_owner(&mut icx, method_info).reject_vars();
                                 self.item_schemes.insert(item, Scheme::monomorphic(ty));
                                 methods.push((name, item));
                             }
@@ -53,7 +56,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
-                    let ty = self.fn_ty(&mut icx, &fun.decl);
+                    let ty = self.fn_ty(&mut icx, &fun.decl).reject_vars();
                     self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                 }
                 _ => {}

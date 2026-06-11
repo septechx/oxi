@@ -74,6 +74,23 @@ impl Ty {
     pub fn into_box(self) -> Box<Self> {
         Box::new(self)
     }
+
+    pub fn reject_vars(self) -> Self {
+        match self {
+            Ty::Var(_) => Ty::Error,
+            Ty::Ptr(inner, m) => Ty::Ptr(Box::new(inner.reject_vars()), m),
+            Ty::Slice(inner) => Ty::Slice(Box::new(inner.reject_vars())),
+            Ty::Array(inner, size) => Ty::Array(Box::new(inner.reject_vars()), size),
+            Ty::Fn { params, ret } => Ty::Fn {
+                params: params.into_iter().map(|p| p.reject_vars()).collect(),
+                ret: Box::new(ret.reject_vars()),
+            },
+            Ty::Tuple(elements) => {
+                Ty::Tuple(elements.into_iter().map(|e| e.reject_vars()).collect())
+            }
+            other => other,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

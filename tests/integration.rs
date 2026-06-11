@@ -801,3 +801,34 @@ fn method_call_explicit_ref_arg() {
         .succeeds(true);
     })
 }
+
+#[test]
+fn valid_cast_expr() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let x = 1 as i32;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn invalid_cast_operand_type_error() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                return (1 + true) as i32;
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}

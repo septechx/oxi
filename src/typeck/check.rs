@@ -324,7 +324,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::MemberAccess { base, member } => {
                 self.check_member_access(*member, base, expr_span, hir_id)
             }
-            ExprKind::As { ty, .. } => Ty::from_hir(self.icx, ty),
+            ExprKind::As { expr, ty } => {
+                self.check_expr(expr);
+                Ty::from_hir(self.icx, ty)
+            }
             ExprKind::MethodCall { .. } | ExprKind::Field { .. } => {
                 // MethodCall and Field cannot exist yet
                 unreachable!()
@@ -545,7 +548,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         params: &ThinVec<Expr>,
     ) -> Ty {
         let callee_ty = self.check_expr(callee);
-
+        let callee_ty = self.icx.resolve(&callee_ty);
         match callee_ty {
             Ty::Fn {
                 params: param_tys,
