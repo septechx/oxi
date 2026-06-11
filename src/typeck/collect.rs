@@ -58,16 +58,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
                 _ => {}
             }
+        }
 
-            let errors = icx.take_errors();
-            for err in errors {
-                let (msg, span, module_id) =
-                    format_unify_error(&err, self.resolver, &self.ctx.interner);
-                self.ctx.errors.add(
-                    builders::error_at(msg, module_id, span, self.ctx),
-                    self.ctx.enable_printing,
-                );
-            }
+        for err in icx.errors {
+            let (msg, span, module_id) =
+                format_unify_error(&err, self.resolver, &self.ctx.interner);
+            self.ctx.errors.add(
+                builders::error_at(msg, module_id, span, self.ctx),
+                self.ctx.enable_printing,
+            );
         }
     }
 

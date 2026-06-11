@@ -132,8 +132,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.node_types.extend(resolved);
         self.member_res.extend(member_res);
 
-        let errors = icx.take_errors();
-        for err in errors {
+        for err in icx.errors {
             let (msg, span, module_id) =
                 format_unify_error(&err, self.resolver, &self.ctx.interner);
             self.ctx.errors.add(
