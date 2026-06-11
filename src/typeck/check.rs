@@ -596,13 +596,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let arg_ty = self.check_expr(arg);
             let expected_ty = &arg_tys[i];
 
-            if i == 0 {
-                self.unify_with_autoref(expected_ty, &arg_ty, arg_span)
-                    .or_push_err(self.icx);
-            } else {
-                unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id)
-                    .or_push_err(self.icx);
-            }
+            unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id).or_push_err(self.icx);
         }
 
         true

@@ -639,12 +639,39 @@ fn pipe_call_autoborrow_first_arg() {
             }
             "#,
         )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn pipe_call_explicit_ref_first_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn new(val: i32) Self {
+                    return Self { val };
+                }
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                return &Foo::new(3) |> Foo::get_val;
+            }
+            "#,
+        )
         .succeeds(true);
     })
 }
 
 #[test]
-fn function_call_autoborrow_first_arg() {
+fn function_call_no_autoborrow_first_arg() {
     it(|ctx| {
         ctx.add_source(
             "main.oxi",
@@ -654,7 +681,27 @@ fn function_call_autoborrow_first_arg() {
             }
 
             pub fn main() i32 {
-                return id(5, 6);
+                let x: i32 = 5;
+                return id(x, 6);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn function_call_explicit_ref_first_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            fn id(x: &i32, y: i32) i32 {
+                return y;
+            }
+
+            pub fn main() i32 {
+                return id(&5, 6);
             }
             "#,
         )
@@ -679,6 +726,55 @@ fn method_call_value_receiver_unchanged() {
             pub fn main() i32 {
                 let foo = Foo { val: 9 };
                 return foo.get();
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_no_autoborrow_explicit_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn inspect(self: &Self, x: &i32) i32 {
+                    return self.val + x@;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                let arg: i32 = 5;
+                return foo.inspect(arg);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn method_call_explicit_ref_arg() {
+    it(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn inspect(self: &Self, x: &i32) i32 {
+                    return self.val + x@;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                return foo.inspect(&5);
             }
             "#,
         )

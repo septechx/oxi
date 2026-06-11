@@ -101,14 +101,13 @@ impl CodeWidget {
 
         let source_lines = crate::CTX.with(|ctx| {
             let maps = &ctx.borrow().source_maps;
-            maps.get_source(module_id)
-                .map(|sm| {
-                    sm.get_lines(start_line, end_line)
-                        .into_iter()
-                        .map(|(ln, s)| (ln, s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default()
+            let sm = maps
+                .get_source(module_id)
+                .expect("source map for module_id must exist");
+            sm.get_lines(start_line, end_line)
+                .into_iter()
+                .map(|(ln, s)| (ln, s.to_string()))
+                .collect()
         });
 
         Ok(Self {

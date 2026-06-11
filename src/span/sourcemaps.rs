@@ -28,8 +28,14 @@ impl SourceMap {
 
     pub fn line_column(&self, byte_offset: u32) -> (usize, usize) {
         let offset = byte_offset as usize;
-        if offset >= self.content.len() {
+        if offset > self.content.len() {
             return (self.line_starts.len(), 0);
+        }
+        if offset == self.content.len() {
+            let last_line_index = self.line_starts.len();
+            let last_line_start = *self.line_starts.last().unwrap() as usize;
+            let column = 1 + offset - last_line_start;
+            return (last_line_index, column);
         }
 
         let result = self.line_starts.binary_search(&(offset as u32));
@@ -180,5 +186,16 @@ mod tests {
         assert_eq!(line, 1);
         assert_eq!(column, 1);
         assert_eq!(length, 5);
+    }
+
+    #[test]
+    fn test_span_end_location_at_eof() {
+        let content = "first line\nsecond line";
+        assert_eq!(content.len(), 22);
+        let sm = SourceMap::new(content.to_string(), PathBuf::from("test.oxi"));
+        let span = Span::new(0, 22);
+        let (line, column) = sm.span_end_location(&span);
+        assert_eq!(line, 2, "EOF should be on last line");
+        assert_eq!(column, 12, "EOF column should be len of 'second line' + 1");
     }
 }
