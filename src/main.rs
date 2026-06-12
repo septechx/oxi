@@ -13,6 +13,7 @@ pub mod lexer;
 pub mod macros;
 pub mod parser;
 pub mod resolve;
+pub mod scope;
 pub mod span;
 pub mod typeck;
 pub mod utils;
