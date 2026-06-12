@@ -1,11 +1,63 @@
 mod common;
 
-use common::it;
+use common::with;
 use oxic::errors::ErrorLevel;
 
 #[test]
+fn slice_member_access_with_extra() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: usize,
+            }
+
+            fn main() usize {
+                let a = []Foo{Foo { val: 21 }};
+                a.ptr@.val + a.len
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn type_error_on_binary_tail_in_void_fn() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                loop {
+                    break 12;
+                } + true
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn no_type_error_on_literal_tail_matching_return() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
 fn can_compile_nested_block_with_implicit_returns() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -24,7 +76,7 @@ fn can_compile_nested_block_with_implicit_returns() {
 
 #[test]
 fn can_compile_simple_nested_block() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -43,7 +95,7 @@ fn can_compile_simple_nested_block() {
 
 #[test]
 fn duplicate_struct_property_fails() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -61,7 +113,7 @@ fn duplicate_struct_property_fails() {
 
 #[test]
 fn can_compile_program_with_shebang() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -75,14 +127,14 @@ fn can_compile_program_with_shebang() {
 
 #[test]
 fn can_compile_empty_program() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source("main.oxi", "").succeeds(true);
     })
 }
 
 #[test]
 fn slice_literals() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -97,12 +149,12 @@ fn slice_literals() {
 
 #[test]
 fn test_attribute_works() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[test]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 42;
                 }
                 "#,
@@ -114,12 +166,12 @@ fn test_attribute_works() {
 
 #[test]
 fn attribute_with_arguments() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[foo(bar, baz)]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 10;
                 }
                 "#,
@@ -131,13 +183,13 @@ fn attribute_with_arguments() {
 
 #[test]
 fn multiple_attributes() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
                 #[test]
                 #[foo]
-                pub fn main() isize {
+                pub fn main() usize {
                     return 5;
                 }
                 "#,
@@ -149,11 +201,11 @@ fn multiple_attributes() {
 
 #[test]
 fn main_fn_declaration() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             return 0;
         }
     "#,
@@ -164,11 +216,11 @@ fn main_fn_declaration() {
 
 #[test]
 fn variable_declaration() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             let a = 2;
             return a;
         }
@@ -180,11 +232,11 @@ fn variable_declaration() {
 
 #[test]
 fn multiple_variables_and_addition() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() isize {
+        pub fn main() usize {
             let a = 1;
             let b = 2;
             let c = a + b;
@@ -198,7 +250,7 @@ fn multiple_variables_and_addition() {
 
 #[test]
 fn struct_declaration_and_initialization() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -206,7 +258,7 @@ fn struct_declaration_and_initialization() {
             a: i32,
         }
 
-        pub fn main() isize {
+        pub fn main() i32 {
             let foo = Foo {
                 a: 1,
             };
@@ -221,11 +273,11 @@ fn struct_declaration_and_initialization() {
 
 #[test]
 fn string_literals_and_slice_operations() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() i64 {
+        pub fn main() usize {
             let s = "Hello world!";
             let ptr = s.ptr;
             let len = s.len;
@@ -239,7 +291,7 @@ fn string_literals_and_slice_operations() {
 
 #[test]
 fn struct_with_methods() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -251,12 +303,12 @@ fn struct_with_methods() {
                 }
             }
 
-            pub fn main() isize {
+            pub fn main() i32 {
                 let foo = Foo {
                     a: 1,
                 };
 
-                return foo.a - foo.bar(2, 1);
+                return foo.a - Foo::bar(2, 1);
             }
         "#,
         )
@@ -266,7 +318,7 @@ fn struct_with_methods() {
 
 #[test]
 fn main_function_return_void() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -279,7 +331,7 @@ fn main_function_return_void() {
 
 #[test]
 fn integer_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -296,7 +348,7 @@ fn integer_literals() {
 
 #[test]
 fn boolean_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -312,7 +364,7 @@ fn boolean_literals() {
 
 #[test]
 fn char_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -328,11 +380,11 @@ fn char_literals() {
 
 #[test]
 fn string_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
-            fn main() isize {
+            fn main() usize {
                 let s: []u8 = "hello";
                 return s.len;
             }
@@ -344,7 +396,7 @@ fn string_literals() {
 
 #[test]
 fn struct_shorthand_initialization() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -353,7 +405,7 @@ fn struct_shorthand_initialization() {
                 y: i32,
             }
 
-            pub fn main() isize {
+            pub fn main() i32 {
                 let x = 10;
                 let foo = Foo {
                     x,
@@ -370,7 +422,7 @@ fn struct_shorthand_initialization() {
 
 #[test]
 fn float_literals() {
-    it(|t| {
+    with(|t| {
         t.add_source(
             "main.oxi",
             r#"
@@ -387,7 +439,7 @@ fn float_literals() {
 
 #[test]
 fn mod_declaration_file_based() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -412,7 +464,7 @@ fn mod_declaration_file_based() {
 
 #[test]
 fn mod_directory_convention() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -437,7 +489,7 @@ fn mod_directory_convention() {
 
 #[test]
 fn mod_inline() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -458,7 +510,7 @@ fn mod_inline() {
 
 #[test]
 fn mod_nested_file_based() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -493,7 +545,7 @@ fn mod_nested_file_based() {
 
 #[test]
 fn mod_nested_with_inline_child() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -520,7 +572,7 @@ fn mod_nested_with_inline_child() {
 
 #[test]
 fn mod_unmatched_declaration_fails() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -537,7 +589,7 @@ fn mod_unmatched_declaration_fails() {
 
 #[test]
 fn mod_crate_path_root() {
-    it(|ctx| {
+    with(|ctx| {
         ctx.add_source(
             "main.oxi",
             r#"
@@ -557,5 +609,266 @@ fn mod_crate_path_root() {
             "#,
         )
         .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_autoborrow_self_ref() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 7 };
+                return foo.get_val();
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn pipe_call_autoborrow_first_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn new(val: i32) Self {
+                    return Self { val };
+                }
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                return Foo::new(3) |> Foo::get_val;
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn pipe_call_explicit_ref_first_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn new(val: i32) Self {
+                    return Self { val };
+                }
+
+                pub fn get_val(self: &Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                return &Foo::new(3) |> Foo::get_val;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn function_call_no_autoborrow_first_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            fn id(x: &i32, y: i32) i32 {
+                return y;
+            }
+
+            pub fn main() i32 {
+                let x: i32 = 5;
+                return id(x, 6);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn function_call_explicit_ref_first_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            fn id(x: &i32, y: i32) i32 {
+                return y;
+            }
+
+            pub fn main() i32 {
+                return id(&5, 6);
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_value_receiver_unchanged() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn get(self: Self) i32 {
+                    return self.val;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 9 };
+                return foo.get();
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn method_call_no_autoborrow_explicit_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn inspect(self: &Self, x: &i32) i32 {
+                    return self.val + x@;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                let arg: i32 = 5;
+                return foo.inspect(arg);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn method_call_explicit_ref_arg() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+
+                pub fn inspect(self: &Self, x: &i32) i32 {
+                    return self.val + x@;
+                }
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                return foo.inspect(&5);
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn valid_cast_expr() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let x = 1 as i32;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn pointer_to_struct_unknown_field() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            struct Foo {
+                val: i32,
+            }
+
+            pub fn main() i32 {
+                let foo = Foo { val: 3 };
+                let p = &foo;
+                return p.nonexistent;
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn pointer_to_primitive_field_access() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn foo(x: &i32) i32 {
+                return x.bar;
+            }
+
+            pub fn main() i32 {
+                return foo(&5);
+            }
+            "#,
+        )
+        .succeeds(false);
+    })
+}
+
+#[test]
+fn invalid_cast_operand_type_error() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                return (1 + true) as i32;
+            }
+            "#,
+        )
+        .succeeds(false);
     })
 }

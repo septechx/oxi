@@ -1,5 +1,3 @@
-#[macro_use]
-mod macros;
 mod def;
 mod index;
 mod lower;
@@ -13,13 +11,14 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ast, NodeId, NodeMap};
 use crate::context::Ctx;
-use crate::hir::owner::{Crate, HirId};
 use crate::interner::{Symbol, sym};
 use crate::resolve::{ModuleTree, ResolverOutputs};
 
 pub use def::*;
+pub use owner::{Crate, HirId, MaybeOwner, OwnerInfo};
+pub use types::*;
 
-impl_ids!(ModuleId, DefId, OwnerId, ItemLocalId);
+crate::newtype_ids!(ModuleId, DefId, OwnerId, ItemLocalId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BodyId(pub ItemLocalId);
@@ -129,6 +128,29 @@ impl PrimTy {
             PrimTy::Float(FloatTy::F128) => sym::f128,
             PrimTy::Bool => sym::bool,
             PrimTy::Void => sym::void,
+        }
+    }
+
+    pub fn name_str(self) -> &'static str {
+        match self {
+            PrimTy::Int(IntTy::I8) => "i8",
+            PrimTy::Int(IntTy::I16) => "i16",
+            PrimTy::Int(IntTy::I32) => "i32",
+            PrimTy::Int(IntTy::I64) => "i64",
+            PrimTy::Int(IntTy::I128) => "i128",
+            PrimTy::Int(IntTy::Isize) => "isize",
+            PrimTy::Uint(UintTy::U8) => "u8",
+            PrimTy::Uint(UintTy::U16) => "u16",
+            PrimTy::Uint(UintTy::U32) => "u32",
+            PrimTy::Uint(UintTy::U64) => "u64",
+            PrimTy::Uint(UintTy::U128) => "u128",
+            PrimTy::Uint(UintTy::Usize) => "usize",
+            PrimTy::Float(FloatTy::F16) => "f16",
+            PrimTy::Float(FloatTy::F32) => "f32",
+            PrimTy::Float(FloatTy::F64) => "f64",
+            PrimTy::Float(FloatTy::F128) => "f128",
+            PrimTy::Bool => "bool",
+            PrimTy::Void => "void",
         }
     }
 }

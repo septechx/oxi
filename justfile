@@ -1,5 +1,7 @@
 export RUSTFLAGS := "-Clinker=clang -Clink-args=--ld-path=mold"
 
+precommit: lint test
+
 build MODE="release":
     cargo build {{ if MODE == "release" { "--release" } else { "" } }}
 

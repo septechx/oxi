@@ -2,9 +2,11 @@ use oxic::{
     ast::validate::validate_ast,
     context::{with_ctx, with_ctx_mut},
     errors::ErrorLevel,
+    hir::AstLoweringContext,
     lexer::tokenize,
     parser::parse,
     resolve::{Resolver, build_module_tree},
+    typeck::typeck_crate,
 };
 use std::{
     fs,
@@ -171,22 +173,40 @@ impl Drop for Test {
         }
 
         // Phase 3: Run name resolution
-        with_ctx_mut(|ctx| {
+        let resolver = with_ctx_mut(|ctx| {
             let mut resolver = Resolver::new(&asts, &module_tree, ctx);
             resolver.resolve();
+            resolver.into_resolver_outputs()
         });
 
+        if self.handle_error_check() {
+            return;
+        }
+
+        // Phase 4: Lower to HIR
+        let mut hir_crate = with_ctx_mut(|ctx| {
+            let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
+            lowering_ctx.lower_crate()
+        });
+
+        if self.handle_error_check() {
+            return;
+        }
+
+        // Phase 5: Type check
+        let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
         if self.should_succeed == Some(false) {
             if !self.check_for_errors() {
-                panic!("Resolution succeeded but was expected to fail");
+                panic!("Expected a type error but none occurred");
             }
-        } else {
-            self.handle_error_check();
+            return;
         }
+        self.handle_error_check();
+        typeck.assert_no_errors();
     }
 }
 
-pub fn it(f: impl FnOnce(&mut Test)) {
+pub fn with(f: impl FnOnce(&mut Test)) {
     let mut test = Test::new();
     f(&mut test);
 }

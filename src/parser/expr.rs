@@ -48,7 +48,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
             .unwrap_or_else(|| unexpected_token(token_kind.clone()));
 
         left = led_fn(parser, left.clone(), current_bp)?;
-        end_span = Span::new(start_span.start(), parser.current_token().span.end());
+        end_span = left.span;
     }
 
     left.span = Span::new(start_span.start(), end_span.end());
@@ -147,7 +147,7 @@ pub fn parse_postfix_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) ->
 
 pub fn parse_prefix_expr(parser: &mut Parser) -> Result<Expr> {
     let operator = parser.advance();
-    let right = parse_expr(parser, BindingPower::DefaultBp)?;
+    let right = parse_expr(parser, BindingPower::Unary)?;
 
     let span = Span::new(operator.span.start(), right.span.end());
     Ok(Expr {

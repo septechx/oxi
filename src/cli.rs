@@ -56,6 +56,25 @@ impl FromStr for ColorChoice {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum EmitOption {
+    Asm,
+    LlvmIr,
+    None,
+}
+
+impl FromStr for EmitOption {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "asm" => Ok(EmitOption::Asm),
+            "llvm-ir" => Ok(EmitOption::LlvmIr),
+            "none" => Ok(EmitOption::None),
+            other => Err(anyhow!("invalid emit option: {}", other)),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None, arg_required_else_help(true))]
 pub struct Cli {
@@ -68,15 +87,17 @@ pub struct Cli {
     #[clap(
         long,
         help = "Qualified path of the module to use as the crate root",
-        default_value = "main"
+        default_value = "main",
+        visible_alias = "entry"
     )]
     pub entrypoint: String,
 
-    #[clap(long, help = "Emit LLVM IR")]
-    pub emit_llvm: bool,
-
-    #[clap(long, help = "Emit assembly")]
-    pub emit_asm: bool,
+    #[clap(
+        long,
+        help = "Output IR [possible values: llvm-ir, asm, none]",
+        default_value = "none"
+    )]
+    pub emit_ir: EmitOption,
 
     #[clap(long, help = "Print AST")]
     pub print_ast: bool,

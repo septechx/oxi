@@ -72,36 +72,51 @@ pub enum HighlightType {
 
 #[derive(Debug, Clone)]
 pub struct CodeWidget {
-    line: usize,
-    column: usize,
-    length: usize,
-    code: Box<str>,
+    span_start: (usize, usize),
+    span_end: (usize, usize),
+    span_len: usize,
+    source_lines: Vec<(usize, String)>,
+    message: Option<Box<str>>,
     highlight_type: HighlightType,
 }
 
 impl CodeWidget {
     pub fn new(span: Span, module_id: ModuleId, highlight_type: HighlightType) -> Result<Self> {
-        let (_, line, column, length) = crate::CTX.with(|ctx| {
+        let (start_line, start_col, span_len) = crate::CTX.with(|ctx| {
             let maps = &ctx.borrow().source_maps;
-            maps.get_source(module_id)
-                .map(|sm| sm.span_to_source_location(&span))
-                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
+            let sm = maps
+                .get_source(module_id)
+                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
+            let (_, line, column, length) = sm.span_to_source_location(&span);
+            Ok::<_, anyhow::Error>((line, column, length))
         })?;
 
-        let code = crate::CTX.with(|ctx| {
+        let (end_line, end_col) = crate::CTX.with(|ctx| {
             let maps = &ctx.borrow().source_maps;
-            maps.get_source(module_id)
-                .and_then(|sm| sm.get_line(line))
-                .unwrap_or("<failed to get line>")
-                .to_string()
+            let sm = maps
+                .get_source(module_id)
+                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
+            Ok::<_, anyhow::Error>(sm.span_end_location(&span))
+        })?;
+
+        let source_lines = crate::CTX.with(|ctx| {
+            let maps = &ctx.borrow().source_maps;
+            let sm = maps
+                .get_source(module_id)
+                .expect("source map for module_id must exist");
+            sm.get_lines(start_line, end_line)
+                .into_iter()
+                .map(|(ln, s)| (ln, s.to_string()))
+                .collect()
         });
 
         Ok(Self {
-            line,
-            column,
-            length,
+            span_start: (start_line, start_col),
+            span_end: (end_line, end_col),
+            span_len,
+            source_lines,
+            message: None,
             highlight_type,
-            code: code.into(),
         })
     }
 
@@ -111,42 +126,50 @@ impl CodeWidget {
         highlight_type: HighlightType,
         ctx: &Ctx,
     ) -> Result<Self> {
-        let (_, line, column, length) = ctx
+        let sm = ctx
             .source_maps
             .get_source(module_id)
-            .map(|sm| sm.span_to_source_location(&span))
             .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
-
-        let code = ctx
-            .source_maps
-            .get_source(module_id)
-            .and_then(|sm| sm.get_line(line))
-            .unwrap_or("<failed to get line>")
-            .to_string();
+        let (_, start_line, start_col, span_len) = sm.span_to_source_location(&span);
+        let (end_line, end_col) = sm.span_end_location(&span);
+        let source_lines = sm
+            .get_lines(start_line, end_line)
+            .into_iter()
+            .map(|(ln, s)| (ln, s.to_string()))
+            .collect();
 
         Ok(Self {
-            line,
-            column,
-            length,
+            span_start: (start_line, start_col),
+            span_end: (end_line, end_col),
+            span_len,
+            source_lines,
+            message: None,
             highlight_type,
-            code: code.into(),
         })
     }
 
     pub fn from_raw(
-        line: usize,
-        column: usize,
-        length: usize,
-        code: Box<str>,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+        span_len: usize,
+        source_lines: Vec<(usize, String)>,
         highlight_type: HighlightType,
     ) -> Self {
         Self {
-            line,
-            column,
-            length,
-            code,
+            span_start: (start_line, start_col),
+            span_end: (end_line, end_col),
+            span_len,
+            source_lines,
+            message: None,
             highlight_type,
         }
+    }
+
+    pub fn with_message(mut self, message: impl Into<Box<str>>) -> Self {
+        self.message = Some(message.into());
+        self
     }
 
     pub fn highlight_type(&mut self, highlight_type: HighlightType) -> &mut Self {
@@ -157,33 +180,125 @@ impl CodeWidget {
 
 impl<T: Write> Widget<T> for CodeWidget {
     fn render(&self, f: &mut T) -> std::fmt::Result {
-        let pad = (self.line.ilog10() + 1) as usize;
+        if self.source_lines.is_empty() {
+            return Ok(());
+        }
 
-        writeln!(f, "{} {}", " ".repeat(pad), "|".purple())?;
-        writeln!(
-            f,
-            "{} {} {}",
-            self.line.to_string().purple(),
-            "|".purple(),
-            self.code
-        )?;
+        let max_line = self.source_lines.last().map(|(ln, _)| *ln).unwrap_or(0);
+        let pad = (max_line.ilog10() + 1) as usize;
+        let (start_line, start_col) = self.span_start;
+        let (end_line, end_col) = self.span_end;
 
-        let underline = if self.length > 1 {
-            " ".repeat(self.column - 1) + &"^".repeat(self.length)
-        } else {
-            " ".repeat(self.column - 1) + "^"
-        };
-        write!(
-            f,
-            "{} {} {}",
-            " ".repeat(pad),
-            "|".purple(),
+        let colored_hl = |s: &str| -> colored::ColoredString {
             match self.highlight_type {
-                HighlightType::Warning => underline.yellow().bold(),
-                HighlightType::Error => underline.red().bold(),
-                HighlightType::Info => underline.blue().bold(),
+                HighlightType::Error => s.red().bold(),
+                HighlightType::Warning => s.yellow().bold(),
+                HighlightType::Info => s.blue().bold(),
             }
-        )?;
+        };
+
+        if start_line == end_line {
+            let (_, code) = &self.source_lines[0];
+            writeln!(f, "{} {}", " ".repeat(pad), "|".purple())?;
+            writeln!(
+                f,
+                "{} {} {}",
+                start_line.to_string().purple(),
+                "|".purple(),
+                code
+            )?;
+
+            let underline = if self.span_len > 1 {
+                " ".repeat(start_col - 1) + &"^".repeat(self.span_len)
+            } else {
+                " ".repeat(start_col - 1) + "^"
+            };
+            write!(
+                f,
+                "{} {} {}",
+                " ".repeat(pad),
+                "|".purple(),
+                colored_hl(&underline)
+            )?;
+        } else {
+            let last_idx = self.source_lines.len() - 1;
+
+            writeln!(f, "{} {}", " ".repeat(pad), "|".purple())?;
+
+            for (i, (line_num, code)) in self.source_lines.iter().enumerate() {
+                let is_first = i == 0;
+                let is_last = i == last_idx;
+
+                if is_first {
+                    writeln!(
+                        f,
+                        "{} {} {}",
+                        line_num.to_string().purple(),
+                        "|".purple(),
+                        code
+                    )?;
+
+                    let fill = start_col.saturating_sub(1);
+                    let start_ann = format!("{pad}^", pad = "_".repeat(fill));
+                    if last_idx == 0 {
+                        write!(
+                            f,
+                            "{} {} {}",
+                            " ".repeat(pad),
+                            "|".purple(),
+                            colored_hl(&start_ann)
+                        )?;
+                    } else {
+                        writeln!(
+                            f,
+                            "{} {} {}",
+                            " ".repeat(pad),
+                            "|".purple(),
+                            colored_hl(&start_ann)
+                        )?;
+                    }
+                } else if is_last {
+                    writeln!(
+                        f,
+                        "{} {} {} {}",
+                        line_num.to_string().purple(),
+                        "|".purple(),
+                        colored_hl("|"),
+                        code
+                    )?;
+
+                    let fill = end_col.saturating_sub(1);
+                    let end_ann = format!("|{pad}^", pad = "_".repeat(fill));
+                    if let Some(msg) = &self.message {
+                        write!(
+                            f,
+                            "{} {} {} {}",
+                            " ".repeat(pad),
+                            "|".purple(),
+                            colored_hl(&end_ann),
+                            msg.as_ref().bold()
+                        )?;
+                    } else {
+                        write!(
+                            f,
+                            "{} {} {}",
+                            " ".repeat(pad),
+                            "|".purple(),
+                            colored_hl(&end_ann)
+                        )?;
+                    }
+                } else {
+                    writeln!(
+                        f,
+                        "{} {} {} {}",
+                        line_num.to_string().purple(),
+                        "|".purple(),
+                        colored_hl("|"),
+                        code
+                    )?;
+                }
+            }
+        }
 
         Ok(())
     }

@@ -200,9 +200,9 @@ pub mod builders {
     ) -> CompilationError {
         let loc_widget =
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
+        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Warning, ctx)
             .expect("failed to create error");
-        warning(message)
+        warning(message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
@@ -217,7 +217,7 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        error(message)
+        error(message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
@@ -232,7 +232,7 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        fatal(message)
+        fatal(message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }

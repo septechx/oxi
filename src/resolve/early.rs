@@ -29,8 +29,9 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         name: Symbol,
         kind: DefKind,
         visibility: Visibility,
+        span: Span,
     ) -> DefId {
-        let def_id = self.alloc_def(id, Some(name), kind, Some(visibility));
+        let def_id = self.alloc_def(id, Some(name), kind, Some(visibility), span);
         let binding = NameBinding { def_id, visibility };
         self.current_module_mut()
             .resolutions
@@ -45,6 +46,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         name: Option<Symbol>,
         kind: DefKind,
         visibility: Option<Visibility>,
+        span: Span,
     ) -> DefId {
         let idx = self.defs.len() as u32;
         let def_id = DefId(idx);
@@ -52,6 +54,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             name,
             kind,
             visibility,
+            span,
         });
         self.def_map.insert(id, def_id);
         def_id
@@ -433,6 +436,7 @@ impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
             Some(f.name.value),
             DefKind::AssocFn,
             Some(item.visibility),
+            item.span,
         );
         let binding = NameBinding {
             def_id: method_def_id,
@@ -452,15 +456,24 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
         match &item.kind {
             ItemKind::Const { name, .. } => {
                 let sym = name.value;
-                self.resolver
-                    .create_def(item.node_id, sym, DefKind::Const, item.visibility);
+                self.resolver.create_def(
+                    item.node_id,
+                    sym,
+                    DefKind::Const,
+                    item.visibility,
+                    item.span,
+                );
                 VisitAction::SkipChildren
             }
             ItemKind::Struct { name, items, .. } => {
                 let sym = name.value;
-                let struct_def_id =
-                    self.resolver
-                        .create_def(item.node_id, sym, DefKind::Struct, item.visibility);
+                let struct_def_id = self.resolver.create_def(
+                    item.node_id,
+                    sym,
+                    DefKind::Struct,
+                    item.visibility,
+                    item.span,
+                );
                 for assoc in items {
                     self.register_struct_method(assoc, struct_def_id);
                 }
@@ -468,19 +481,31 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
             }
             ItemKind::Interface { name, .. } => {
                 let sym = name.value;
-                self.resolver
-                    .create_def(item.node_id, sym, DefKind::Interface, item.visibility);
+                self.resolver.create_def(
+                    item.node_id,
+                    sym,
+                    DefKind::Interface,
+                    item.visibility,
+                    item.span,
+                );
                 VisitAction::Continue
             }
             ItemKind::Impl { .. } => {
-                self.resolver
-                    .alloc_def(item.node_id, None, DefKind::Impl, None);
+                let def_id =
+                    self.resolver
+                        .alloc_def(item.node_id, None, DefKind::Impl, None, item.span);
+                self.resolver.current_module_mut().impls.push(def_id);
                 VisitAction::Continue
             }
             ItemKind::Fn(f) => {
                 let sym = f.name.value;
-                self.resolver
-                    .create_def(item.node_id, sym, DefKind::Function, item.visibility);
+                self.resolver.create_def(
+                    item.node_id,
+                    sym,
+                    DefKind::Function,
+                    item.visibility,
+                    item.span,
+                );
                 VisitAction::SkipChildren
             }
             // Maybe we should also create defs for `mod` and `import` items, but just skip for now
@@ -491,12 +516,14 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     fn visit_assoc_item(&mut self, item: &AssocItem) -> VisitAction {
         match &item.kind {
             AssocItemKind::Fn(f) => {
-                self.resolver.alloc_def(
+                let def_id = self.resolver.alloc_def(
                     item.node_id,
                     Some(f.name.value),
                     DefKind::AssocFn,
                     Some(item.visibility),
+                    item.span,
                 );
+                self.resolver.current_module_mut().methods.push(def_id);
             }
         }
         VisitAction::SkipChildren

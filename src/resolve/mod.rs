@@ -83,6 +83,10 @@ impl<T: Clone + Default> PerModule<T> {
     pub fn new(len: usize) -> Self {
         Self(thin_vec![Default::default(); len])
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.0.iter()
+    }
 }
 
 impl<T: Clone + Default> PerModule<T> {
@@ -158,6 +162,8 @@ impl NameResolution {
 pub struct ModuleData {
     pub resolutions: FxHashMap<Symbol, NameResolution>,
     pub struct_methods: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
+    pub impls: ThinVec<DefId>,
+    pub methods: ThinVec<DefId>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub qualified_name: String,

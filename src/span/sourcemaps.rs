@@ -28,8 +28,14 @@ impl SourceMap {
 
     pub fn line_column(&self, byte_offset: u32) -> (usize, usize) {
         let offset = byte_offset as usize;
-        if offset >= self.content.len() {
+        if offset > self.content.len() {
             return (self.line_starts.len(), 0);
+        }
+        if offset == self.content.len() {
+            let last_line_index = self.line_starts.len();
+            let last_line_start = *self.line_starts.last().expect("has line start") as usize;
+            let column = 1 + offset - last_line_start;
+            return (last_line_index, column);
         }
 
         let result = self.line_starts.binary_search(&(offset as u32));
@@ -39,8 +45,13 @@ impl SourceMap {
         };
 
         let line_start = self.line_starts[line_idx] as usize;
-        let column = offset.saturating_sub(line_start);
-        (line_idx + 1, column + 1)
+        let byte_col = offset.saturating_sub(line_start);
+        let line_content = &self.content[line_start..];
+        let char_col = line_content
+            .get(..byte_col)
+            .map(|s| s.chars().count())
+            .unwrap_or(byte_col);
+        (line_idx + 1, char_col + 1)
     }
 
     pub fn get_line(&self, line: usize) -> Option<&str> {
@@ -71,7 +82,30 @@ impl SourceMap {
 
     pub fn span_to_source_location(&self, span: &Span) -> (PathBuf, usize, usize, usize) {
         let (line, column) = self.line_column(span.start());
-        (self.path.clone(), line, column, span.len() as usize)
+        let char_len = self.byte_range_to_char_count(span.start(), span.len());
+        (self.path.clone(), line, column, char_len)
+    }
+
+    pub fn span_end_location(&self, span: &Span) -> (usize, usize) {
+        self.line_column(span.start() + span.len())
+    }
+
+    fn byte_range_to_char_count(&self, byte_offset: u32, byte_len: u32) -> usize {
+        if byte_len == 0 {
+            return 0;
+        }
+        let start = byte_offset as usize;
+        let end = (start + byte_len as usize).min(self.content.len());
+        self.content
+            .get(start..end)
+            .map(|s| s.chars().count())
+            .unwrap_or(byte_len as usize)
+    }
+
+    pub fn get_lines(&self, start_line: usize, end_line: usize) -> Vec<(usize, &str)> {
+        (start_line..=end_line)
+            .filter_map(|line| Some((line, self.get_line(line)?)))
+            .collect()
     }
 }
 
@@ -152,5 +186,16 @@ mod tests {
         assert_eq!(line, 1);
         assert_eq!(column, 1);
         assert_eq!(length, 5);
+    }
+
+    #[test]
+    fn test_span_end_location_at_eof() {
+        let content = "first line\nsecond line";
+        assert_eq!(content.len(), 22);
+        let sm = SourceMap::new(content.to_string(), PathBuf::from("test.oxi"));
+        let span = Span::new(0, 22);
+        let (line, column) = sm.span_end_location(&span);
+        assert_eq!(line, 2, "EOF should be on last line");
+        assert_eq!(column, 12, "EOF column should be len of 'second line' + 1");
     }
 }
