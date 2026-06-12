@@ -194,7 +194,7 @@ impl Drop for Test {
         }
 
         // Phase 5: Type check
-        let _typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
+        let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
         if self.should_succeed == Some(false) {
             if !self.check_for_errors() {
                 panic!("Expected a type error but none occurred");
@@ -202,6 +202,7 @@ impl Drop for Test {
             return;
         }
         self.handle_error_check();
+        typeck.assert_no_errors();
     }
 }
 

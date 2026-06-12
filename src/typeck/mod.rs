@@ -118,6 +118,15 @@ pub struct TypeckOutputs {
     pub item_schemes: FxHashMap<DefId, Scheme>,
 }
 
+impl TypeckOutputs {
+    /// Assert there are no errors, if errors were correctly reported this won't be reached
+    pub fn assert_no_errors(&self) {
+        for ty in self.node_types.values() {
+            assert!(!matches!(ty, Ty::Error));
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum MemberRes {
     Field { index: usize },

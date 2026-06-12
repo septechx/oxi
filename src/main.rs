@@ -135,6 +135,7 @@ fn build_file(cli: Cli) -> Result<()> {
 
     let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
     check_for_errors();
+    typeck.assert_no_errors();
 
     with_ctx_mut(|ctx| {
         dbg!(typeck);
