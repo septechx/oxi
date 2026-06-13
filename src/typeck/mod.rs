@@ -5,8 +5,10 @@ mod env;
 mod infctx;
 mod method;
 mod rewrite;
-mod types;
 mod unify;
+
+mod types;
+pub use types::*;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
@@ -14,7 +16,6 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
-use crate::typeck::types::{Scheme, Ty};
 
 pub fn typeck_crate(
     ctx: &mut Ctx,
