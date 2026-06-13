@@ -148,39 +148,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 ExprKind::Loop(block)
             }
             ast::ExprKind::While { condition, body } => {
-                let cond = self.lower_expr(condition).into_box();
-                let span = cond.span;
-                let cond_check = Stmt {
-                    kind: StmtKind::Semi(Expr {
-                        kind: ExprKind::If {
-                            then_branch: Block {
-                                stmts: thin_vec![Stmt {
-                                    kind: StmtKind::Semi(Expr {
-                                        kind: ExprKind::Break(None),
-                                        hir_id: self.next_hir_id(),
-                                        span,
-                                    }),
-                                    hir_id: self.next_hir_id(),
-                                    span,
-                                }],
-                                span,
-                            },
-                            cond: Box::new(Expr {
-                                kind: ExprKind::Prefix {
-                                    op: PreOp::Not,
-                                    right: cond,
-                                },
-                                hir_id: self.next_hir_id(),
-                                span,
-                            }),
-                            else_branch: None,
-                        },
-                        hir_id: self.next_hir_id(),
-                        span,
-                    }),
-                    hir_id: self.next_hir_id(),
-                    span,
-                };
+                let cond = self.lower_expr(condition);
+                let cond_check = self.while_cond_shim(cond);
 
                 let mut new_body = ThinVec::with_capacity(body.stmts.len() + 1);
                 new_body.push(cond_check);
@@ -189,6 +158,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 ExprKind::Loop(Block {
                     stmts: new_body,
                     span: body.span,
+                    hir_id: self.next_hir_id(),
                 })
             }
             ast::ExprKind::Return(val) => {
@@ -216,6 +186,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         Block {
             stmts,
             span: block.span,
+            hir_id: self.next_hir_id(),
         }
     }
 
@@ -245,5 +216,43 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             );
             None
         })
+    }
+
+    #[inline]
+    fn while_cond_shim(&mut self, cond: Expr) -> Stmt {
+        let span = cond.span;
+        let cond = cond.into_box();
+        Stmt {
+            kind: StmtKind::Semi(Expr {
+                kind: ExprKind::If {
+                    then_branch: Block {
+                        stmts: thin_vec![Stmt {
+                            kind: StmtKind::Semi(Expr {
+                                kind: ExprKind::Break(None),
+                                hir_id: self.next_hir_id(),
+                                span,
+                            }),
+                            hir_id: self.next_hir_id(),
+                            span,
+                        }],
+                        hir_id: self.next_hir_id(),
+                        span,
+                    },
+                    cond: Box::new(Expr {
+                        kind: ExprKind::Prefix {
+                            op: PreOp::Not,
+                            right: cond,
+                        },
+                        hir_id: self.next_hir_id(),
+                        span,
+                    }),
+                    else_branch: None,
+                },
+                hir_id: self.next_hir_id(),
+                span,
+            }),
+            hir_id: self.next_hir_id(),
+            span,
+        }
     }
 }
