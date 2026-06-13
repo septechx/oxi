@@ -251,6 +251,7 @@ pub enum ExprKind {
         receiver: Box<Expr>,
         method: Symbol,
         params: ThinVec<Expr>,
+        def_id: DefId,
     },
     /// Field access: base.field
     Field {
