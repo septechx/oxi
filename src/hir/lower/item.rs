@@ -371,6 +371,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             kind: ExprKind::Block(Block {
                 stmts,
                 span: block.span,
+                hir_id: self.next_hir_id(),
             }),
             span: block.span,
         };

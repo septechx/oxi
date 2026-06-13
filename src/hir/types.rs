@@ -337,6 +337,7 @@ pub enum StmtKind {
 
 #[derive(Debug, Clone)]
 pub struct Block {
+    pub hir_id: HirId,
     pub stmts: ThinVec<Stmt>,
     pub span: Span,
 }
