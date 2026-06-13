@@ -257,6 +257,7 @@ pub enum ExprKind {
     Field {
         base: Box<Expr>,
         field: Symbol,
+        index: usize,
     },
     /// Struct literal: Struct { field: value, ... }
     StructInit {

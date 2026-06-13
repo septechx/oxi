@@ -23,7 +23,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
     match &mut expr.kind {
         ExprKind::MemberAccess { base, member } => {
             rewrite_expr(base, member_res);
-            if let Some(MemberRes::Field { .. }) = res {
+            if let Some(MemberRes::Field { index }) = res {
                 let base = std::mem::replace(
                     base,
                     Expr {
@@ -36,6 +36,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                 expr.kind = ExprKind::Field {
                     base,
                     field: *member,
+                    index,
                 }
             }
         }
