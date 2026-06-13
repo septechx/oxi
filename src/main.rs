@@ -13,8 +13,8 @@ pub mod lexer;
 pub mod macros;
 pub mod parser;
 pub mod resolve;
-pub mod scope;
 pub mod span;
+pub mod thir;
 pub mod typeck;
 pub mod utils;
 
@@ -33,7 +33,6 @@ use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
 use crate::resolve::{Resolver, build_module_tree};
-use crate::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
 
 pub static DEFAULT_ROOT: &str = "..";
@@ -135,9 +134,6 @@ fn build_file(cli: Cli) -> Result<()> {
     });
     check_for_errors();
 
-    // FIXME: Move into THIR generation once implemented
-    let scope_trees = build_scope_trees(&hir_crate);
-
     let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
     check_for_errors();
     typeck.assert_no_errors();
@@ -145,7 +141,6 @@ fn build_file(cli: Cli) -> Result<()> {
     with_ctx_mut(|ctx| {
         dbg!(&ctx.interner);
         dbg!(hir_crate);
-        dbg!(scope_trees);
     });
 
     Ok(())

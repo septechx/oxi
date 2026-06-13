@@ -2,7 +2,7 @@ use crate::hir::{
     AssocItemKind, Block, Body, Crate, DefId, Expr, ExprKind, ItemKind, MaybeOwner, Node, Param,
     StmtKind,
 };
-use crate::scope::{Scope, ScopeKind, ScopeTree, ScopeTrees};
+use crate::thir::scope::{Scope, ScopeKind, ScopeTree, ScopeTrees};
 
 pub fn build_scope_tree(body: &Body) -> ScopeTree {
     let mut builder = ScopeTreeBuilder::new();
@@ -247,7 +247,6 @@ mod tests {
         BinOp, Block, Body, Expr, ExprKind, HirId, IntTy, ItemLocalId, OwnerId, Param, PrimTy,
         Stmt, StmtKind, Ty, TyKind,
     };
-    use crate::scope::{Scope, ScopeKind};
     use crate::span::Span;
     use thin_vec::thin_vec;
 
