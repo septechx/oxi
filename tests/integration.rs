@@ -1052,3 +1052,217 @@ fn greek_letter_function_parameter() {
         .succeeds(true);
     });
 }
+
+#[test]
+fn tail_expr_at_end_of_block_succeeds() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() i32 {
+                let x = 1;
+                let y = 2;
+                x + y
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn tail_expr_in_nested_block_succeeds() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() i32 {
+                let x = {
+                    let y = 1;
+                    y + 2
+                };
+                x
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn tail_expr_not_at_tail_of_block_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                1 + 2
+                let x = 3;
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_not_at_tail_of_nested_block_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                {
+                    1 + 2
+                    let x = 3;
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_not_at_tail_of_if_block_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                if true {
+                    1 + 2
+                    let x = 3;
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_not_at_tail_of_while_body_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                while true {
+                    1 + 2
+                    let x = 3;
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_not_at_tail_of_loop_body_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                loop {
+                    1 + 2
+                    let x = 3;
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_at_tail_of_while_body_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                while true {
+                    1 + 2
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn tail_expr_at_tail_of_loop_body_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                loop {
+                    1 + 2
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn bare_inline_block_as_loop_statement_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                loop {
+                    {
+                        1 + 2
+                    }
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn bare_if_as_loop_statement_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                loop {
+                    if true {
+                        1 + 2
+                    }
+                }
+            }
+            "#,
+        )
+        .succeeds(false);
+    });
+}
+
+#[test]
+fn block_tail_inside_loop_not_as_statement_succeeds() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                loop {
+                    let x = { 1 + 2 };
+                    break x;
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
