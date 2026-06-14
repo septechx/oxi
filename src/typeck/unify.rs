@@ -1,6 +1,6 @@
-use crate::hir::ModuleId;
+use crate::hir::{FloatTy, IntTy, ModuleId, PrimTy};
 use crate::span::Span;
-use crate::typeck::infctx::{InferCtx, TyVarId};
+use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 use crate::typeck::types::Ty;
 
 #[derive(Debug, Clone)]
@@ -126,6 +126,33 @@ fn bind(
         && *other == var
     {
         return Ok(());
+    }
+    match icx.ty_var_source(var) {
+        TyVarSource::IntLit => match &to {
+            Ty::Var(_) => {}
+            Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_)) => {}
+            _ => {
+                return Err(mismatch(
+                    to.clone(),
+                    Ty::Prim(PrimTy::Int(IntTy::I32)),
+                    span,
+                    module_id,
+                ));
+            }
+        },
+        TyVarSource::FloatLit => match &to {
+            Ty::Var(_) => {}
+            Ty::Prim(PrimTy::Float(_)) => {}
+            _ => {
+                return Err(mismatch(
+                    to.clone(),
+                    Ty::Prim(PrimTy::Float(FloatTy::F64)),
+                    span,
+                    module_id,
+                ));
+            }
+        },
+        TyVarSource::Generic => {}
     }
     if occurs(icx, var, &to) {
         return Err(UnifyError::OccursCheck {
