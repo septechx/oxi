@@ -33,6 +33,8 @@ use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
 use crate::resolve::{Resolver, build_module_tree};
+use crate::thir::lower_thir;
+use crate::thir::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
 
 pub static DEFAULT_ROOT: &str = "..";
@@ -138,9 +140,13 @@ fn build_file(cli: Cli) -> Result<()> {
     check_for_errors();
     typeck.assert_no_errors();
 
+    let scope_trees = build_scope_trees(&hir_crate);
+
+    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+
     with_ctx_mut(|ctx| {
         dbg!(&ctx.interner);
-        dbg!(hir_crate);
+        dbg!(thir_crate);
     });
 
     Ok(())

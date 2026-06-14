@@ -85,7 +85,7 @@ pub enum ExprKind {
     },
     Call {
         callee: ExprId,
-        args: ThinVec<ExprId>,
+        params: ThinVec<ExprId>,
     },
     StructInit {
         def_id: DefId,
@@ -102,7 +102,7 @@ pub enum ExprKind {
     },
     Field {
         base: ExprId,
-        field_index: usize,
+        index: usize,
     },
     Cast {
         source: ExprId,
@@ -125,9 +125,6 @@ pub struct Stmt {
 
 #[derive(Debug, Clone)]
 pub enum StmtKind {
-    Expr {
-        expr: ExprId,
-    },
     Semi {
         expr: ExprId,
     },
