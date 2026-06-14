@@ -117,21 +117,34 @@ impl<'a> ThirLowerer<'a> {
         let Some(adjustments) = self.typeck.adjustments.get(&hir_id) else {
             return inner;
         };
+        let mut current_ty = self.lookup_ty(hir_id);
         for adjustment in adjustments.iter().rev() {
-            let ty = self.lookup_ty(hir_id);
+            current_ty = match current_ty {
+                Ty::Error => Ty::Error,
+                ty => match adjustment {
+                    Adjustment::AutoRef(m) => Ty::Ptr(Box::new(ty), *m),
+                    Adjustment::AutoDeref => match ty {
+                        Ty::Ptr(inner_ty, _) => *inner_ty,
+                        _ => Ty::Error,
+                    },
+                },
+            };
             inner = match adjustment {
                 Adjustment::AutoRef(m) => self.alloc_expr(
                     ExprKind::Borrow {
                         kind: *m,
                         arg: inner,
                     },
-                    ty,
+                    current_ty.clone(),
                     span,
                     hir_id,
                 ),
-                Adjustment::AutoDeref => {
-                    self.alloc_expr(ExprKind::Deref { arg: inner }, ty, span, hir_id)
-                }
+                Adjustment::AutoDeref => self.alloc_expr(
+                    ExprKind::Deref { arg: inner },
+                    current_ty.clone(),
+                    span,
+                    hir_id,
+                ),
             };
         }
         inner
