@@ -308,7 +308,14 @@ impl<'a> ThirLowerer<'a> {
                     let init_id = init.as_ref().map(|expr| self.lower_expr(expr));
                     let local_var = LocalVarId(self.locals.len() as u32);
                     self.locals.insert(*local, local_var);
-                    let ty = hir_ty_to_ty(ty);
+                    let ty = if matches!(ty.kind, hir::TyKind::Infer) {
+                        init.as_ref()
+                            .and_then(|expr| self.typeck.node_types.get(&expr.hir_id))
+                            .cloned()
+                            .unwrap_or(Ty::Error)
+                    } else {
+                        hir_ty_to_ty(ty)
+                    };
                     let remainder_scope = self
                         .scope_tree
                         .expect("has scope tree")
