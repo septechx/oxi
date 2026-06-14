@@ -90,7 +90,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     _ => {
                         let target = self.lower_expr(assignee).into_box();
                         let value = self.lower_expr(value).into_box();
-                        let lhs = self.lower_expr(assignee).into_box();
+                        let lhs = target.clone();
                         let bin_op = match op {
                             AssOp::AssAdd => BinOp::Add,
                             AssOp::AssSub => BinOp::Sub,

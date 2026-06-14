@@ -469,3 +469,37 @@ fn block_tail_inside_loop_not_as_statement_succeeds() {
         .succeeds(true);
     });
 }
+
+#[test]
+fn simple_assignment() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let x = 5;
+                x = 10;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn compound_assignment() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let x = 5;
+                x += 10;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
