@@ -2,7 +2,7 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
-use crate::hir::types::{Block, Expr, ExprKind, FromToken, PreOp, Stmt, StmtKind};
+use crate::hir::types::{AssOp, BinOp, Block, Expr, ExprKind, FromToken, PreOp, Stmt, StmtKind};
 use crate::hir::{AstLoweringContext, DefId};
 use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
@@ -78,12 +78,41 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 operator,
                 value,
             } => {
-                let target = self.lower_expr(assignee).into_box();
-                let value = self.lower_expr(value).into_box();
                 let Some(op) = self.lower_operator(operator, "assignment") else {
                     return ExprKind::Error;
                 };
-                ExprKind::Assign { target, op, value }
+                match op {
+                    AssOp::Ass => {
+                        let target = self.lower_expr(assignee).into_box();
+                        let value = self.lower_expr(value).into_box();
+                        ExprKind::Assign { target, value }
+                    }
+                    _ => {
+                        let target = self.lower_expr(assignee).into_box();
+                        let value = self.lower_expr(value).into_box();
+                        let lhs = self.lower_expr(assignee).into_box();
+                        let bin_op = match op {
+                            AssOp::AssAdd => BinOp::Add,
+                            AssOp::AssSub => BinOp::Sub,
+                            AssOp::AssMul => BinOp::Mul,
+                            AssOp::AssDiv => BinOp::Div,
+                            AssOp::AssRem => BinOp::Rem,
+                            AssOp::Ass => unreachable!(),
+                        };
+                        ExprKind::Assign {
+                            target,
+                            value: Box::new(Expr {
+                                kind: ExprKind::Binary {
+                                    left: lhs,
+                                    op: bin_op,
+                                    right: value,
+                                },
+                                hir_id: self.next_hir_id(),
+                                span: expr.span,
+                            }),
+                        }
+                    }
+                }
             }
             ast::ExprKind::FunctionCall { callee, parameters } => {
                 let callee = self.lower_expr(callee).into_box();

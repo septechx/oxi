@@ -288,7 +288,6 @@ pub enum ExprKind {
     /// Assignment: target = value
     Assign {
         target: Box<Expr>,
-        op: AssOp,
         value: Box<Expr>,
     },
     /// Prefix operation: op right

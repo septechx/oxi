@@ -4,7 +4,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
 use crate::hashmap::FxHashMap;
-use crate::hir::{self, AssOp, PosOp, PreOp, PrimTy, QPath};
+use crate::hir::{self, PosOp, PreOp, PrimTy, QPath};
 use crate::hir::{BinOp, HirId};
 use crate::resolve::Res;
 use crate::span::Span;
@@ -152,8 +152,8 @@ impl<'a> ThirLowerer<'a> {
             hir::ExprKind::Binary { left, op, right } => {
                 self.lower_binary(left, *op, right, ty, span, hir_id)
             }
-            hir::ExprKind::Assign { target, op, value } => {
-                self.lower_assign(target, *op, value, ty, span, hir_id)
+            hir::ExprKind::Assign { target, value } => {
+                self.lower_assign(target, value, ty, span, hir_id)
             }
             hir::ExprKind::Prefix { op, right } => self.lower_prefix(*op, right, ty, span, hir_id),
             hir::ExprKind::Postfix { left, op } => self.lower_postfix(left, *op, ty, span, hir_id),
@@ -517,7 +517,6 @@ impl<'a> ThirLowerer<'a> {
     fn lower_assign(
         &mut self,
         target: &hir::Expr,
-        op: AssOp,
         value: &hir::Expr,
         ty: &Ty,
         span: Span,
@@ -525,12 +524,7 @@ impl<'a> ThirLowerer<'a> {
     ) -> ExprId {
         let target = self.lower_expr(target);
         let value = self.lower_expr(value);
-        match op {
-            AssOp::Ass => {
-                self.alloc_expr(ExprKind::Assign { target, value }, ty.clone(), span, hir_id)
-            }
-            _ => todo!("Desugar compound assignment"),
-        }
+        self.alloc_expr(ExprKind::Assign { target, value }, ty.clone(), span, hir_id)
     }
 
     fn lower_binary(
