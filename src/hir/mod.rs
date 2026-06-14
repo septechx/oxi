@@ -11,6 +11,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ast, NodeId, NodeMap};
 use crate::context::Ctx;
+use crate::hashmap::FxHashMap;
 use crate::interner::{Symbol, sym};
 use crate::resolve::{ModuleTree, ResolverOutputs};
 
@@ -164,8 +165,10 @@ pub struct AstLoweringContext<'a, 'ctx> {
 
     current_owner: Option<OwnerId>,
     next_local_id: u32,
-    /// Maps AST NodeId -> HirId for local bindings (function params, let bindings)
+    /// maps (node id) -> (hir id)
     node_to_hir_id: NodeMap<HirId>,
+    /// maps (def id) -> (module id)
+    def_to_module: FxHashMap<DefId, ModuleId>,
 }
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -175,6 +178,23 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         module_tree: &'a ModuleTree,
         resolver: &'a ResolverOutputs,
     ) -> Self {
+        let mut def_to_module = FxHashMap::default();
+        for (i, module) in resolver.modules.iter().enumerate() {
+            for res in module.resolutions.values() {
+                def_to_module.insert(res.best_binding().def_id, ModuleId(i as u32));
+            }
+            for methods in module.struct_methods.values() {
+                for binding in methods.values() {
+                    def_to_module.insert(binding.def_id, ModuleId(i as u32));
+                }
+            }
+            for &impl_def_id in &module.impls {
+                def_to_module.insert(impl_def_id, ModuleId(i as u32));
+            }
+            for &method_def_id in &module.methods {
+                def_to_module.insert(method_def_id, ModuleId(i as u32));
+            }
+        }
         Self {
             ctx,
             asts,
@@ -183,6 +203,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             current_owner: None,
             next_local_id: 0,
             node_to_hir_id: NodeMap::default(),
+            def_to_module,
         }
     }
 

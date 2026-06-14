@@ -6,6 +6,8 @@ use oxic::{
     lexer::tokenize,
     parser::parse,
     resolve::{Resolver, build_module_tree},
+    thir::lower_thir,
+    thir::scope::build_scope_trees,
     typeck::typeck_crate,
 };
 use std::{
@@ -203,6 +205,10 @@ impl Drop for Test {
         }
         self.handle_error_check();
         typeck.assert_no_errors();
+
+        // Phase 6: Build scope trees and lower to THIR
+        let scope_trees = build_scope_trees(&hir_crate);
+        let _thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
     }
 }
 

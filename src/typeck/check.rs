@@ -532,6 +532,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return Ty::Error;
         }
 
+        self.node_types.insert(callee.hir_id, recv_ty.clone());
         self.member_res
             .insert(callee.hir_id, MemberRes::Method { def_id, kind });
 
@@ -898,9 +899,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Ty::Slice(elem) => {
                 let interner = &self.ctx.interner;
                 if interner.lookup(member) == "len" {
+                    self.member_res
+                        .insert(hir_id, MemberRes::Field { index: 1 });
                     return Ty::Prim(PrimTy::Uint(UintTy::Usize));
                 }
                 if interner.lookup(member) == "ptr" {
+                    self.member_res
+                        .insert(hir_id, MemberRes::Field { index: 0 });
                     return Ty::Ptr(elem.clone(), Mutability::Constant);
                 }
                 self.ctx.errors.add(
