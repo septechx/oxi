@@ -14,8 +14,8 @@ use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
-use crate::typeck::unify::{OrPushErr, UnifyError, UnifyResult, unify};
-use crate::typeck::{CoherenceTable, MemberRes, MethodKind, Typeck};
+use crate::typeck::unify::{OrPushErr, UnifyError, unify};
+use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, Typeck};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
 // catch uses of `break` outside of loops
@@ -47,6 +47,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut node_types: FxHashMap<HirId, Ty> = FxHashMap::default();
         let mut member_res: FxHashMap<HirId, MemberRes> = FxHashMap::default();
         let mut local_schemes: FxHashMap<HirId, Scheme> = FxHashMap::default();
+        let mut adjustments: FxHashMap<HirId, Vec<Adjustment>> = FxHashMap::default();
 
         let mut checker = BodyChecker {
             ctx: self.ctx,
@@ -59,6 +60,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             node_types: &mut node_types,
             member_res: &mut member_res,
             local_schemes: &mut local_schemes,
+            adjustments: &mut adjustments,
             env: ScopeEnv::new(),
             module_id: ModuleId(0),
         };
@@ -131,6 +133,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         self.node_types.extend(resolved);
         self.member_res.extend(member_res);
+        self.adjustments.extend(adjustments);
 
         for err in icx.errors {
             let (msg, span, module_id) =
@@ -154,22 +157,12 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
     node_types: &'a mut FxHashMap<HirId, Ty>,
     member_res: &'a mut FxHashMap<HirId, MemberRes>,
     local_schemes: &'a mut FxHashMap<HirId, Scheme>,
+    adjustments: &'a mut FxHashMap<HirId, Vec<Adjustment>>,
     env: ScopeEnv,
     module_id: ModuleId,
 }
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
-    fn unify_with_autoref(&mut self, param: &Ty, arg: &Ty, span: Span) -> UnifyResult<()> {
-        let arg_r = self.icx.resolve(arg);
-        let param_r = self.icx.resolve(param);
-        if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
-            && let Ty::Ptr(inner, _) = &param_r
-        {
-            return unify(self.icx, inner, arg, span, self.module_id);
-        }
-        unify(self.icx, param, arg, span, self.module_id)
-    }
-
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
         let expected = Ty::from_hir(self.icx, ty);
         let body_ty = self.check_expr(&body.value);
@@ -471,11 +464,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn check_call(&mut self, callee: &Expr, params: &ThinVec<Expr>, call_span: Span) -> Ty {
         let callee_span = callee.span;
 
-        if let Some((recv_ty, member, is_method_call)) = match &callee.kind {
-            ExprKind::MemberAccess { base, member } => Some((self.check_expr(base), *member, true)),
+        if let Some((recv_ty, member, is_method_call, receiver_hir_id)) = match &callee.kind {
+            ExprKind::MemberAccess { base, member } => {
+                Some((self.check_expr(base), *member, true, Some(base.hir_id)))
+            }
             ExprKind::Path(QPath::TypeRelative { qself, segment }) => self
                 .qpath_recv_ty(qself)
-                .map(|ty| (ty, segment.value, false)),
+                .map(|ty| (ty, segment.value, false, None)),
             _ => None,
         } {
             return self.check_member_call(
@@ -486,6 +481,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 member,
                 is_method_call,
                 params,
+                receiver_hir_id,
             );
         }
 
@@ -502,6 +498,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         member: Symbol,
         is_method_call: bool,
         params: &ThinVec<Expr>,
+        receiver_hir_id: Option<HirId>,
     ) -> Ty {
         let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
             self.ctx.errors.add(
@@ -530,10 +527,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Some(&recv_ty),
             is_method_call,
             call_span,
+            receiver_hir_id,
         ) {
             return Ty::Error;
         }
 
+        self.node_types.insert(callee.hir_id, recv_ty.clone());
         self.member_res
             .insert(callee.hir_id, MemberRes::Method { def_id, kind });
 
@@ -554,7 +553,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 params: param_tys,
                 ret,
             } => {
-                if !self.check_call_args(params, &param_tys, None, false, call_span) {
+                if !self.check_call_args(params, &param_tys, None, false, call_span, None) {
                     return Ty::Error;
                 }
 
@@ -582,6 +581,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         recv_ty: Option<&Ty>,
         is_method_call: bool,
         call_span: Span,
+        receiver_hir_id: Option<HirId>,
     ) -> bool {
         let arg_tys = if is_method_call && !param_tys.is_empty() {
             &param_tys[1..]
@@ -609,9 +609,24 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             && !param_tys.is_empty()
         {
             let first = param_tys.first().expect("method has at least 1 param");
-
-            self.unify_with_autoref(first, recv_ty, call_span)
-                .or_push_err(self.icx);
+            let arg_r = self.icx.resolve(recv_ty);
+            let param_r = self.icx.resolve(first);
+            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
+                && let Ty::Ptr(..) = &param_r
+            {
+                let Ty::Ptr(inner, mutability) = param_r else {
+                    unreachable!()
+                };
+                if let Some(hir_id) = receiver_hir_id {
+                    self.adjustments
+                        .entry(hir_id)
+                        .or_default()
+                        .push(Adjustment::AutoRef(mutability));
+                }
+                unify(self.icx, &inner, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+            } else {
+                unify(self.icx, first, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+            }
         }
 
         for (i, arg) in args.iter().enumerate() {
@@ -844,6 +859,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 );
             }
             Ty::Ptr(inner, _) => {
+                self.adjustments
+                    .entry(base.hir_id)
+                    .or_default()
+                    .push(Adjustment::AutoDeref);
                 if let Ty::Adt(struct_id) = inner.as_ref()
                     && let Some(fields) = self.coherence.struct_fields.get(struct_id)
                     && let Some((field_ty, index)) = fields.get(&member)
@@ -880,9 +899,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Ty::Slice(elem) => {
                 let interner = &self.ctx.interner;
                 if interner.lookup(member) == "len" {
+                    self.member_res
+                        .insert(hir_id, MemberRes::Field { index: 1 });
                     return Ty::Prim(PrimTy::Uint(UintTy::Usize));
                 }
                 if interner.lookup(member) == "ptr" {
+                    self.member_res
+                        .insert(hir_id, MemberRes::Field { index: 0 });
                     return Ty::Ptr(elem.clone(), Mutability::Constant);
                 }
                 self.ctx.errors.add(

@@ -1,6 +1,7 @@
 use crate::{
     ast::{
-        AssocItem, AssocItemKind, Ast, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
+        AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt,
+        StmtKind,
         visit::{VisitAction, Visitable, Visitor},
     },
     context::{with_ctx, with_ctx_mut},
@@ -17,6 +18,7 @@ struct AstValidator {
     module_id: ModuleId,
     in_function: bool,
     in_loop: bool,
+    in_loop_body: bool,
     is_top_level: bool,
     in_interface: bool,
 }
@@ -103,17 +105,61 @@ impl AstValidator {
         if let Some(body) = &f.body {
             let old_in_function = self.in_function;
             let old_top_level = self.is_top_level;
+            let old_in_loop_body = self.in_loop_body;
             self.in_function = true;
             self.is_top_level = false;
-            body.visit(self);
+            self.in_loop_body = false;
+            self.validate_block(body);
             self.in_function = old_in_function;
             self.is_top_level = old_top_level;
+            self.in_loop_body = old_in_loop_body;
         }
     }
 
     fn validate_assoc_item(&mut self, item: &AssocItem) {
         match &item.kind {
             AssocItemKind::Fn(f) => self.validate_fn_decl(f),
+        }
+    }
+
+    fn validate_block(&mut self, block: &Block) {
+        let stmts = &block.stmts;
+        let len = stmts.len();
+
+        for (i, stmt) in stmts.iter().enumerate() {
+            if matches!(stmt.kind, StmtKind::Expr(_)) {
+                if self.in_loop_body {
+                    with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Expression without semicolon is not allowed in loop bodies",
+                                self.module_id,
+                                stmt.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
+                } else if i != len - 1 {
+                    with_ctx_mut(|ctx| {
+                        let enable_printing = ctx.enable_printing;
+                        ctx.errors.add(
+                            builders::error_at(
+                                "Expression without semicolon must be at the end of a block",
+                                self.module_id,
+                                stmt.span,
+                                ctx,
+                            ),
+                            enable_printing,
+                        );
+                    });
+                }
+            }
+        }
+
+        for stmt in stmts.iter() {
+            stmt.visit(self);
         }
     }
 
@@ -281,27 +327,49 @@ impl Visitor for AstValidator {
             }
             ExprKind::Block(b) => {
                 let old_top_level = self.is_top_level;
+                let old_in_loop_body = self.in_loop_body;
                 self.is_top_level = false;
-                for stmt in b.stmts.iter() {
-                    stmt.visit(self);
-                }
+                self.in_loop_body = false;
+                self.validate_block(b);
                 self.is_top_level = old_top_level;
+                self.in_loop_body = old_in_loop_body;
 
+                VisitAction::SkipChildren
+            }
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                condition.visit(self);
+                let old_in_loop_body = self.in_loop_body;
+                self.in_loop_body = false;
+                self.validate_block(then_branch);
+                if let Some(else_expr) = else_branch {
+                    else_expr.visit(self);
+                }
+                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::While { condition, body } => {
                 condition.visit(self);
                 let old_in_loop = self.in_loop;
+                let old_in_loop_body = self.in_loop_body;
                 self.in_loop = true;
-                body.visit(self);
+                self.in_loop_body = true;
+                self.validate_block(body);
                 self.in_loop = old_in_loop;
+                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::Loop(body) => {
                 let old_in_loop = self.in_loop;
+                let old_in_loop_body = self.in_loop_body;
                 self.in_loop = true;
-                body.visit(self);
+                self.in_loop_body = true;
+                self.validate_block(body);
                 self.in_loop = old_in_loop;
+                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::Break(_) => {
@@ -365,6 +433,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
         module_id,
         in_function: false,
         in_loop: false,
+        in_loop_body: false,
         is_top_level: true,
         in_interface: false,
     };

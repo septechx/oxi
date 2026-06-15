@@ -251,11 +251,13 @@ pub enum ExprKind {
         receiver: Box<Expr>,
         method: Symbol,
         params: ThinVec<Expr>,
+        def_id: DefId,
     },
     /// Field access: base.field
     Field {
         base: Box<Expr>,
         field: Symbol,
+        index: usize,
     },
     /// Struct literal: Struct { field: value, ... }
     StructInit {
@@ -286,7 +288,6 @@ pub enum ExprKind {
     /// Assignment: target = value
     Assign {
         target: Box<Expr>,
-        op: AssOp,
         value: Box<Expr>,
     },
     /// Prefix operation: op right

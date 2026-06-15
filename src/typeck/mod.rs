@@ -5,15 +5,17 @@ mod env;
 mod infctx;
 mod method;
 mod rewrite;
-mod types;
 mod unify;
 
+mod types;
+pub use types::*;
+
+use crate::ast::Mutability;
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
 use crate::hir::{Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
-use crate::typeck::types::{Scheme, Ty};
 
 pub fn typeck_crate(
     ctx: &mut Ctx,
@@ -23,6 +25,12 @@ pub fn typeck_crate(
     let mut typeck = Typeck::new(ctx, hir_crate, resolver);
     typeck.run();
     typeck.into_outputs()
+}
+
+#[derive(Debug, Clone)]
+pub enum Adjustment {
+    AutoRef(Mutability),
+    AutoDeref,
 }
 
 struct Typeck<'ctx, 'hir, 'res> {
@@ -43,6 +51,8 @@ struct Typeck<'ctx, 'hir, 'res> {
     item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (def id) -> (module id)
     def_to_module: FxHashMap<DefId, ModuleId>,
+    /// maps (expr hir id) -> (adjustments)
+    adjustments: FxHashMap<HirId, Vec<Adjustment>>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -59,6 +69,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             interface_methods: FxHashMap::default(),
             item_schemes: FxHashMap::default(),
             def_to_module,
+            adjustments: FxHashMap::default(),
         }
     }
 
@@ -78,6 +89,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             inherent_methods: self.inherent_methods,
             interface_methods: self.interface_methods,
             item_schemes: self.item_schemes,
+            adjustments: self.adjustments,
         }
     }
 }
@@ -116,6 +128,8 @@ pub struct TypeckOutputs {
     pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
     /// maps (item def id) -> (scheme)
     pub item_schemes: FxHashMap<DefId, Scheme>,
+    /// maps (expr hir id) -> (adjustments)
+    pub adjustments: FxHashMap<HirId, Vec<Adjustment>>,
 }
 
 impl TypeckOutputs {
@@ -147,7 +161,6 @@ pub struct CoherenceTable {
     pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning interface def id)
     pub method_to_interface: FxHashMap<DefId, DefId>,
-    /// maps (struct def id) -> (maps (field name) -> (type))
     /// maps (struct def id) -> (maps (field name) -> (type, index))
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (Ty, usize)>>,
 }

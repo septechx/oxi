@@ -3,10 +3,11 @@ mod item;
 mod stmt;
 
 use crate::ast::{self, NodeId};
+use crate::errors::builders;
 use crate::hir::index::{AstIndex, AstOwner};
 use crate::hir::owner::HirId;
 use crate::hir::types::*;
-use crate::hir::{AstLoweringContext, Crate, DefId};
+use crate::hir::{AstLoweringContext, Crate, DefId, DefKind};
 use crate::resolve::{PartialRes, Res};
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -74,11 +75,39 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
     }
 
-    fn lower_type(&mut self, ty: &ast::Type) -> Ty {
+    pub(super) fn lower_type(&mut self, ty: &ast::Type) -> Ty {
         let hir_id = self.next_hir_id();
         let kind = match &ty.kind {
             ast::TypeKind::Symbol(path) => {
                 let qpath = self.lower_qpath(path, ty.node_id);
+                if let QPath::Resolved(resolved) = &qpath
+                    && let Res::Def(def_id) = resolved.res
+                    && self.resolver.defs[def_id.0 as usize].kind == DefKind::Interface
+                {
+                    let iface_name = self.ctx.interner.lookup(
+                        self.resolver.defs[def_id.0 as usize]
+                            .name
+                            .expect("interface def should have a name"),
+                    );
+                    if let Some(module_id) = self
+                        .current_owner
+                        .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
+                        .copied()
+                    {
+                        self.ctx.errors.add(
+                            builders::error_at(
+                                format!(
+                                    "Type error: expected a type, found interface `{}`",
+                                    iface_name,
+                                ),
+                                module_id,
+                                ty.span,
+                                self.ctx,
+                            ),
+                            self.ctx.enable_printing,
+                        );
+                    }
+                }
                 TyKind::Path(qpath)
             }
             ast::TypeKind::Pointer(inner, mutability) => {

@@ -23,7 +23,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
     match &mut expr.kind {
         ExprKind::MemberAccess { base, member } => {
             rewrite_expr(base, member_res);
-            if let Some(MemberRes::Field { .. }) = res {
+            if let Some(MemberRes::Field { index }) = res {
                 let base = std::mem::replace(
                     base,
                     Expr {
@@ -36,12 +36,13 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                 expr.kind = ExprKind::Field {
                     base,
                     field: *member,
+                    index,
                 }
             }
         }
         ExprKind::Call { callee, params } => {
             let res = member_res.get(&callee.hir_id).copied();
-            if let Some(MemberRes::Method { .. }) = res {
+            if let Some(MemberRes::Method { def_id, .. }) = res {
                 let (mut base_owned, member_sym) =
                     match std::mem::replace(&mut callee.kind, ExprKind::Error) {
                         ExprKind::MemberAccess { base, member } => (base, member),
@@ -65,6 +66,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                     receiver: base_owned,
                     method: member_sym,
                     params: params_owned,
+                    def_id,
                 };
             } else {
                 rewrite_expr(callee, member_res);

@@ -11,6 +11,12 @@ pub struct Scope {
     kind: ScopeKind,
 }
 
+impl Scope {
+    pub fn new(local_id: ItemLocalId, kind: ScopeKind) -> Self {
+        Self { local_id, kind }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScopeKind {
     Node,
@@ -29,6 +35,12 @@ pub enum ScopeKind {
 #[derive(Debug, Clone, Default)]
 pub struct ScopeTrees {
     per_body: FxHashMap<DefId, ScopeTree>,
+}
+
+impl ScopeTrees {
+    pub fn per_body(&self, def_id: DefId) -> Option<&ScopeTree> {
+        self.per_body.get(&def_id)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
