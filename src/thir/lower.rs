@@ -286,7 +286,7 @@ impl<'a> ThirLowerer<'a> {
             .stmts
             .last()
             .and_then(|expr| match &expr.kind {
-                hir::StmtKind::Expr(expr) | hir::StmtKind::Semi(expr) => Some(expr),
+                hir::StmtKind::Expr(expr) => Some(expr),
                 _ => None,
             })
             .map(|expr| self.lookup_ty(expr.hir_id))
