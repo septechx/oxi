@@ -165,7 +165,10 @@ impl Drop for Test {
             file_paths.push(file_path);
         }
 
-        let _ = self.run_pipeline(&file_paths);
+        let res = self.run_pipeline(&file_paths);
+        if self.should_succeed == Some(false) && res.is_ok() {
+            panic!("Expected pipeline to fail, but it succeeded");
+        }
     }
 }
 

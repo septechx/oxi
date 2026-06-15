@@ -67,10 +67,22 @@ fn compile_to_thir(source: &str) -> ThirCrate {
         resolver.resolve();
         resolver.into_resolver_outputs()
     });
+    with_ctx(|ctx| {
+        if ctx.errors.has_errors_above_level(ErrorLevel::Warning) {
+            ctx.errors.print_errors(ErrorLevel::Warning);
+            panic!("Errors during resolution");
+        }
+    });
 
     let mut hir_crate = with_ctx_mut(|ctx| {
         let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
         lowering_ctx.lower_crate()
+    });
+    with_ctx(|ctx| {
+        if ctx.errors.has_errors_above_level(ErrorLevel::Warning) {
+            ctx.errors.print_errors(ErrorLevel::Warning);
+            panic!("Errors during HIR lowering");
+        }
     });
 
     let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
