@@ -614,15 +614,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
                 && let Ty::Ptr(..) = &param_r
             {
+                let Ty::Ptr(inner, mutability) = param_r else {
+                    unreachable!()
+                };
                 if let Some(hir_id) = receiver_hir_id {
                     self.adjustments
                         .entry(hir_id)
                         .or_default()
-                        .push(Adjustment::AutoRef(Mutability::Constant));
+                        .push(Adjustment::AutoRef(mutability));
                 }
-                let Ty::Ptr(inner, _) = param_r else {
-                    unreachable!()
-                };
                 unify(self.icx, &inner, recv_ty, call_span, self.module_id).or_push_err(self.icx);
             } else {
                 unify(self.icx, first, recv_ty, call_span, self.module_id).or_push_err(self.icx);
