@@ -129,7 +129,7 @@ fn bind(
     }
     match icx.ty_var_source(var) {
         TyVarSource::IntLit => match &to {
-            Ty::Var(_) => {}
+            Ty::Var(to_var) if matches!(icx.ty_var_source(*to_var), TyVarSource::IntLit) => {}
             Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_)) => {}
             _ => {
                 return Err(mismatch(
@@ -141,7 +141,7 @@ fn bind(
             }
         },
         TyVarSource::FloatLit => match &to {
-            Ty::Var(_) => {}
+            Ty::Var(to_var) if matches!(icx.ty_var_source(*to_var), TyVarSource::FloatLit) => {}
             Ty::Prim(PrimTy::Float(_)) => {}
             _ => {
                 return Err(mismatch(
