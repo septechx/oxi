@@ -1,3 +1,5 @@
+use oxic::errors::ErrorLevel;
+
 use crate::common::with;
 
 #[test]
@@ -80,7 +82,8 @@ fn impl_missing_interface_method() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -103,7 +106,8 @@ fn impl_signature_mismatch() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -130,7 +134,8 @@ fn impl_conflicting_duplicate() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -151,7 +156,8 @@ fn impl_wrong_self_type() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -172,7 +178,8 @@ fn impl_wrong_interface() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -361,7 +368,8 @@ fn interface_used_as_param_type() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -384,7 +392,8 @@ fn interface_used_as_return_type() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -403,7 +412,8 @@ fn interface_used_as_param_type_in_free_fn() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -424,7 +434,8 @@ fn interface_used_as_struct_field_type() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -447,6 +458,7 @@ fn interface_used_in_ptr_param_type() {
             pub fn main() void {}
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }

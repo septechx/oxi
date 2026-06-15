@@ -1,3 +1,5 @@
+use oxic::errors::ErrorLevel;
+
 use crate::common::with;
 
 #[test]
@@ -75,7 +77,8 @@ fn pipe_call_autoborrow_first_arg() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -122,7 +125,8 @@ fn function_call_no_autoborrow_first_arg() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -190,7 +194,8 @@ fn method_call_no_autoborrow_explicit_arg() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 

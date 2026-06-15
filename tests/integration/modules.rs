@@ -1,3 +1,5 @@
+use oxic::errors::ErrorLevel;
+
 use crate::common::with;
 
 #[test]
@@ -146,7 +148,8 @@ fn mod_unmatched_declaration_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 

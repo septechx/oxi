@@ -1,22 +1,22 @@
-use oxic::{
-    ast::validate::validate_ast,
-    context::{with_ctx, with_ctx_mut},
-    errors::ErrorLevel,
-    hir::AstLoweringContext,
-    lexer::tokenize,
-    parser::parse,
-    resolve::{Resolver, build_module_tree},
-    thir::lower_thir,
-    thir::scope::build_scope_trees,
-    typeck::typeck_crate,
-};
-use std::{
-    fs,
-    hash::{DefaultHasher, Hash, Hasher},
-    path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::assert_matches;
+use std::fmt::Display;
+use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use thin_vec::ThinVec;
+
+use oxic::ast::validate::validate_ast;
+use oxic::context::{with_ctx, with_ctx_mut};
+use oxic::errors::ErrorLevel;
+use oxic::hir::AstLoweringContext;
+use oxic::lexer::tokenize;
+use oxic::parser::parse;
+use oxic::resolve::{Resolver, build_module_tree};
+use oxic::thir::lower_thir;
+use oxic::thir::scope::build_scope_trees;
+use oxic::typeck::typeck_crate;
 
 static TEST_RUN_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -37,22 +37,17 @@ impl Test {
         }
     }
 
-    /// Add a source file with a given filename. The filename should be relative
-    /// The first file added is assumed to be the crate root (must be named main.oxi).
     pub fn add_source(&mut self, filename: &str, source: &str) -> &mut Self {
         self.files
             .push((filename.to_string(), source.trim().to_string()));
         self
     }
 
-    /// Expect resolution to succeed (true) or fail (false).
-    /// If not set, panics on any error above fail_on_level.
     pub fn succeeds(&mut self, should: bool) -> &mut Self {
         self.should_succeed = Some(should);
         self
     }
 
-    /// Set the error level at which the test should fail.
     pub fn fail_on_level(&mut self, level: ErrorLevel) -> &mut Self {
         self.fail_on_level = level;
         self
@@ -68,14 +63,78 @@ impl Test {
         })
     }
 
-    fn handle_error_check(&self) -> bool {
+    fn checkpoint(&self) -> Result<(), ()> {
         if self.check_for_errors() {
-            if self.should_succeed == Some(false) {
-                return true;
-            }
-            panic!("Resolution had errors or warnings above threshold");
+            assert_matches!(self.should_succeed, Some(false));
+            Err(())
+        } else {
+            Ok(())
         }
-        false
+    }
+
+    fn hard_check<T, E: Display>(&self, result: Result<T, E>, msg: &str) -> Result<T, ()> {
+        match result {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                if self.should_succeed == Some(false) {
+                    return Err(());
+                }
+                panic!("{}: {}", msg, e);
+            }
+        }
+    }
+
+    fn run_pipeline(&mut self, file_paths: &[PathBuf]) -> Result<(), ()> {
+        let mut asts = ThinVec::new();
+        for file_path in file_paths {
+            let source =
+                self.hard_check(fs::read_to_string(file_path), "Failed to read source file")?;
+            let (tokens, module_id) =
+                self.hard_check(tokenize(source, file_path), "Tokenization failed")?;
+            self.checkpoint()?;
+
+            let ast = self.hard_check(parse(tokens, file_path), "Parsing failed")?;
+            self.checkpoint()?;
+
+            validate_ast(&ast, module_id);
+            self.checkpoint()?;
+
+            asts.push(ast);
+        }
+
+        with_ctx_mut(|ctx| {
+            Resolver::assign_node_ids(ctx, &mut asts);
+        });
+        self.checkpoint()?;
+
+        let module_tree = self.hard_check(
+            build_module_tree(&asts, file_paths, "main"),
+            "build_module_tree failed",
+        )?;
+        self.checkpoint()?;
+
+        let resolver = with_ctx_mut(|ctx| {
+            let mut resolver = Resolver::new(&asts, &module_tree, ctx);
+            resolver.resolve();
+            resolver.into_resolver_outputs()
+        });
+        self.checkpoint()?;
+
+        let mut hir_crate = with_ctx_mut(|ctx| {
+            let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
+            lowering_ctx.lower_crate()
+        });
+        self.checkpoint()?;
+
+        let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
+        self.checkpoint()?;
+        typeck.assert_no_errors();
+
+        let scope_trees = build_scope_trees(&hir_crate);
+        let _thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+        self.checkpoint()?;
+
+        Ok(())
     }
 }
 
@@ -106,109 +165,7 @@ impl Drop for Test {
             file_paths.push(file_path);
         }
 
-        // Phase 1: Tokenize and parse all files
-        let mut asts = ThinVec::new();
-        for file_path in &file_paths {
-            let source = match fs::read_to_string(file_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    if self.should_succeed == Some(false) {
-                        return;
-                    }
-                    panic!("Failed to read source file: {}", e);
-                }
-            };
-
-            let (tokens, module_id) = match tokenize(source, file_path) {
-                Ok(t) => t,
-                Err(_) => {
-                    if self.should_succeed == Some(false) {
-                        return;
-                    }
-                    panic!("Tokenization failed");
-                }
-            };
-
-            if self.handle_error_check() {
-                return;
-            }
-
-            let ast = match parse(tokens, file_path) {
-                Ok(a) => a,
-                Err(_) => {
-                    if self.should_succeed == Some(false) {
-                        return;
-                    }
-                    panic!("Parsing failed");
-                }
-            };
-
-            if self.handle_error_check() {
-                return;
-            }
-
-            validate_ast(&ast, module_id);
-            if self.handle_error_check() {
-                return;
-            }
-
-            asts.push(ast);
-        }
-
-        with_ctx_mut(|ctx| {
-            Resolver::assign_node_ids(ctx, &mut asts);
-        });
-
-        // Phase 2: Build module tree
-        let module_tree = match build_module_tree(&asts, &file_paths, "main") {
-            Ok(tree) => tree,
-            Err(_) => {
-                if self.should_succeed == Some(false) {
-                    return;
-                }
-                panic!("Module tree building failed");
-            }
-        };
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        // Phase 3: Run name resolution
-        let resolver = with_ctx_mut(|ctx| {
-            let mut resolver = Resolver::new(&asts, &module_tree, ctx);
-            resolver.resolve();
-            resolver.into_resolver_outputs()
-        });
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        // Phase 4: Lower to HIR
-        let mut hir_crate = with_ctx_mut(|ctx| {
-            let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
-            lowering_ctx.lower_crate()
-        });
-
-        if self.handle_error_check() {
-            return;
-        }
-
-        // Phase 5: Type check
-        let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
-        if self.should_succeed == Some(false) {
-            if !self.check_for_errors() {
-                panic!("Expected a type error but none occurred");
-            }
-            return;
-        }
-        self.handle_error_check();
-        typeck.assert_no_errors();
-
-        // Phase 6: Build scope trees and lower to THIR
-        let scope_trees = build_scope_trees(&hir_crate);
-        let _thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+        let _ = self.run_pipeline(&file_paths);
     }
 }
 

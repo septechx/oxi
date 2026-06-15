@@ -1,3 +1,5 @@
+use oxic::errors::ErrorLevel;
+
 use crate::common::with;
 
 #[test]
@@ -13,7 +15,8 @@ fn type_error_on_binary_tail_in_void_fn() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -237,7 +240,8 @@ fn pointer_to_primitive_field_access() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -252,7 +256,8 @@ fn invalid_cast_operand_type_error() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     })
 }
 
@@ -304,7 +309,8 @@ fn tail_expr_not_at_tail_of_block_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -322,7 +328,8 @@ fn tail_expr_not_at_tail_of_nested_block_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -340,7 +347,8 @@ fn tail_expr_not_at_tail_of_if_block_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -358,7 +366,8 @@ fn tail_expr_not_at_tail_of_while_body_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -376,7 +385,8 @@ fn tail_expr_not_at_tail_of_loop_body_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -393,7 +403,8 @@ fn tail_expr_at_tail_of_while_body_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -410,7 +421,8 @@ fn tail_expr_at_tail_of_loop_body_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -429,7 +441,8 @@ fn bare_inline_block_as_loop_statement_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
@@ -448,7 +461,8 @@ fn bare_if_as_loop_statement_fails() {
             }
             "#,
         )
-        .succeeds(false);
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
     });
 }
 
