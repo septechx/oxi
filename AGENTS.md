@@ -10,6 +10,8 @@ The `src/codegen` module is deprecated
 
 # Language syntax
 
+A Language grammar specification is available at `docs/grammar.txt`
+
 ## Arrays
 
 ```

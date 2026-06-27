@@ -1,0 +1,52 @@
+Id -> x | y | z | ...
+Lit -> 0 | 1 | -1 | ...
+     | 0.1 | -0.1 | ...
+     | "a" | "ab" | ...
+     | 'a' | 'b' | ...
+     | true | false
+Path -> Id [::Id]*
+ITree -> Path [as Id]?
+       | Path::{[ITree],+}
+       | Path::*
+Ty -> Path
+    | & [mut]? Ty
+    | []Ty
+    | [1]Ty | [2]Ty | ...
+    | ([Ty],*) -> Ty
+    | (Ty, Ty, [Ty],*)
+    | !
+Expr -> Lit
+      | Path
+      | Expr + Expr | Expr - Expr | Expr * Expr | Expr / Expr | Expr % Expr
+      | Expr << Expr | Expr >> Expr
+      | Expr & Expr | Expr [|] Expr | Expr ^ Expr
+      | Expr == Expr | Expr != Expr | Expr > Expr | Expr < Expr | Expr <= Expr | Expr >= Expr
+      | Expr && Expr | Expr || Expr
+      | Expr .. Expr
+      | Expr |> Expr
+      | Expr@ | Expr?
+      | @Expr | !Expr | -Expr | & [mut]? Expr
+      | Expr = Expr | Expr += Expr | Expr -= Expr | Expr *= Expr | Expr /= Expr | Expr %= Expr
+      | Path { [Id: Expr],* }
+      | []Ty{ [Expr],* }
+      | Expr([Expr],*)
+      | Expr.Id
+      | Expr as Ty
+      | (Expr, Expr, [Expr],*)
+      | { [Stmt]* [Expr]? }
+      | (Expr)
+      | break Expr
+      | return Expr
+      | if Expr { [Stmt]* [Expr]? } [else Expr]?
+      | while Expr { [Stmt]* }
+      | loop { [Stmt]* }
+Stmt -> Expr;
+      | let [mut]? Id [: Ty]? [= Expr]?;
+Assoc -> [pub]? fn Id([Id: Ty],*) Ty { [Stmt]* [Expr]? }
+Item -> [pub]? const Id: Ty = Expr;
+      | [pub]? struct Id { [[pub]? Id: Ty],* [Assoc]* }
+      | [pub]? interface Id { [Assoc]* }
+      | impl Path for Path { [Assoc]* }
+      | [pub]? [extern]? fn Id([Id: Ty],*) Ty [{ [Stmt]* [Expr]? }]|[;]
+      | [pub]? import ITree;
+      | [pub]? mod Id [{ [Item]* }]?;
