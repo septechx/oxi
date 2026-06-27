@@ -13,14 +13,14 @@ Ty -> Path
     | []Ty
     | [1]Ty | [2]Ty | ...
     | ([Ty],*) -> Ty
-    | ([Ty],2+)
+    | (Ty, Ty, [Ty],*)
     | !
 Expr -> Lit
       | Path
-      | Expr + Expr | Expr - Expr | Expr * Expr | Expr % Expr
+      | Expr + Expr | Expr - Expr | Expr * Expr | Expr / Expr | Expr % Expr
       | Expr << Expr | Expr >> Expr
       | Expr & Expr | Expr [|] Expr | Expr ^ Expr
-      | Expr == Expr | Expr > Expr | Expr < Expr | Expr <= Expr | Expr >= Expr
+      | Expr == Expr | Expr != Expr | Expr > Expr | Expr < Expr | Expr <= Expr | Expr >= Expr
       | Expr && Expr | Expr || Expr
       | Expr .. Expr
       | Expr |> Expr
@@ -32,7 +32,7 @@ Expr -> Lit
       | Expr([Expr],*)
       | Expr.Id
       | Expr as Ty
-      | ([Expr],2+)
+      | (Expr, Expr, [Expr],*)
       | { [Stmt]* [Expr]? }
       | (Expr)
       | break Expr
