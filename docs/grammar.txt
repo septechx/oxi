@@ -35,8 +35,8 @@ Expr -> Lit
       | (Expr, Expr, [Expr],*)
       | { [Stmt]* [Expr]? }
       | (Expr)
-      | break Expr
-      | return Expr
+      | break [Expr]?
+      | return [Expr]?
       | if Expr { [Stmt]* [Expr]? } [else Expr]?
       | while Expr { [Stmt]* }
       | loop { [Stmt]* }
