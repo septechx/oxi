@@ -313,7 +313,7 @@ fn impl_associated_fn_path_defers_type_relative_resolution() {
         "main.oxi",
         r#"
         interface Maker {
-            fn new() Foo,
+            fn new() Foo;
         }
 
         struct Foo {

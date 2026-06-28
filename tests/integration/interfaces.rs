@@ -9,7 +9,7 @@ fn impl_basic_success() {
             "main.oxi",
             r#"
             interface I {
-                fn f(self: &Self) i32,
+                fn f(self: &Self) i32;
             }
 
             struct S {
@@ -39,7 +39,7 @@ fn impl_self_return_type() {
             "main.oxi",
             r#"
             interface Maker {
-                fn new(v: i32) Self,
+                fn new(v: i32) Self;
             }
 
             struct S {
@@ -69,8 +69,8 @@ fn impl_missing_interface_method() {
             "main.oxi",
             r#"
             interface I {
-                fn a(self: &Self) void,
-                fn b(self: &Self) void,
+                fn a(self: &Self) void;
+                fn b(self: &Self) void;
             }
 
             struct S {}
@@ -94,7 +94,7 @@ fn impl_signature_mismatch() {
             "main.oxi",
             r#"
             interface I {
-                fn f(self: &Self) i32,
+                fn f(self: &Self) i32;
             }
 
             struct S {}
@@ -118,7 +118,7 @@ fn impl_conflicting_duplicate() {
             "main.oxi",
             r#"
             interface I {
-                fn f(self: &Self) i32,
+                fn f(self: &Self) i32;
             }
 
             struct S {}
@@ -146,7 +146,7 @@ fn impl_wrong_self_type() {
             "main.oxi",
             r#"
             interface I {
-                fn f(self: &Self) i32,
+                fn f(self: &Self) i32;
             }
 
             impl I for i32 {
@@ -190,9 +190,9 @@ fn impl_multiple_methods_call_all() {
             "main.oxi",
             r#"
             interface I {
-                fn a(self: &Self) i32,
-                fn b(self: &Self) i32,
-                fn c(self: &Self) i32,
+                fn a(self: &Self) i32;
+                fn b(self: &Self) i32;
+                fn c(self: &Self) i32;
             }
 
             struct S {
@@ -244,8 +244,8 @@ fn impl_cross_module() {
             "ifaces.oxi",
             r#"
             pub interface I {
-                fn f(self: &Self) i32,
-                fn new(v: i32) Self,
+                fn f(self: &Self) i32;
+                fn new(v: i32) Self;
             }
             "#,
         )
@@ -268,11 +268,11 @@ fn impl_two_interfaces_two_structs() {
             "main.oxi",
             r#"
             interface A {
-                fn a(self: &Self) i32,
+                fn a(self: &Self) i32;
             }
 
             interface B {
-                fn b(self: &Self) i32,
+                fn b(self: &Self) i32;
             }
 
             struct X {
@@ -328,7 +328,7 @@ fn impl_method_with_multiple_params() {
             "main.oxi",
             r#"
             interface I {
-                fn process(self: &Self, a: i32, b: i32) i32,
+                fn process(self: &Self, a: i32, b: i32) i32;
             }
 
             struct S {}
@@ -356,7 +356,7 @@ fn interface_used_as_param_type() {
             "main.oxi",
             r#"
             interface I {
-                fn bar(self: &I) void,
+                fn bar(self: &I) void;
             }
 
             struct S {}
@@ -380,7 +380,7 @@ fn interface_used_as_return_type() {
             "main.oxi",
             r#"
             interface I {
-                fn make() Self,
+                fn make() Self;
             }
 
             struct S {}
@@ -404,7 +404,7 @@ fn interface_used_as_param_type_in_free_fn() {
             "main.oxi",
             r#"
             interface I {
-                fn foo(self: &Self) void,
+                fn foo(self: &Self) void;
             }
 
             fn bar(x: I) void {}
@@ -424,7 +424,7 @@ fn interface_used_as_struct_field_type() {
             "main.oxi",
             r#"
             interface I {
-                fn foo(self: &Self) void,
+                fn foo(self: &Self) void;
             }
 
             struct S {
@@ -446,7 +446,7 @@ fn interface_used_in_ptr_param_type() {
             "main.oxi",
             r#"
             interface I {
-                fn foo(self: &I) void,
+                fn foo(self: &I) void;
             }
 
             struct S {}

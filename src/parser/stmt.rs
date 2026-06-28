@@ -273,8 +273,6 @@ pub fn parse_interface_decl_item(
                 span: stmt.span,
                 node_id: NodeId::default(),
             });
-
-            parser.expect(TokenKind::Comma)?;
         }
     }
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
@@ -362,9 +360,6 @@ pub fn parse_fn_decl_item(
         match parser.current_token().kind {
             TokenKind::Semicolon => {
                 end_span = parser.expect(TokenKind::Semicolon)?.span;
-            }
-            TokenKind::Comma => {
-                end_span = parser.peek().span;
             }
             _ => {
                 let tok = parser.current_token();
