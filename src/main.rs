@@ -73,14 +73,13 @@ fn check_for_errors() {
 }
 
 fn build_file(cli: Cli) -> Result<()> {
-    let entrypoint = if cli.input.len() == 1 && cli.entrypoint == "main" {
-        cli.input[0]
+    let entrypoint = match &cli.entrypoint {
+        Some(ep) => ep,
+        None if cli.input.len() == 1 => cli.input[0]
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("main")
-            .to_string()
-    } else {
-        cli.entrypoint
+            .unwrap_or("main"),
+        None => "main",
     };
 
     let mut asts = ThinVec::with_capacity(cli.input.len());
@@ -127,7 +126,7 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let module_tree = match build_module_tree(&asts, &cli.input, &entrypoint) {
+    let module_tree = match build_module_tree(&asts, &cli.input, entrypoint) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };
