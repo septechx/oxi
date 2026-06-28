@@ -467,6 +467,24 @@ fn bare_if_as_loop_statement_fails() {
 }
 
 #[test]
+fn bare_if_with_empty_body_as_loop_statement() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    if true {}
+                }
+                12
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
 fn block_tail_inside_loop_not_as_statement_succeeds() {
     with(|t| {
         t.add_source(
@@ -757,6 +775,122 @@ fn bitwise_compound_assignments() {
                 x <<= 1;
                 x >>= 1;
                 return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_else_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                } else {
+                    let x = 2;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn while_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                while false {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn loop_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                loop {
+                    break;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn block_expr_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn multiple_block_exprs_as_statements_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                }
+                while false {
+                    let y = 2;
+                }
+                loop {
+                    break;
+                }
+                42
             }
             "#,
         )
