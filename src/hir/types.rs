@@ -430,20 +430,20 @@ impl FromToken<BinOp> for BinOp {
             TokenKind::Dash => BinOp::Sub,
             TokenKind::Star => BinOp::Mul,
             TokenKind::Slash => BinOp::Div,
-            TokenKind::Percent => BinOp::Rem,
+            TokenKind::Perc => BinOp::Rem,
             TokenKind::ShiftLeft => BinOp::Shl,
             TokenKind::ShiftRight => BinOp::Shr,
-            TokenKind::Reference => BinOp::BitAnd,
+            TokenKind::Amp => BinOp::BitAnd,
             TokenKind::Bar => BinOp::BitOr,
-            TokenKind::Xor => BinOp::BitXor,
+            TokenKind::Caret => BinOp::BitXor,
             TokenKind::EqualsEquals => BinOp::Eq,
             TokenKind::NotEquals => BinOp::Ne,
             TokenKind::Less => BinOp::Lt,
             TokenKind::LessEquals => BinOp::Le,
             TokenKind::More => BinOp::Gt,
             TokenKind::MoreEquals => BinOp::Ge,
-            TokenKind::And => BinOp::And,
-            TokenKind::Or => BinOp::Or,
+            TokenKind::AmpAmp => BinOp::And,
+            TokenKind::BarBar => BinOp::Or,
             _ => return None,
         })
     }
@@ -460,7 +460,7 @@ impl FromToken<PreOp> for PreOp {
     fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Dash => Self::Neg,
-            TokenKind::Reference => Self::Ref,
+            TokenKind::Amp => Self::Ref,
             TokenKind::Bang => Self::Not,
             _ => return None,
         })
@@ -489,6 +489,11 @@ pub enum AssOp {
     AssMul,
     AssDiv,
     AssRem,
+    AssBitAnd,
+    AssBitOr,
+    AssBitXor,
+    AssShl,
+    AssShr,
 }
 
 impl FromToken<AssOp> for AssOp {
@@ -500,6 +505,11 @@ impl FromToken<AssOp> for AssOp {
             TokenKind::StarEquals => Self::AssMul,
             TokenKind::SlashEquals => Self::AssDiv,
             TokenKind::PercentEquals => Self::AssRem,
+            TokenKind::BitAndEquals => Self::AssBitAnd,
+            TokenKind::BitOrEquals => Self::AssBitOr,
+            TokenKind::BitXorEquals => Self::AssBitXor,
+            TokenKind::ShiftLeftEquals => Self::AssShl,
+            TokenKind::ShiftRightEquals => Self::AssShr,
             _ => return None,
         })
     }

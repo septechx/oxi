@@ -97,6 +97,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                             AssOp::AssMul => BinOp::Mul,
                             AssOp::AssDiv => BinOp::Div,
                             AssOp::AssRem => BinOp::Rem,
+                            AssOp::AssBitAnd => BinOp::BitAnd,
+                            AssOp::AssBitOr => BinOp::BitOr,
+                            AssOp::AssBitXor => BinOp::BitXor,
+                            AssOp::AssShl => BinOp::Shl,
+                            AssOp::AssShr => BinOp::Shr,
                             AssOp::Ass => unreachable!(),
                         };
                         ExprKind::Assign {

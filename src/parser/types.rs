@@ -56,7 +56,7 @@ pub fn create_token_type_lookups() {
         type_nud(T::Identifier, parse_symbol_type, &mut nud_lu);
         type_nud(T::OpenBracket, parse_array_type, &mut nud_lu);
         type_nud(T::OpenParen, parse_parenthesis_type, &mut nud_lu);
-        type_nud(T::Reference, parse_pointer_type, &mut nud_lu);
+        type_nud(T::Amp, parse_pointer_type, &mut nud_lu);
 
         let _ = TYPE_BP_LU.set(bp_lu);
         let _ = TYPE_NUD_LU.set(nud_lu);
@@ -76,7 +76,7 @@ fn parse_symbol_type(parser: &mut Parser) -> Result<Type> {
 }
 
 fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
-    let start_token = parser.expect(T::Reference)?;
+    let start_token = parser.expect(T::Amp)?;
 
     let mut is_mutable = false;
     if parser.current_token().kind == TokenKind::Mut {
