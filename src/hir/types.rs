@@ -444,6 +444,8 @@ impl FromToken<BinOp> for BinOp {
             TokenKind::MoreEquals => BinOp::Ge,
             TokenKind::AmpAmp => BinOp::And,
             TokenKind::BarBar => BinOp::Or,
+            TokenKind::DotDotExcl => todo!("..< not yet implemented"),
+            TokenKind::DotDotIncl => todo!("..= not yet implemented"),
             _ => return None,
         })
     }
