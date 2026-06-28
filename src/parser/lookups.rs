@@ -19,6 +19,8 @@ pub enum BindingPower {
     Assignment,
     Logical,
     Relational,
+    Bitwise,
+    Shift,
     Additive,
     Multiplicative,
     Unary,
@@ -106,18 +108,83 @@ pub fn create_token_lookups() {
             &mut bp_lu,
             &mut led_lu,
         );
+        led(
+            T::StarEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::BitAndEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::BitOrEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::BitXorEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::ShiftLeftEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::ShiftRightEquals,
+            BP::Assignment,
+            parse_assignment_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
 
-        // Logical
+        // Bitwise
         led(
             T::Amp,
-            BP::Logical,
+            BP::Bitwise,
             parse_binary_expr,
             &mut bp_lu,
             &mut led_lu,
         );
         led(
             T::Bar,
-            BP::Logical,
+            BP::Bitwise,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::Caret,
+            BP::Bitwise,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+
+        // Shift
+        led(
+            T::ShiftLeft,
+            BP::Shift,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::ShiftRight,
+            BP::Shift,
             parse_binary_expr,
             &mut bp_lu,
             &mut led_lu,
@@ -221,6 +288,13 @@ pub fn create_token_lookups() {
         );
         led(
             T::Perc,
+            BP::Multiplicative,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::Star,
             BP::Multiplicative,
             parse_binary_expr,
             &mut bp_lu,
