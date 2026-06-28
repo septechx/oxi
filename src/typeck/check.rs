@@ -286,6 +286,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 let then_span = then_branch.span;
                 let then_ty = self.check_block(then_branch).tail;
+                let void_ty = Ty::Prim(PrimTy::Void);
                 let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
                 match else_ty {
                     Some(else_ty) => {
@@ -296,7 +297,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         }
                         then_ty
                     }
-                    None => Ty::Prim(PrimTy::Void),
+                    None => {
+                        if let Err(err) =
+                            unify(self.icx, &void_ty, &then_ty, then_span, self.module_id)
+                        {
+                            self.report_type_error(err);
+                        }
+                        void_ty
+                    }
                 }
             }
             ExprKind::Break(expr) | ExprKind::Return(expr) => {
@@ -823,7 +831,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn check_loop(&mut self, block: &Block) -> Ty {
-        self.check_block(block)
+        let block_ty_res = self.check_block(block);
+
+        let void_ty = Ty::Prim(PrimTy::Void);
+        if let Err(err) = unify(self.icx, &void_ty, &block_ty_res.tail, block.span, self.module_id)
+        {
+            self.report_type_error(err);
+        }
+
+        block_ty_res
             .early
             .unwrap_or_else(|| Ty::Prim(PrimTy::Void))
     }
