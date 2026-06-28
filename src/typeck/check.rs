@@ -834,14 +834,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let block_ty_res = self.check_block(block);
 
         let void_ty = Ty::Prim(PrimTy::Void);
-        if let Err(err) = unify(self.icx, &void_ty, &block_ty_res.tail, block.span, self.module_id)
-        {
+        if let Err(err) = unify(
+            self.icx,
+            &void_ty,
+            &block_ty_res.tail,
+            block.span,
+            self.module_id,
+        ) {
             self.report_type_error(err);
         }
 
-        block_ty_res
-            .early
-            .unwrap_or_else(|| Ty::Prim(PrimTy::Void))
+        block_ty_res.early.unwrap_or_else(|| Ty::Prim(PrimTy::Void))
     }
 
     fn check_member_access(
