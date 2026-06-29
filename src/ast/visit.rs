@@ -384,11 +384,7 @@ impl Visitable for Expr {
                         field.1.visit(visitor);
                     }
                 }
-                ExprKind::ArrayLiteral {
-                    underlying,
-                    contents,
-                } => {
-                    underlying.visit(visitor);
+                ExprKind::ArrayLiteral { contents } => {
                     contents.visit(visitor);
                 }
                 ExprKind::FunctionCall { callee, parameters } => {
@@ -469,11 +465,7 @@ impl Visitable for Expr {
                         field.1.visit_mut(visitor);
                     }
                 }
-                ExprKind::ArrayLiteral {
-                    underlying,
-                    contents,
-                } => {
-                    underlying.visit_mut(visitor);
+                ExprKind::ArrayLiteral { contents } => {
                     contents.visit_mut(visitor);
                 }
                 ExprKind::FunctionCall { callee, parameters } => {

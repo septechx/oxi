@@ -152,7 +152,7 @@ fn bind(
                 ));
             }
         },
-        TyVarSource::Generic => {}
+        TyVarSource::Generic | TyVarSource::EmptyArray => {}
     }
     if occurs(icx, var, &to) {
         return Err(UnifyError::OccursCheck {

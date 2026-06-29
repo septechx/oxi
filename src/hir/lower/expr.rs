@@ -138,13 +138,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     .collect();
                 ExprKind::StructInit { def, fields }
             }
-            ast::ExprKind::ArrayLiteral {
-                underlying,
-                contents,
-            } => {
-                let ty = self.lower_type(underlying);
+            ast::ExprKind::ArrayLiteral { contents } => {
                 let contents = contents.iter().map(|expr| self.lower_expr(expr)).collect();
-                ExprKind::ArrayInit { ty, contents }
+                ExprKind::ArrayInit { contents }
             }
             ast::ExprKind::TupleLiteral { elements } => {
                 let elements = elements.iter().map(|expr| self.lower_expr(expr)).collect();

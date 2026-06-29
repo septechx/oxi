@@ -126,6 +126,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module).or_push_err(&mut icx);
         }
 
+        let empty_array_ids = icx.vars_with_source(TyVarSource::EmptyArray);
+        for var in empty_array_ids {
+            if icx.is_bound(var) {
+                continue;
+            }
+            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = icx.ty_var_module(var);
+            self.ctx.errors.add(
+                builders::error_at(
+                    "Cannot infer type of empty array",
+                    var_module,
+                    var_span,
+                    self.ctx,
+                ),
+                self.ctx.enable_printing,
+            );
+        }
+
         let resolved: FxHashMap<HirId, Ty> = node_types
             .iter()
             .map(|(&id, ty)| (id, icx.resolve(ty)))
@@ -258,17 +276,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
             ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
-            ExprKind::ArrayInit { ty, contents } => {
-                let elem_ty = Ty::from_hir(self.icx, ty);
-                for expr in contents {
-                    let expr_ty = self.check_expr(expr);
-                    if let Err(err) = unify(self.icx, &elem_ty, &expr_ty, expr.span, self.module_id)
-                    {
-                        self.report_type_error(err);
-                    }
-                }
-                Ty::Slice(elem_ty.into_box())
-            }
+            ExprKind::ArrayInit { contents } => self.check_array_init(contents, expr_span),
             ExprKind::TupleInit(elements) => {
                 Ty::Tuple(elements.iter().map(|expr| self.check_expr(expr)).collect())
             }
@@ -724,6 +732,30 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         struct_ty
+    }
+
+    fn check_array_init(&mut self, contents: &ThinVec<Expr>, span: Span) -> Ty {
+        let mut elem_ty = None;
+        for expr in contents {
+            let expr_ty = self.check_expr(expr);
+            if let Some(elem_ty) = &elem_ty {
+                if let Err(err) = unify(self.icx, elem_ty, &expr_ty, expr.span, self.module_id) {
+                    self.report_type_error(err);
+                }
+            } else {
+                elem_ty = Some(expr_ty);
+            }
+        }
+        let elem_ty = elem_ty.unwrap_or_else(|| {
+            let var = self.icx.next_ty_var_at(
+                self.icx.current_level(),
+                TyVarSource::EmptyArray,
+                Some(span),
+                Some(self.module_id),
+            );
+            Ty::Var(var)
+        });
+        Ty::Slice(elem_ty.into_box())
     }
 
     fn check_block(&mut self, block: &Block) -> BlockTyRes {

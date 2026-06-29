@@ -281,7 +281,7 @@ fn let_explicit_slice_type_matches_string() {
             "main.oxi",
             r#"
             fn main() usize {
-                let s: []u8 = "hello";
+                let s: [u8] = "hello";
                 return s.len;
             }
             "#,
@@ -297,7 +297,7 @@ fn let_explicit_slice_type_mismatches_init() {
             "main.oxi",
             r#"
             fn main() void {
-                let s: []i32 = "hello";
+                let s: [i32] = "hello";
             }
             "#,
         )

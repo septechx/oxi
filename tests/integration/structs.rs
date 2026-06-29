@@ -13,7 +13,7 @@ fn slice_member_access_with_extra() {
             }
 
             fn main() usize {
-                let a = []Foo{Foo { val: 21 }};
+                let a = [Foo { val: 21 }];
                 a.ptr@.val + a.len
             }
             "#,

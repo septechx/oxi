@@ -101,7 +101,7 @@ fn slice_literals() {
             "main.oxi",
             r#"
             pub fn main() void {
-                let s = []u8{1, 2, 3};
+                let s = [1, 2, 3];
             }
         "#,
         )
@@ -183,7 +183,7 @@ fn string_literals() {
             "main.oxi",
             r#"
             fn main() usize {
-                let s: []u8 = "hello";
+                let s: [u8] = "hello";
                 return s.len;
             }
             "#,
@@ -982,6 +982,53 @@ fn not_expr() {
                 let x = true;
                 let y = !x;
                 y
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn empty_typed_array_succeeds() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                let x: [i32] = [];
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn empty_untyped_array_fails() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                let x = [];
+            }
+            "#,
+        )
+        .succeeds(false)
+        .fail_on_level(ErrorLevel::Error);
+    })
+}
+
+#[test]
+fn empty_untyped_array_later_gets_type() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                let x = [];
+                let y: [i32] = x;
             }
             "#,
         )

@@ -437,7 +437,6 @@ mod tests {
     fn test_array_literal_expr() {
         let expr = Expr {
             kind: ExprKind::ArrayLiteral {
-                underlying: dummy_type_symbol("i32"),
                 contents: thin_vec![
                     dummy_expr_number(1),
                     dummy_expr_number(2),
@@ -452,8 +451,8 @@ mod tests {
         visitor.assert_visited("expr", "Expr", 4);
         visitor.assert_visited("expr", "ArrayLiteralExpr", 1);
         visitor.assert_visited("expr", "NumberExpr", 3);
-        visitor.assert_visited("type", "Type", 1);
-        visitor.assert_visited("type", "SymbolType", 1);
+        visitor.assert_visited("type", "Type", 0);
+        visitor.assert_visited("type", "SymbolType", 0);
     }
 
     #[test]

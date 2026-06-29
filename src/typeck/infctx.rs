@@ -13,6 +13,7 @@ pub enum TyVarSource {
     Generic,
     IntLit,
     FloatLit,
+    EmptyArray,
 }
 
 #[derive(Debug)]
@@ -71,7 +72,7 @@ impl InferCtx {
         )
     }
 
-    fn next_ty_var_at(
+    pub fn next_ty_var_at(
         &mut self,
         level: u32,
         source: TyVarSource,
