@@ -126,6 +126,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module).or_push_err(&mut icx);
         }
 
+        let empty_array_ids = icx.vars_with_source(TyVarSource::EmptyArray);
+        for var in empty_array_ids {
+            if icx.is_bound(var) {
+                continue;
+            }
+            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = icx.ty_var_module(var);
+            self.ctx.errors.add(
+                builders::error_at(
+                    "Cannot infer type of empty array",
+                    var_module,
+                    var_span,
+                    self.ctx,
+                ),
+                self.ctx.enable_printing,
+            );
+        }
+
         let resolved: FxHashMap<HirId, Ty> = node_types
             .iter()
             .map(|(&id, ty)| (id, icx.resolve(ty)))
@@ -728,22 +746,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 elem_ty = Some(expr_ty);
             }
         }
-        if let Some(elem_ty) = elem_ty {
-            Ty::Slice(elem_ty.into_box())
-        } else {
-            // FIXME: Allow code like `let x: [i32] = []` to work
-            // Maybe this could be done by creating a new type variable
-            self.ctx.errors.add(
-                builders::error_at(
-                    "Cannot infer type of empty array",
-                    self.module_id,
-                    span,
-                    self.ctx,
-                ),
-                self.ctx.enable_printing,
+        let elem_ty = elem_ty.unwrap_or_else(|| {
+            let var = self.icx.next_ty_var_at(
+                self.icx.current_level(),
+                TyVarSource::EmptyArray,
+                Some(span),
+                Some(self.module_id),
             );
-            Ty::Slice(Box::new(Ty::Error))
-        }
+            Ty::Var(var)
+        });
+        Ty::Slice(elem_ty.into_box())
     }
 
     fn check_block(&mut self, block: &Block) -> BlockTyRes {
