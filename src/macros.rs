@@ -59,7 +59,9 @@ macro_rules! emit_at {
             let loc_widget = $crate::errors::widgets::LocationWidget::new(span, module_id)?;
             let code_widget =
                 $crate::errors::widgets::CodeWidget::new(span, module_id, $highlight)?;
-            let builder = $builder(msg).add_widget(loc_widget).add_widget(code_widget);
+            let builder = $builder(None, msg)
+                .add_widget(loc_widget)
+                .add_widget(code_widget);
             let builder = if let Some(info) = $info {
                 let info_widget = $crate::errors::widgets::InfoWidget::new(span, module_id, info)?;
                 builder.add_widget(info_widget)
@@ -197,7 +199,7 @@ macro_rules! error {
         $crate::CTX.with_borrow_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors
-                .add($crate::errors::builders::error($msg), enable_printing);
+                .add($crate::errors::builders::error(None, $msg), enable_printing);
         })
     };
 }
@@ -219,7 +221,7 @@ macro_rules! fatal {
         $crate::CTX.with_borrow_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors
-                .add($crate::errors::builders::fatal($msg), enable_printing);
+                .add($crate::errors::builders::fatal(None, $msg), enable_printing);
         });
         unreachable!()
     }};

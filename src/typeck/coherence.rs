@@ -42,6 +42,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let Some(struct_def_id) = self.resolve_struct(self_ty.res) else {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!(
                             "Expected path to struct in impl, found `{}`",
                             self_ty.display(self.ctx)
@@ -57,6 +58,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let Some(interface_def_id) = self.resolve_interface(interface_ty.res) else {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!(
                             "Expected path to interface in impl, found `{}`",
                             interface_ty.display(self.ctx)
@@ -78,6 +80,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             } else {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!(
                             "Conflicting implementations of `{}` for `{}`",
                             self.ctx.interner.lookup(
@@ -125,6 +128,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         .unwrap_or(impl_module);
                     self.ctx.errors.add(
                         builders::error_at(
+                            None,
                             format!(
                                 "Missing implementation of interface method `{}`",
                                 self.ctx.interner.lookup(*name)
@@ -155,6 +159,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     {
                         self.ctx.errors.add(
                             builders::error_at(
+                                None,
                                 format!(
                                     "Signature mismatch in method `{}`",
                                     self.ctx.interner.lookup(*name)

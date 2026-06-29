@@ -9,6 +9,7 @@ pub fn verify_tokens(tokens: &TokenStream) {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!("Illegal token: {c}"),
                         token.module_id,
                         token.span,

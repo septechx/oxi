@@ -237,6 +237,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         T::from_token(op).or_else(|| {
             self.ctx.errors.add(
                 builders::error_at(
+                    None,
                     format!("Invalid {kind} operator"),
                     op.module_id,
                     op.span,

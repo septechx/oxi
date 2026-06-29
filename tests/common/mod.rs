@@ -24,6 +24,7 @@ pub struct Test {
     files: Vec<(String, String)>,
     should_succeed: Option<bool>,
     fail_on_level: ErrorLevel,
+    expected_errors: Vec<String>,
 }
 
 impl Test {
@@ -34,6 +35,7 @@ impl Test {
             files: vec![],
             should_succeed: None,
             fail_on_level: ErrorLevel::Warning,
+            expected_errors: vec![],
         }
     }
 
@@ -53,19 +55,43 @@ impl Test {
         self
     }
 
+    pub fn expect_error(&mut self, error: &str) -> &mut Self {
+        self.expected_errors.push(error.to_string());
+        self
+    }
+
     fn check_for_errors(&self) -> bool {
         with_ctx(|ctx| {
-            if ctx.errors.has_errors_above_level(self.fail_on_level) {
+            let has_error = ctx.errors.has_errors_above_level(self.fail_on_level);
+
+            // If specific error codes were expected, they must all be present.
+            let missing_expected_error = self
+                .expected_errors
+                .iter()
+                .any(|code| !ctx.errors.has_code(code));
+
+            if has_error {
                 ctx.errors.print_errors(ErrorLevel::Warning);
-                return true;
             }
-            false
+
+            match (has_error, self.should_succeed == Some(false)) {
+                // success, expected success
+                (false, false) => false,
+
+                // success, expected failure
+                (false, true) => true,
+
+                // failure, expected success
+                (true, false) => true,
+
+                // failure, expected failure
+                (true, true) => missing_expected_error,
+            }
         })
     }
 
     fn checkpoint(&self) -> Result<(), ()> {
         if self.check_for_errors() {
-            assert_matches!(self.should_succeed, Some(false));
             Err(())
         } else {
             Ok(())
@@ -77,8 +103,18 @@ impl Test {
             Ok(v) => Ok(v),
             Err(e) => {
                 if self.should_succeed == Some(false) {
-                    return Err(());
+                    // We expected failure, but this bypassed ctx.errors.
+                    // If the test expected specific diagnostics, they can never appear.
+                    if self.expected_errors.is_empty() {
+                        return Err(());
+                    }
+
+                    panic!(
+                        "{}: {} (expected diagnostic errors {:?}, but execution failed before they were emitted)",
+                        msg, e, self.expected_errors
+                    );
                 }
+
                 panic!("{}: {}", msg, e);
             }
         }

@@ -27,14 +27,16 @@ impl Display for ErrorLevel {
 #[derive(Debug)]
 pub struct CompilationError {
     level: ErrorLevel,
+    code: Option<Box<str>>,
     message: Box<str>,
     widgets: Vec<Box<dyn for<'a> Widget<Formatter<'a>>>>,
 }
 
 impl CompilationError {
-    pub fn new(level: ErrorLevel, message: impl Into<Box<str>>) -> Self {
+    pub fn new(level: ErrorLevel, code: Option<Box<str>>, message: impl Into<Box<str>>) -> Self {
         Self {
             level,
+            code,
             message: message.into(),
             widgets: Vec::new(),
         }
@@ -48,8 +50,16 @@ impl CompilationError {
         self
     }
 
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
+
     fn display_with_context(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}: {}", self.level, self.message.bold())?;
+        if let Some(code) = &self.code {
+            writeln!(f, "{}[{}]: {}", self.level, code, self.message.bold())?;
+        } else {
+            writeln!(f, "{}: {}", self.level, self.message.bold())?;
+        }
 
         for widget in &self.widgets {
             widget.render(f)?;
@@ -104,10 +114,13 @@ impl ErrorCollector {
 
         if self.errors.len() >= self.max_errors {
             if enable_printing {
-                let max_error = builders::fatal(format!(
-                    "Too many errors ({}), stopping compilation",
-                    self.max_errors
-                ));
+                let max_error = builders::fatal(
+                    None,
+                    format!(
+                        "Too many errors ({}), stopping compilation",
+                        self.max_errors
+                    ),
+                );
                 eprintln!("{}", max_error);
             }
             std::process::exit(1);
@@ -164,6 +177,17 @@ impl ErrorCollector {
     pub fn has_errors_above_level(&self, min_level: ErrorLevel) -> bool {
         self.errors.iter().any(|e| e.level >= min_level)
     }
+
+    pub fn find_code(&self, code: &str) -> Vec<&CompilationError> {
+        self.errors
+            .iter()
+            .filter(|e| e.code() == Some(code))
+            .collect()
+    }
+
+    pub fn has_code(&self, code: &str) -> bool {
+        self.errors.iter().any(|e| e.code() == Some(code))
+    }
 }
 
 impl Default for ErrorCollector {
@@ -180,19 +204,20 @@ pub mod builders {
     use super::widgets::*;
     use super::*;
 
-    pub fn warning(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Warning, message.into())
+    pub fn warning(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+        CompilationError::new(ErrorLevel::Warning, code, message.into())
     }
 
-    pub fn error(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Error, message.into())
+    pub fn error(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+        CompilationError::new(ErrorLevel::Error, code, message.into())
     }
 
-    pub fn fatal(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Fatal, message.into())
+    pub fn fatal(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+        CompilationError::new(ErrorLevel::Fatal, code, message.into())
     }
 
     pub fn warning_at(
+        code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
         span: Span,
@@ -202,12 +227,13 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Warning, ctx)
             .expect("failed to create error");
-        warning(message.into())
+        warning(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
 
     pub fn error_at(
+        code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
         span: Span,
@@ -217,12 +243,13 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        error(message.into())
+        error(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
 
     pub fn fatal_at(
+        code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
         span: Span,
@@ -232,7 +259,7 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        fatal(message.into())
+        fatal(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
@@ -253,11 +280,11 @@ mod tests {
         let mut collector = ErrorCollector::new();
 
         collector.add(
-            CompilationError::new(ErrorLevel::Warning, "Warning message".to_string()),
+            CompilationError::new(ErrorLevel::Warning, None, "Warning message".to_string()),
             true,
         );
         collector.add(
-            CompilationError::new(ErrorLevel::Error, "Error message".to_string()),
+            CompilationError::new(ErrorLevel::Error, None, "Error message".to_string()),
             true,
         );
 

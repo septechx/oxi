@@ -14,6 +14,7 @@ pub fn unexpected_token(token: Token) -> ! {
         let enable_printing = ctx.enable_printing;
         ctx.errors.add(
             builders::fatal_at(
+                None,
                 format!("Syntax error: Unexpected token `{}`", token.value),
                 token.module_id,
                 token.span,

@@ -87,6 +87,7 @@ impl Parser {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
                     builders::error_at(
+                        None,
                         err.unwrap_or_else(|| {
                             format!(
                                 "Syntax error: Expected {} but received {} instead.",
@@ -115,6 +116,7 @@ impl Parser {
         if token.kind != TokenKind::Identifier {
             with_ctx_mut(|ctx| {
                 let err = builders::fatal_at(
+                    None,
                     format!("Syntax error: Expected identifier, found {}", token.kind),
                     token.module_id,
                     token.span,

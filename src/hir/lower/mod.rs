@@ -96,6 +96,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     {
                         self.ctx.errors.add(
                             builders::error_at(
+                                None,
                                 format!(
                                     "Type error: expected a type, found interface `{}`",
                                     iface_name,

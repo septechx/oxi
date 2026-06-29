@@ -88,10 +88,13 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let Some(self_res) = self_res else {
             // We cannot use a location or code widget as we do not have a module id
             self.ctx.errors.add(
-                builders::error(format!(
-                    "Expected path to struct, found `{}`",
-                    self_ty.0.display(self.ctx)
-                )),
+                builders::error(
+                    None,
+                    format!(
+                        "Expected path to struct, found `{}`",
+                        self_ty.0.display(self.ctx)
+                    ),
+                ),
                 self.ctx.enable_printing,
             );
             return OwnerInfo {
@@ -113,10 +116,13 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let Some(interface_res) = interface_res else {
             // We cannot use a location or code widget as we do not have a module id
             self.ctx.errors.add(
-                builders::error(format!(
-                    "Expected path to interface, found `{}`",
-                    interface.0.display(self.ctx)
-                )),
+                builders::error(
+                    None,
+                    format!(
+                        "Expected path to interface, found `{}`",
+                        interface.0.display(self.ctx)
+                    ),
+                ),
                 self.ctx.enable_printing,
             );
             return OwnerInfo {

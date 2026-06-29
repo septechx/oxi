@@ -23,6 +23,7 @@ pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> Symbol {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
                             builders::warning_at(
+                                None,
                                 format!("Unknown escape sequence \\{c}"),
                                 module_id,
                                 error_span,

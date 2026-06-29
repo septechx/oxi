@@ -135,6 +135,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let var_module = icx.ty_var_module(var);
             self.ctx.errors.add(
                 builders::error_at(
+                    None,
                     "Cannot infer type of empty array",
                     var_module,
                     var_span,
@@ -157,7 +158,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let (msg, span, module_id) =
                 format_unify_error(&err, self.resolver, &self.ctx.interner);
             self.ctx.errors.add(
-                builders::error_at(msg, module_id, span, self.ctx),
+                builders::error_at(None, msg, module_id, span, self.ctx),
                 self.ctx.enable_printing,
             );
         }
@@ -427,6 +428,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn numerical_error(&mut self, span: Span) {
         self.ctx.errors.add(
             builders::error_at(
+                None,
                 "Cannot call numerical operator on non-numeric operand",
                 self.module_id,
                 span,
@@ -465,6 +467,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             _ => {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         "Cannot dereference non-pointer type",
                         self.module_id,
                         span,
@@ -518,7 +521,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     ) -> Ty {
         let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
             self.ctx.errors.add(
-                builders::error_at("Method not found", self.module_id, callee_span, self.ctx),
+                builders::error_at(
+                    None,
+                    "Method not found",
+                    self.module_id,
+                    callee_span,
+                    self.ctx,
+                ),
                 self.ctx.enable_printing,
             );
             return Ty::Error;
@@ -578,6 +587,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             _ => {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         "Cannot call non-function expression",
                         self.module_id,
                         callee_span,
@@ -614,7 +624,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 args.len(),
             );
             self.ctx.errors.add(
-                builders::error_at(err, self.module_id, call_span, self.ctx),
+                builders::error_at(None, err, self.module_id, call_span, self.ctx),
                 self.ctx.enable_printing,
             );
             return false;
@@ -700,6 +710,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for name in init_names.difference(&struct_names) {
             self.ctx.errors.add(
                 builders::error_at(
+                    None,
                     format!("unknown field `{}`", self.ctx.interner.lookup(*name)),
                     self.module_id,
                     *sym_to_span.get(name).expect("field exists"),
@@ -712,6 +723,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for name in struct_names.difference(&init_names) {
             self.ctx.errors.add(
                 builders::error_at(
+                    None,
                     format!("missing field `{}`", self.ctx.interner.lookup(*name)),
                     self.module_id,
                     span,
@@ -930,6 +942,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Ty::Adt(_) => {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!("unknown field `{}`", self.ctx.interner.lookup(member)),
                         self.module_id,
                         member_span,
@@ -954,6 +967,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 if let Ty::Adt(_) = inner.as_ref() {
                     self.ctx.errors.add(
                         builders::error_at(
+                            None,
                             format!("unknown field `{}`", self.ctx.interner.lookup(member)),
                             self.module_id,
                             member_span,
@@ -964,6 +978,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 } else {
                     self.ctx.errors.add(
                         builders::error_at(
+                            None,
                             format!(
                                 "cannot access field `{}` on type which has no fields",
                                 self.ctx.interner.lookup(member)
@@ -990,6 +1005,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!("unknown field `{}` of slice", interner.lookup(member)),
                         self.module_id,
                         member_span,
@@ -1001,6 +1017,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             _ => {
                 self.ctx.errors.add(
                     builders::error_at(
+                        None,
                         format!(
                             "cannot access field `{}` on type which has no fields",
                             self.ctx.interner.lookup(member)
@@ -1019,7 +1036,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn report_type_error(&mut self, err: UnifyError) {
         let (msg, span, module_id) = format_unify_error(&err, self.resolver, &self.ctx.interner);
         self.ctx.errors.add(
-            builders::error_at(msg, module_id, span, self.ctx),
+            builders::error_at(None, msg, module_id, span, self.ctx),
             self.ctx.enable_printing,
         );
     }
