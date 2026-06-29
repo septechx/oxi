@@ -370,7 +370,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 right.visit(self);
             }
             ExprKind::Postfix { left, .. } => left.visit(self),
-            ExprKind::Prefix { right, .. } => right.visit(self),
+            ExprKind::Unary { right, .. } => right.visit(self),
             ExprKind::Assignment {
                 assignee, value, ..
             } => {

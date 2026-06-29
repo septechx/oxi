@@ -130,7 +130,7 @@ mod tests {
                 ExprKind::Symbol(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
                 ExprKind::Postfix { .. } => "PostfixExpr",
-                ExprKind::Prefix { .. } => "PrefixExpr",
+                ExprKind::Unary { .. } => "PrefixExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
                 ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn test_prefix_expr_visited_once() {
         let expr = Expr {
-            kind: ExprKind::Prefix {
+            kind: ExprKind::Unary {
                 operator: dummy_token(TokenKind::NotEquals),
                 right: Box::new(dummy_expr_symbol("x")),
             },
@@ -1360,7 +1360,7 @@ mod tests {
                 ExprKind::Symbol(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
                 ExprKind::Postfix { .. } => "PostfixExpr",
-                ExprKind::Prefix { .. } => "PrefixExpr",
+                ExprKind::Unary { .. } => "PrefixExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
                 ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",

@@ -2,7 +2,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Literal, Mutability};
 use crate::hashmap::FxHashMap;
-use crate::hir::{BinOp, DefId, HirId, PreOp};
+use crate::hir::{BinOp, DefId, HirId, UnOp};
 use crate::interner::Symbol;
 use crate::span::Span;
 use crate::thir::scope::Scope;
@@ -73,7 +73,7 @@ pub enum ExprKind {
         rhs: ExprId,
     },
     Unary {
-        op: PreOp,
+        op: UnOp,
         arg: ExprId,
     },
     Deref {

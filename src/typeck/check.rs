@@ -6,7 +6,7 @@ use crate::errors::builders;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
-    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PreOp, PrimTy, QPath, Stmt, StmtKind, UintTy,
+    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
 };
 use crate::interner::Symbol;
 use crate::resolve::{Res, ResolverOutputs};
@@ -254,7 +254,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
-            ExprKind::Prefix { op, right } => self.check_prefix(*op, right),
+            ExprKind::Unary { op, right } => self.check_prefix(*op, right),
             ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
             ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
@@ -428,16 +428,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         );
     }
 
-    fn check_prefix(&mut self, op: PreOp, right: &Expr) -> Ty {
+    fn check_prefix(&mut self, op: UnOp, right: &Expr) -> Ty {
         let right_span = right.span;
         let right = self.check_expr(right);
         match op {
-            PreOp::Not => {
+            UnOp::Not => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
                 unify(self.icx, &bool_ty, &right, right_span, self.module_id).or_push_err(self.icx);
                 bool_ty
             }
-            PreOp::Neg => {
+            UnOp::Neg => {
                 let resolved = self.icx.resolve(&right);
                 if !resolved.is_numeric(self.icx) {
                     self.numerical_error(right_span);
@@ -445,7 +445,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 resolved
             }
-            PreOp::Ref => Ty::Ptr(right.into_box(), Mutability::Constant),
+            UnOp::Ref => Ty::Ptr(right.into_box(), Mutability::Constant),
         }
     }
 

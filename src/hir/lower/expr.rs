@@ -2,7 +2,7 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{self, NodeId};
 use crate::errors::builders;
-use crate::hir::types::{AssOp, BinOp, Block, Expr, ExprKind, FromToken, PreOp, Stmt, StmtKind};
+use crate::hir::types::{AssOp, BinOp, Block, Expr, ExprKind, FromToken, Stmt, StmtKind, UnOp};
 use crate::hir::{AstLoweringContext, DefId};
 use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
@@ -59,12 +59,12 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     }
                 }
             }
-            ast::ExprKind::Prefix { operator, right } => {
+            ast::ExprKind::Unary { operator, right } => {
                 let right = self.lower_expr(right).into_box();
                 let Some(op) = self.lower_operator(operator, "prefix") else {
                     return ExprKind::Error;
                 };
-                ExprKind::Prefix { op, right }
+                ExprKind::Unary { op, right }
             }
             ast::ExprKind::Postfix { left, operator } => {
                 let left = self.lower_expr(left).into_box();
@@ -273,8 +273,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         span,
                     },
                     cond: Box::new(Expr {
-                        kind: ExprKind::Prefix {
-                            op: PreOp::Not,
+                        kind: ExprKind::Unary {
+                            op: UnOp::Not,
                             right: cond,
                         },
                         hir_id: self.next_hir_id(),
