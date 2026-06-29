@@ -485,6 +485,45 @@ fn bare_if_with_empty_body_as_loop_statement() {
 }
 
 #[test]
+fn if_as_statement_with_break_body_in_loop_as_expression() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    if true {
+                        break 12;
+                    }
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn block_with_break_as_let_value_in_loop() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    let x = {
+                        break 1;
+                        12
+                    };
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
 fn block_tail_inside_loop_not_as_statement_succeeds() {
     with(|t| {
         t.add_source(
