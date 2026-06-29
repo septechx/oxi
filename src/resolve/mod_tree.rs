@@ -75,7 +75,7 @@ pub fn build_module_tree(
             crate::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::warning(
+                    builders::warning1(
                         None,
                         format!(
                             "Provided file `{}` is not referenced by any `mod` declaration",

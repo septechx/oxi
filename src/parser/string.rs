@@ -22,7 +22,7 @@ pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> Symbol {
                     crate::with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
-                            builders::warning_at(
+                            builders::warning_at1(
                                 None,
                                 format!("Unknown escape sequence \\{c}"),
                                 module_id,

@@ -13,7 +13,7 @@ pub fn unexpected_token(token: Token) -> ! {
     crate::with_ctx_mut(|ctx| {
         let enable_printing = ctx.enable_printing;
         ctx.errors.add(
-            builders::fatal_at(
+            builders::fatal_at1(
                 None,
                 format!("Syntax error: Unexpected token `{}`", token.value),
                 token.module_id,

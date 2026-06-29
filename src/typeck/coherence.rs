@@ -41,7 +41,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             let Some(struct_def_id) = self.resolve_struct(self_ty.res) else {
                 self.ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         format!(
                             "Expected path to struct in impl, found `{}`",
@@ -57,7 +57,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
             let Some(interface_def_id) = self.resolve_interface(interface_ty.res) else {
                 self.ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         format!(
                             "Expected path to interface in impl, found `{}`",
@@ -79,7 +79,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 e.insert(def_id);
             } else {
                 self.ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         format!(
                             "Conflicting implementations of `{}` for `{}`",
@@ -127,7 +127,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         .copied()
                         .unwrap_or(impl_module);
                     self.ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             format!(
                                 "Missing implementation of interface method `{}`",
@@ -158,7 +158,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     .is_err()
                     {
                         self.ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 format!(
                                     "Signature mismatch in method `{}`",

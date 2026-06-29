@@ -236,7 +236,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     fn lower_operator<T: FromToken<T>>(&mut self, op: &Token, kind: &str) -> Option<T> {
         T::from_token(op).or_else(|| {
             self.ctx.errors.add(
-                builders::error_at(
+                builders::error_at1(
                     None,
                     format!("Invalid {kind} operator"),
                     op.module_id,

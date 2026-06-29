@@ -83,7 +83,7 @@ macro_rules! emit_at {
 macro_rules! error_at {
     ($span:expr, $module_id:expr, $msg:expr $(,)?) => {
         $crate::emit_at!(
-            $crate::errors::builders::error,
+            $crate::errors::builders::error1,
             $span,
             $module_id,
             $msg,
@@ -102,7 +102,7 @@ macro_rules! error_at {
 macro_rules! warning_at {
     ($span:expr, $module_id:expr, $msg:expr $(,)?) => {
         $crate::emit_at!(
-            $crate::errors::builders::warning,
+            $crate::errors::builders::warning1,
             $span,
             $module_id,
             $msg,
@@ -121,7 +121,7 @@ macro_rules! warning_at {
 macro_rules! fatal_at {
     ($span:expr, $module_id:expr, $msg:expr $(,)?) => {{
         $crate::emit_at!(
-            $crate::errors::builders::fatal,
+            $crate::errors::builders::fatal1,
             $span,
             $module_id,
             $msg,
@@ -141,7 +141,7 @@ macro_rules! fatal_at {
 macro_rules! error_at_with_info {
     ($span:expr, $module_id:expr, $msg:expr, $info:expr $(,)?) => {
         $crate::emit_at!(
-            $crate::errors::builders::error,
+            $crate::errors::builders::error1,
             $span,
             $module_id,
             $msg,
@@ -159,7 +159,7 @@ macro_rules! error_at_with_info {
 macro_rules! warning_at_with_info {
     ($span:expr, $module_id:expr, $msg:expr, $info:expr $(,)?) => {
         $crate::emit_at!(
-            $crate::errors::builders::warning,
+            $crate::errors::builders::warning1,
             $span,
             $module_id,
             $msg,
@@ -177,7 +177,7 @@ macro_rules! warning_at_with_info {
 macro_rules! fatal_at_with_info {
     ($span:expr, $module_id:expr, $msg:expr, $info:expr $(,)?) => {{
         $crate::emit_at!(
-            $crate::errors::builders::fatal,
+            $crate::errors::builders::fatal1,
             $span,
             $module_id,
             $msg,
@@ -198,8 +198,10 @@ macro_rules! error {
     ($msg:expr $(,)?) => {
         $crate::CTX.with_borrow_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
-            ctx.errors
-                .add($crate::errors::builders::error(None, $msg), enable_printing);
+            ctx.errors.add(
+                $crate::errors::builders::error1(None, $msg),
+                enable_printing,
+            );
         })
     };
 }
@@ -210,7 +212,7 @@ macro_rules! warning {
         $crate::CTX.with_borrow_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors
-                .add($crate::errors::builders::warning($msg), enable_printing);
+                .add($crate::errors::builders::warning1($msg), enable_printing);
         })
     };
 }
@@ -220,8 +222,10 @@ macro_rules! fatal {
     ($msg:expr $(,)?) => {{
         $crate::CTX.with_borrow_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
-            ctx.errors
-                .add($crate::errors::builders::fatal(None, $msg), enable_printing);
+            ctx.errors.add(
+                $crate::errors::builders::fatal1(None, $msg),
+                enable_printing,
+            );
         });
         unreachable!()
     }};

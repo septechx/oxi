@@ -8,7 +8,7 @@ pub fn verify_tokens(tokens: &TokenStream) {
             crate::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         format!("Illegal token: {c}"),
                         token.module_id,

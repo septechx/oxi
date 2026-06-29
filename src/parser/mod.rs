@@ -86,7 +86,7 @@ impl Parser {
             crate::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         err.unwrap_or_else(|| {
                             format!(
@@ -115,7 +115,7 @@ impl Parser {
 
         if token.kind != TokenKind::Identifier {
             with_ctx_mut(|ctx| {
-                let err = builders::fatal_at(
+                let err = builders::fatal_at1(
                     None,
                     format!("Syntax error: Expected identifier, found {}", token.kind),
                     token.module_id,

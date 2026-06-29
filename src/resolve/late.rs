@@ -271,7 +271,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 .expect("failed to create error");
         let enable_printing = self.resolver.ctx.enable_printing;
         self.resolver.ctx.errors.add(
-            builders::error(None, msg)
+            builders::error1(None, msg)
                 .add_widget(loc_widget)
                 .add_widget(code_widget),
             enable_printing,

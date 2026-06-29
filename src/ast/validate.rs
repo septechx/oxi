@@ -52,7 +52,7 @@ impl AstValidator {
                         CodeWidget::new(first_span, self.module_id, HighlightType::Info)
                             .expect("failed to get source location");
 
-                    builders::error(None, msg)
+                    builders::error1(None, msg)
                         .add_widget(loc_widget)
                         .add_widget(code_widget)
                         .add_widget(info_widget)
@@ -76,7 +76,7 @@ impl AstValidator {
                 with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             "Extern functions cannot have a body",
                             self.module_id,
@@ -91,7 +91,7 @@ impl AstValidator {
             with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::error_at(
+                    builders::error_at1(
                         None,
                         "Non-extern function must have a body",
                         self.module_id,
@@ -134,7 +134,7 @@ impl AstValidator {
                     with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 "Expression without semicolon must be at the end of a block",
                                 self.module_id,
@@ -304,7 +304,7 @@ impl Visitor for AstValidator {
                                 CodeWidget::new(first_span, self.module_id, HighlightType::Info)
                                     .expect("failed to get source location");
 
-                            builders::error(None, msg)
+                            builders::error1(None, msg)
                                 .add_widget(loc_widget)
                                 .add_widget(code_widget)
                                 .add_widget(info_widget)
@@ -362,7 +362,7 @@ impl Visitor for AstValidator {
                     with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 "Break statement outside of loop",
                                 self.module_id,
@@ -380,7 +380,7 @@ impl Visitor for AstValidator {
                     with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 "Return statement outside of function",
                                 self.module_id,
@@ -397,7 +397,7 @@ impl Visitor for AstValidator {
                 if !Self::is_lvalue(assignee) {
                     with_ctx_mut(|ctx| {
                         ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 "Invalid assignment target",
                                 self.module_id,

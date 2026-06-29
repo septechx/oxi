@@ -171,7 +171,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 .expect("failed to create error");
                 let enable_printing = self.ctx.enable_printing;
                 self.ctx.errors.add(
-                    builders::error(None, msg)
+                    builders::error1(None, msg)
                         .add_widget(loc_widget)
                         .add_widget(code_widget),
                     enable_printing,
@@ -242,7 +242,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             )
             .expect("failed to create error");
             self.ctx.errors.add(
-                builders::error(None, "Cannot import a path with 1 segment")
+                builders::error1(None, "Cannot import a path with 1 segment")
                     .add_widget(loc_widget)
                     .add_widget(code_widget),
                 self.ctx.enable_printing,
@@ -288,7 +288,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             )
             .expect("failed to create error");
             self.ctx.errors.add(
-                builders::error(None, "Cannot import a private item")
+                builders::error1(None, "Cannot import a private item")
                     .add_widget(loc_widget)
                     .add_widget(code_widget),
                 self.ctx.enable_printing,
@@ -334,7 +334,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
                 Err((
                     ResolutionStatus::Failed,
-                    builders::error(None, msg)
+                    builders::error1(None, msg)
                         .add_widget(loc_widget)
                         .add_widget(code_widget),
                 ))

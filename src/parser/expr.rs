@@ -345,7 +345,7 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
             crate::with_ctx_mut(|ctx| {
                 let enable_printing = ctx.enable_printing;
                 ctx.errors.add(
-                    builders::fatal_at(
+                    builders::fatal_at1(
                         None,
                         "Expected comma or closing parenthesis in expression",
                         tok.module_id,

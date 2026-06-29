@@ -114,7 +114,7 @@ impl ErrorCollector {
 
         if self.errors.len() >= self.max_errors {
             if enable_printing {
-                let max_error = builders::fatal(
+                let max_error = builders::fatal1(
                     None,
                     format!(
                         "Too many errors ({}), stopping compilation",
@@ -196,6 +196,21 @@ impl Default for ErrorCollector {
     }
 }
 
+pub trait DiagEntry {
+    fn code(&self) -> &'static str;
+    fn level(&self) -> ErrorLevel;
+    fn message(&self) -> &'static str;
+}
+
+pub fn format_diag(template: &str, args: &[(&str, &dyn Display)]) -> String {
+    let mut s = template.to_string();
+    for (key, val) in args {
+        let palceholder = format!("{{{key}}}");
+        s = s.replace(&palceholder, &val.to_string());
+    }
+    s
+}
+
 pub mod builders {
     use crate::context::Ctx;
     use crate::hir::ModuleId;
@@ -204,19 +219,19 @@ pub mod builders {
     use super::widgets::*;
     use super::*;
 
-    pub fn warning(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+    pub fn warning1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
         CompilationError::new(ErrorLevel::Warning, code, message.into())
     }
 
-    pub fn error(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+    pub fn error1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
         CompilationError::new(ErrorLevel::Error, code, message.into())
     }
 
-    pub fn fatal(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
+    pub fn fatal1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
         CompilationError::new(ErrorLevel::Fatal, code, message.into())
     }
 
-    pub fn warning_at(
+    pub fn warning_at1(
         code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
@@ -227,12 +242,12 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Warning, ctx)
             .expect("failed to create error");
-        warning(code, message.into())
+        warning1(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
 
-    pub fn error_at(
+    pub fn error_at1(
         code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
@@ -243,12 +258,12 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        error(code, message.into())
+        error1(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
 
-    pub fn fatal_at(
+    pub fn fatal_at1(
         code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
@@ -259,9 +274,134 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        fatal(code, message.into())
+        fatal1(code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
+    }
+
+    pub fn emit(ctx: &mut Ctx, entry: impl DiagEntry, params: &[(&str, &dyn Display)]) {
+        let error = prepare_diag(&entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_at(
+        ctx: &mut Ctx,
+        span: Span,
+        module_id: ModuleId,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_at(ctx, span, module_id, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_with_info(
+        ctx: &mut Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_with_info(ctx, span, module_id, info, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_with_info_raw(
+        ctx: &mut Ctx,
+        info: &str,
+        line: usize,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_with_info_raw(info, line, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_at_with_info(
+        ctx: &mut Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_at_with_info(ctx, span, module_id, &entry, params, info);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    #[macro_export]
+    macro_rules! diag_params {
+        ($($key:ident = $val:expr),* $(,)?) => {{
+            &[ $((stringify!($key), &$val as &dyn std::fmt::Display)),* ]
+        }};
+    }
+
+    fn prepare_diag(entry: &impl DiagEntry, params: &[(&str, &dyn Display)]) -> CompilationError {
+        let template = entry.message();
+        let formatted = format_diag(template, params);
+
+        CompilationError::new(ErrorLevel::Warning, Some(entry.code().into()), formatted)
+    }
+
+    fn prepare_diag_at(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params)
+            .add_widget(
+                LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error"),
+            )
+            .add_widget(
+                CodeWidget::new_with_ctx(
+                    span,
+                    module_id,
+                    match entry.level() {
+                        ErrorLevel::Warning => HighlightType::Warning,
+                        ErrorLevel::Error | ErrorLevel::Fatal => HighlightType::Error,
+                    },
+                    ctx,
+                )
+                .expect("failed to create error"),
+            )
+    }
+
+    fn prepare_diag_with_info(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params).add_widget(
+            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+        )
+    }
+
+    fn prepare_diag_with_info_raw(
+        info: &str,
+        line: usize,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params).add_widget(InfoWidget::from_raw(line, info.into()))
+    }
+
+    fn prepare_diag_at_with_info(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+        info: &str,
+    ) -> CompilationError {
+        prepare_diag_at(ctx, span, module_id, entry, params).add_widget(
+            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+        )
     }
 }
 

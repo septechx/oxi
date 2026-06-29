@@ -36,7 +36,7 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
         crate::with_ctx_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors.add(
-                builders::fatal_at(None,
+                builders::fatal_at1(None,
                     format!("Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.", tok.kind), 
                     tok.module_id,
                     tok.span,
@@ -131,7 +131,7 @@ pub fn parse_struct_decl_item(
                     crate::with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
-                            builders::error_at(
+                            builders::error_at1(
                                 None,
                                 "Struct methods must have a body",
                                 parser.current_token().module_id,
@@ -173,7 +173,7 @@ pub fn parse_struct_decl_item(
                 crate::with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             format!(
                                 "Property {} has already been defined in struct",
@@ -258,7 +258,7 @@ pub fn parse_interface_decl_item(
                 crate::with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             "Expected interface method to not have a body",
                             parser.current_token().module_id,
@@ -369,7 +369,7 @@ pub fn parse_fn_decl_item(
                 crate::with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             "Expected function body or terminator after signature",
                             tok.module_id,
@@ -432,7 +432,7 @@ pub fn parse_impl_item(
                 crate::with_ctx_mut(|ctx| {
                     let enable_printing = ctx.enable_printing;
                     ctx.errors.add(
-                        builders::error_at(
+                        builders::error_at1(
                             None,
                             "Impl methods must have a body",
                             parser.current_token().module_id,
@@ -628,7 +628,7 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
         crate::with_ctx_mut(|ctx| {
             let enable_printing = ctx.enable_printing;
             ctx.errors.add(
-                builders::warning_at(
+                builders::warning_at1(
                     None,
                     "Declared constant without providing a value",
                     parser.current_token().module_id,
