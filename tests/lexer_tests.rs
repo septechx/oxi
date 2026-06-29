@@ -247,6 +247,10 @@ mod tests {
         "#;
 
         let kinds = token_kinds(source);
+        assert!(
+            !kinds.contains(&TokenKind::Illegal),
+            "Combined source unexpectedly produced Illegal tokens: {kinds:?}"
+        );
         for &expected in &all_token_kinds {
             assert!(
                 kinds.contains(&expected),

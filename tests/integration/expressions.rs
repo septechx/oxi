@@ -548,7 +548,7 @@ fn simple_assignment() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 5;
+                let mut x = 5;
                 x = 10;
                 return x;
             }
@@ -565,7 +565,7 @@ fn compound_assignment() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 5;
+                let mut x = 5;
                 x += 10;
                 return x;
             }
@@ -582,7 +582,7 @@ fn compound_subtraction() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 10;
+                let mut x = 10;
                 x -= 3;
                 return x;
             }
@@ -599,7 +599,7 @@ fn compound_division() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 12;
+                let mut x = 12;
                 x /= 3;
                 return x;
             }
@@ -616,7 +616,7 @@ fn compound_remainder() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 10;
+                let mut x = 10;
                 x %= 3;
                 return x;
             }
