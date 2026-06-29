@@ -73,6 +73,15 @@ fn check_for_errors() {
 }
 
 fn build_file(cli: Cli) -> Result<()> {
+    let entrypoint = match &cli.entrypoint {
+        Some(ep) => ep,
+        None if cli.input.len() == 1 => cli.input[0]
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("main"),
+        None => "main",
+    };
+
     let mut asts = ThinVec::with_capacity(cli.input.len());
     for file_path in &cli.input {
         let source_text = match fs::read_to_string(file_path) {
@@ -117,7 +126,7 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let module_tree = match build_module_tree(&asts, &cli.input, &cli.entrypoint) {
+    let module_tree = match build_module_tree(&asts, &cli.input, entrypoint) {
         Ok(tree) => tree,
         Err(e) => fatal!(e.to_string()),
     };

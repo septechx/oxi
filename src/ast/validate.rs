@@ -18,7 +18,6 @@ struct AstValidator {
     module_id: ModuleId,
     in_function: bool,
     in_loop: bool,
-    in_loop_body: bool,
     is_top_level: bool,
     in_interface: bool,
 }
@@ -105,14 +104,11 @@ impl AstValidator {
         if let Some(body) = &f.body {
             let old_in_function = self.in_function;
             let old_top_level = self.is_top_level;
-            let old_in_loop_body = self.in_loop_body;
             self.in_function = true;
             self.is_top_level = false;
-            self.in_loop_body = false;
             self.validate_block(body);
             self.in_function = old_in_function;
             self.is_top_level = old_top_level;
-            self.in_loop_body = old_in_loop_body;
         }
     }
 
@@ -127,21 +123,12 @@ impl AstValidator {
         let len = stmts.len();
 
         for (i, stmt) in stmts.iter().enumerate() {
-            if matches!(stmt.kind, StmtKind::Expr(_)) {
-                if self.in_loop_body {
-                    with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::error_at(
-                                "Expression without semicolon is not allowed in loop bodies",
-                                self.module_id,
-                                stmt.span,
-                                ctx,
-                            ),
-                            enable_printing,
-                        );
-                    });
-                } else if i != len - 1 {
+            if let StmtKind::Expr(expr) = &stmt.kind {
+                if Self::is_block_expr(&expr.kind) {
+                    continue;
+                }
+
+                if i != len - 1 {
                     with_ctx_mut(|ctx| {
                         let enable_printing = ctx.enable_printing;
                         ctx.errors.add(
@@ -161,6 +148,13 @@ impl AstValidator {
         for stmt in stmts.iter() {
             stmt.visit(self);
         }
+    }
+
+    fn is_block_expr(kind: &ExprKind) -> bool {
+        matches!(
+            kind,
+            ExprKind::Block(_) | ExprKind::If { .. } | ExprKind::While { .. } | ExprKind::Loop(_)
+        )
     }
 
     fn is_lvalue(expr: &Expr) -> bool {
@@ -327,12 +321,9 @@ impl Visitor for AstValidator {
             }
             ExprKind::Block(b) => {
                 let old_top_level = self.is_top_level;
-                let old_in_loop_body = self.in_loop_body;
                 self.is_top_level = false;
-                self.in_loop_body = false;
                 self.validate_block(b);
                 self.is_top_level = old_top_level;
-                self.in_loop_body = old_in_loop_body;
 
                 VisitAction::SkipChildren
             }
@@ -342,34 +333,25 @@ impl Visitor for AstValidator {
                 else_branch,
             } => {
                 condition.visit(self);
-                let old_in_loop_body = self.in_loop_body;
-                self.in_loop_body = false;
                 self.validate_block(then_branch);
                 if let Some(else_expr) = else_branch {
                     else_expr.visit(self);
                 }
-                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::While { condition, body } => {
                 condition.visit(self);
                 let old_in_loop = self.in_loop;
-                let old_in_loop_body = self.in_loop_body;
                 self.in_loop = true;
-                self.in_loop_body = true;
                 self.validate_block(body);
                 self.in_loop = old_in_loop;
-                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::Loop(body) => {
                 let old_in_loop = self.in_loop;
-                let old_in_loop_body = self.in_loop_body;
                 self.in_loop = true;
-                self.in_loop_body = true;
                 self.validate_block(body);
                 self.in_loop = old_in_loop;
-                self.in_loop_body = old_in_loop_body;
                 VisitAction::SkipChildren
             }
             ExprKind::Break(_) => {
@@ -433,7 +415,6 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
         module_id,
         in_function: false,
         in_loop: false,
-        in_loop_body: false,
         is_top_level: true,
         in_interface: false,
     };

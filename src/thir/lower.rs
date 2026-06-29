@@ -95,6 +95,13 @@ impl<'a> ThirLowerer<'a> {
             .clone()
     }
 
+    fn is_block_expr(kind: &hir::ExprKind) -> bool {
+        matches!(
+            kind,
+            hir::ExprKind::Block(_) | hir::ExprKind::If { .. } | hir::ExprKind::Loop(_)
+        )
+    }
+
     fn lower_expr(&mut self, expr: &hir::Expr) -> ExprId {
         let hir_id = expr.hir_id;
         let span = expr.span;
@@ -303,6 +310,12 @@ impl<'a> ThirLowerer<'a> {
             match &stmt.kind {
                 hir::StmtKind::Expr(expr) if is_last => {
                     tail = Some(self.lower_expr(expr));
+                }
+                hir::StmtKind::Expr(expr) if Self::is_block_expr(&expr.kind) => {
+                    let expr_id = self.lower_expr(expr);
+                    let stmt_id =
+                        self.alloc_stmt(StmtKind::Semi { expr: expr_id }, stmt.span, stmt.hir_id);
+                    stmt_ids.push(stmt_id);
                 }
                 hir::StmtKind::Expr(_) => unreachable!(),
                 hir::StmtKind::Semi(expr) => {

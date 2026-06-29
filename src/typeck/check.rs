@@ -6,7 +6,7 @@ use crate::errors::builders;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
-    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PreOp, PrimTy, QPath, StmtKind, UintTy,
+    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PreOp, PrimTy, QPath, Stmt, StmtKind, UintTy,
 };
 use crate::interner::Symbol;
 use crate::resolve::{Res, ResolverOutputs};
@@ -286,6 +286,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 let then_span = then_branch.span;
                 let then_ty = self.check_block(then_branch).tail;
+                let void_ty = Ty::Prim(PrimTy::Void);
                 let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
                 match else_ty {
                     Some(else_ty) => {
@@ -296,7 +297,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         }
                         then_ty
                     }
-                    None => Ty::Prim(PrimTy::Void),
+                    None => {
+                        if let Err(err) =
+                            unify(self.icx, &void_ty, &then_ty, then_span, self.module_id)
+                        {
+                            self.report_type_error(err);
+                        }
+                        void_ty
+                    }
                 }
             }
             ExprKind::Break(expr) | ExprKind::Return(expr) => {
@@ -725,7 +733,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let mut diverged = false;
         for stmt in &block.stmts {
             if diverged {
-                break;
+                match &stmt.kind {
+                    StmtKind::Let { init, .. } => {
+                        if let Some(init) = init {
+                            self.check_expr(init);
+                        }
+                    }
+                    StmtKind::Expr(expr) | StmtKind::Semi(expr) => {
+                        self.check_expr(expr);
+                    }
+                }
+                continue;
             }
             match &stmt.kind {
                 StmtKind::Let {
@@ -751,60 +769,19 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     self.local_schemes.insert(*local, scheme.clone());
                     self.env.insert(*local, scheme);
                     self.icx.pop_level();
+                    if let Some(init) = init {
+                        self.collect_break_ty_from_expr(init, &mut break_ty, stmt.span);
+                    }
                 }
                 StmtKind::Expr(expr) => {
-                    'blk: {
-                        if let ExprKind::Break(break_expr) = &expr.kind {
-                            let break_value_ty = break_expr
-                                .as_ref()
-                                .map_or(Ty::Prim(PrimTy::Void), |expr| self.check_expr(expr));
-
-                            if let Some(existing_break_ty) = &break_ty
-                                && let Err(err) = unify(
-                                    self.icx,
-                                    existing_break_ty,
-                                    &break_value_ty,
-                                    expr.span,
-                                    self.module_id,
-                                )
-                            {
-                                self.report_type_error(err);
-                                break 'blk;
-                            }
-
-                            break_ty = Some(break_value_ty);
-                        }
-                    }
-
                     last_ty = self.check_expr(expr);
+                    self.collect_break_ty_from_expr(expr, &mut break_ty, expr.span);
                     if matches!(last_ty, Ty::Never) {
                         diverged = true;
                     }
                 }
                 StmtKind::Semi(expr) => {
-                    'blk: {
-                        if let ExprKind::Break(break_expr) = &expr.kind {
-                            let break_value_ty = break_expr
-                                .as_ref()
-                                .map_or(Ty::Prim(PrimTy::Void), |expr| self.check_expr(expr));
-
-                            if let Some(existing_break_ty) = &break_ty
-                                && let Err(err) = unify(
-                                    self.icx,
-                                    existing_break_ty,
-                                    &break_value_ty,
-                                    expr.span,
-                                    self.module_id,
-                                )
-                            {
-                                self.report_type_error(err);
-                                break 'blk;
-                            }
-
-                            break_ty = Some(break_value_ty);
-                        }
-                    }
-
+                    self.collect_break_ty_from_expr(expr, &mut break_ty, expr.span);
                     let expr = self.check_expr(expr);
                     if matches!(expr, Ty::Never) {
                         last_ty = Ty::Never;
@@ -822,10 +799,81 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
+    fn collect_break_ty_from_stmts(
+        &mut self,
+        stmts: &[Stmt],
+        break_ty: &mut Option<Ty>,
+        span: Span,
+    ) {
+        for stmt in stmts {
+            match &stmt.kind {
+                StmtKind::Expr(expr) | StmtKind::Semi(expr) => {
+                    self.collect_break_ty_from_expr(expr, break_ty, span);
+                }
+                StmtKind::Let { init, .. } => {
+                    if let Some(init) = init {
+                        self.collect_break_ty_from_expr(init, break_ty, span);
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_break_ty_from_expr(&mut self, expr: &Expr, break_ty: &mut Option<Ty>, span: Span) {
+        match &expr.kind {
+            ExprKind::Break(break_expr) => {
+                let break_value_ty = break_expr
+                    .as_ref()
+                    .map_or(Ty::Prim(PrimTy::Void), |inner| self.check_expr(inner));
+
+                if let Some(existing_break_ty) = break_ty
+                    && let Err(err) = unify(
+                        self.icx,
+                        existing_break_ty,
+                        &break_value_ty,
+                        span,
+                        self.module_id,
+                    )
+                {
+                    self.report_type_error(err);
+                    return;
+                }
+
+                *break_ty = Some(break_value_ty);
+            }
+            ExprKind::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.collect_break_ty_from_stmts(&then_branch.stmts, break_ty, span);
+                if let Some(else_expr) = else_branch {
+                    self.collect_break_ty_from_expr(else_expr, break_ty, span);
+                }
+            }
+            ExprKind::Block(block) => {
+                self.collect_break_ty_from_stmts(&block.stmts, break_ty, span);
+            }
+            ExprKind::Loop(_) => {}
+            _ => {}
+        }
+    }
+
     fn check_loop(&mut self, block: &Block) -> Ty {
-        self.check_block(block)
-            .early
-            .unwrap_or_else(|| Ty::Prim(PrimTy::Void))
+        let block_ty_res = self.check_block(block);
+
+        let void_ty = Ty::Prim(PrimTy::Void);
+        if let Err(err) = unify(
+            self.icx,
+            &void_ty,
+            &block_ty_res.tail,
+            block.span,
+            self.module_id,
+        ) {
+            self.report_type_error(err);
+        }
+
+        block_ty_res.early.unwrap_or(Ty::Never)
     }
 
     fn check_member_access(

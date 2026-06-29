@@ -467,6 +467,63 @@ fn bare_if_as_loop_statement_fails() {
 }
 
 #[test]
+fn bare_if_with_empty_body_as_loop_statement() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    if true {}
+                }
+                12
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_as_statement_with_break_body_in_loop_as_expression() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    if true {
+                        break 12;
+                    }
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn block_with_break_as_let_value_in_loop() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() isize {
+                loop {
+                    let x = {
+                        break 1;
+                        12
+                    };
+                }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
 fn block_tail_inside_loop_not_as_statement_succeeds() {
     with(|t| {
         t.add_source(
@@ -491,7 +548,7 @@ fn simple_assignment() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 5;
+                let mut x = 5;
                 x = 10;
                 return x;
             }
@@ -508,9 +565,388 @@ fn compound_assignment() {
             "main.oxi",
             r#"
             pub fn main() i32 {
-                let x = 5;
+                let mut x = 5;
                 x += 10;
                 return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn compound_subtraction() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let mut x = 10;
+                x -= 3;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn compound_division() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let mut x = 12;
+                x /= 3;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn compound_remainder() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let mut x = 10;
+                x %= 3;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn modulo_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() i32 {
+                10 % 3
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_else_expression() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() i32 {
+                if false { 1 } else { 2 }
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn equality_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                1 == 1
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn not_equal_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                1 != 2
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn less_than_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                1 < 2
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn greater_than_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                2 > 1
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn less_or_equal_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                1 <= 1
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn greater_or_equal_operator() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() bool {
+                2 >= 2
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[ignore = "TODO: Implement `..<` operator"]
+#[test]
+fn range_exclusive() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                let r = 0..<5;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[ignore = "TODO: Implement `..=` operator"]
+#[test]
+fn range_inclusive() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() void {
+                let r = 0..=5;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn bitwise_operators() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() i32 {
+                let a: i32 = 12;
+                let b: i32 = 10;
+                let and = a & b;
+                let or = a | b;
+                let xor = a ^ b;
+                let shl = a << 2;
+                let shr = a >> 2;
+                return and;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn bitwise_compound_assignments() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let mut x: i32 = 12;
+                x &= 10;
+                x |= 3;
+                x ^= 5;
+                x <<= 1;
+                x >>= 1;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn if_else_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                } else {
+                    let x = 2;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn while_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                while false {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn loop_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                loop {
+                    break;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn block_expr_as_statement_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                {
+                    let x = 1;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[test]
+fn multiple_block_exprs_as_statements_not_in_tail() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                if true {
+                    let x = 1;
+                }
+                while false {
+                    let y = 2;
+                }
+                loop {
+                    break;
+                }
+                42
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
+
+#[ignore = "TODO: Implement `?` operator"]
+#[test]
+fn postfix_question() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            fn main() Option<i32> {
+                let x = Some(5);
+                x?
             }
             "#,
         )

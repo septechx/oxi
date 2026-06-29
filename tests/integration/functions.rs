@@ -222,3 +222,18 @@ fn method_call_explicit_ref_arg() {
         .succeeds(true);
     })
 }
+
+#[test]
+fn extern_fn_declaration() {
+    with(|ctx| {
+        ctx.add_source(
+            "main.oxi",
+            r#"
+            pub extern fn foo() void;
+
+            pub fn main() void {}
+            "#,
+        )
+        .succeeds(true);
+    })
+}

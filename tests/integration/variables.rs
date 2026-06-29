@@ -305,3 +305,20 @@ fn let_explicit_slice_type_mismatches_init() {
         .fail_on_level(ErrorLevel::Error);
     });
 }
+
+#[test]
+fn let_mut_variable() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let mut x = 5;
+                x = 10;
+                return x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    });
+}
