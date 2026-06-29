@@ -313,6 +313,7 @@ pub fn create_token_lookups() {
         nud(T::Dash, parse_unary_expr, &mut nud_lu);
         nud(T::Amp, parse_unary_expr, &mut nud_lu);
         nud(T::At, parse_unary_expr, &mut nud_lu);
+        nud(T::Bang, parse_unary_expr, &mut nud_lu);
 
         // Call & Member
         led(
