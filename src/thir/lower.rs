@@ -390,18 +390,7 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let elements: ThinVec<ExprId> = contents.iter().map(|expr| self.lower_expr(expr)).collect();
-        let Ty::Slice(inner) = ty else {
-            unreachable!();
-        };
-        self.alloc_expr(
-            ExprKind::ArrayInit {
-                ty: *inner.clone(),
-                elements,
-            },
-            ty.clone(),
-            span,
-            hir_id,
-        )
+        self.alloc_expr(ExprKind::ArrayInit { elements }, ty.clone(), span, hir_id)
     }
 
     fn lower_struct_init(

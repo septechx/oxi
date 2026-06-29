@@ -92,7 +92,6 @@ pub enum ExprKind {
         fields: ThinVec<(Symbol, ExprId)>,
     },
     ArrayInit {
-        ty: Ty,
         elements: ThinVec<ExprId>,
     },
     TupleInit(ThinVec<ExprId>),

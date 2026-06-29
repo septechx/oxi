@@ -383,12 +383,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     expr.visit(self);
                 }
             }
-            ExprKind::ArrayLiteral {
-                underlying,
-                contents,
-                ..
-            } => {
-                underlying.visit(self);
+            ExprKind::ArrayLiteral { contents, .. } => {
                 for elem in contents {
                     elem.visit(self);
                 }

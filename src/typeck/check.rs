@@ -258,17 +258,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
             ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
-            ExprKind::ArrayInit { ty, contents } => {
-                let elem_ty = Ty::from_hir(self.icx, ty);
-                for expr in contents {
-                    let expr_ty = self.check_expr(expr);
-                    if let Err(err) = unify(self.icx, &elem_ty, &expr_ty, expr.span, self.module_id)
-                    {
-                        self.report_type_error(err);
-                    }
-                }
-                Ty::Slice(elem_ty.into_box())
-            }
+            ExprKind::ArrayInit { contents } => self.check_array_init(contents, expr_span),
             ExprKind::TupleInit(elements) => {
                 Ty::Tuple(elements.iter().map(|expr| self.check_expr(expr)).collect())
             }
@@ -724,6 +714,36 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         struct_ty
+    }
+
+    fn check_array_init(&mut self, contents: &ThinVec<Expr>, span: Span) -> Ty {
+        let mut elem_ty = None;
+        for expr in contents {
+            let expr_ty = self.check_expr(expr);
+            if let Some(elem_ty) = &elem_ty {
+                if let Err(err) = unify(self.icx, elem_ty, &expr_ty, expr.span, self.module_id) {
+                    self.report_type_error(err);
+                }
+            } else {
+                elem_ty = Some(expr_ty);
+            }
+        }
+        if let Some(elem_ty) = elem_ty {
+            Ty::Slice(elem_ty.into_box())
+        } else {
+            // FIXME: Allow code like `let x: [i32] = []` to work
+            // Maybe this could be done by creating a new type variable
+            self.ctx.errors.add(
+                builders::error_at(
+                    "Cannot infer type of empty array",
+                    self.module_id,
+                    span,
+                    self.ctx,
+                ),
+                self.ctx.enable_printing,
+            );
+            Ty::Slice(Box::new(Ty::Error))
+        }
     }
 
     fn check_block(&mut self, block: &Block) -> BlockTyRes {

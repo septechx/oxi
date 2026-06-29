@@ -15,14 +15,14 @@ A Language grammar specification is available at `docs/grammar.txt`
 ## Arrays
 
 ```
-let a = []u8{1, 2, 3};
+let a = [1, 2, 3];
 ```
 
 ## Functions
 
 ```
 fn add(a: u32, b: u32) u32 {
-    return a + b;
+    a + b
 }
 ```
 

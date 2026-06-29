@@ -169,7 +169,6 @@ pub enum ExprKind {
         fields: ThinVec<(Ident, Expr)>,
     },
     ArrayLiteral {
-        underlying: Type,
         contents: ThinVec<Expr>,
     },
     FunctionCall {

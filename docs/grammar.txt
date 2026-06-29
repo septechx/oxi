@@ -10,8 +10,8 @@ ITree -> Path [as Id]?
        | Path::*
 Ty -> Path
     | & [mut]? Ty
-    | []Ty
-    | [1]Ty | [2]Ty | ...
+    | [Ty]
+    | [Ty; 1] | [Ty; 2] | ...
     | ([Ty],*) -> Ty
     | (Ty, Ty, [Ty],*)
     | !
@@ -28,7 +28,7 @@ Expr -> Lit
       | @Expr | !Expr | -Expr | & [mut]? Expr
       | Expr = Expr | Expr += Expr | Expr -= Expr | Expr *= Expr | Expr /= Expr | Expr %= Expr
       | Path { [Id: Expr],* }
-      | []Ty{ [Expr],* }
+      | [ [Expr],* ]
       | Expr([Expr],*)
       | Expr.Id
       | Expr as Ty

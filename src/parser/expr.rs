@@ -232,38 +232,28 @@ pub fn parse_struct_instantiation_expr(
     })
 }
 
-// TODO: This only parses slices, not arrays
-// Maybe fine, as this is just an array literal and can be treated as both and have the correct type inferred
 pub fn parse_array_literal_expr(parser: &mut Parser) -> Result<Expr> {
     let start_token = parser.expect(TokenKind::OpenBracket)?;
-    parser.expect(TokenKind::CloseBracket)?;
-
-    let type_ = parse_type(parser, BindingPower::DefaultBp)?;
-
-    parser.expect(TokenKind::OpenCurly)?;
 
     let mut contents: ThinVec<Expr> = ThinVec::new();
 
     loop {
-        if parser.current_token().kind == TokenKind::CloseCurly {
+        if parser.current_token().kind == TokenKind::CloseBracket {
             break;
         }
 
         contents.push(parse_expr(parser, BindingPower::Assignment)?);
 
-        if parser.current_token().kind != TokenKind::CloseCurly {
+        if parser.current_token().kind != TokenKind::CloseBracket {
             parser.expect(TokenKind::Comma)?;
         }
     }
 
-    let close_token = parser.expect(TokenKind::CloseCurly)?;
+    let close_token = parser.expect(TokenKind::CloseBracket)?;
     let span = Span::new(start_token.span.start(), close_token.span.end());
 
     Ok(Expr {
-        kind: ExprKind::ArrayLiteral {
-            underlying: type_,
-            contents,
-        },
+        kind: ExprKind::ArrayLiteral { contents },
         node_id: NodeId::default(),
         span,
     })

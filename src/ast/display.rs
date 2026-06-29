@@ -761,19 +761,9 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 }
             }
         }
-        ExprKind::ArrayLiteral {
-            underlying,
-            contents,
-        } => {
+        ExprKind::ArrayLiteral { contents } => {
             writeln!(out, "{}", "ArrayLiteral".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
-            write!(
-                out,
-                "{}Type: []{}",
-                expr_ctx.indent_str(),
-                write_type(underlying, &expr_ctx)
-            )?;
-            writeln!(out)?;
             write!(out, "{}Contents:", expr_ctx.indent_str())?;
             if contents.is_empty() {
                 write!(out, " (empty)")?;

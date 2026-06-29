@@ -264,9 +264,8 @@ pub enum ExprKind {
         def: DefId,
         fields: ThinVec<(Ident, Expr)>,
     },
-    /// Array literal: []Type{value1, value2, ... }
+    /// Array literal: [value1, value2, ... ]
     ArrayInit {
-        ty: Ty,
         contents: ThinVec<Expr>,
     },
     /// Tuple literal: (value1, value2, ...)
@@ -358,7 +357,7 @@ pub enum TyKind {
     Path(QPath),
     /// Pointer type: &T or &mut T
     Ptr(Box<Ty>, Mutability),
-    /// Slice type: []T
+    /// Slice type: [T]
     Slice(Box<Ty>),
     /// Fixed-size array: [T; N]
     Array(Box<Ty>, usize),

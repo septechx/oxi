@@ -101,7 +101,7 @@ fn slice_literals() {
             "main.oxi",
             r#"
             pub fn main() void {
-                let s = []u8{1, 2, 3};
+                let s = [1, 2, 3];
             }
         "#,
         )
@@ -183,7 +183,7 @@ fn string_literals() {
             "main.oxi",
             r#"
             fn main() usize {
-                let s: []u8 = "hello";
+                let s: [u8] = "hello";
                 return s.len;
             }
             "#,

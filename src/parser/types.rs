@@ -103,34 +103,35 @@ fn parse_pointer_type(parser: &mut Parser) -> Result<Type> {
 fn parse_array_type(parser: &mut Parser) -> Result<Type> {
     let start_token = parser.advance();
 
+    let underlying = parse_type(parser, BP::DefaultBp)?;
+
     match parser.current_token().kind {
-        T::Number => {
-            let length = parser.current_token().value.parse::<usize>()?;
+        T::Semicolon => {
             parser.advance();
-            parser.expect(T::CloseBracket)?;
-            let underlying = parse_type(parser, BP::DefaultBp)?;
-            let end_span = underlying.span;
+            let length = parser.expect(TokenKind::Number)?;
+            let length = length.value.parse::<usize>()?;
+            let end_token = parser.expect(TokenKind::CloseBracket)?;
+            let span = Span::new(start_token.span.start(), end_token.span.end());
 
             Ok(Type {
                 kind: TypeKind::FixedArray(Box::new(underlying), length),
-                span: Span::new(start_token.span.start(), end_span.end()),
                 node_id: NodeId::default(),
+                span,
             })
         }
         T::CloseBracket => {
-            parser.advance();
-            let underlying = parse_type(parser, BP::DefaultBp)?;
-            let end_span = underlying.span;
+            let end_token = parser.advance();
+            let span = Span::new(start_token.span.start(), end_token.span.end());
 
             Ok(Type {
                 kind: TypeKind::Slice(Box::new(underlying)),
-                span: Span::new(start_token.span.start(), end_span.end()),
                 node_id: NodeId::default(),
+                span,
             })
         }
         _ => Err(anyhow!(
             format!(
-                "Expected number or ']' in array type, got {:?}",
+                "Syntax error: Expected ';' or ']' in array type, got {:?}",
                 parser.current_token()
             )
             .red()
