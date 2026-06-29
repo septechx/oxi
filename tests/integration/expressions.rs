@@ -1019,3 +1019,19 @@ fn empty_untyped_array_fails() {
         .fail_on_level(ErrorLevel::Error);
     })
 }
+
+#[test]
+fn empty_untyped_array_later_gets_type() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() void {
+                let x = [];
+                let y: [i32] = x;
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
