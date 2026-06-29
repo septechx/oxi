@@ -290,9 +290,9 @@ pub enum ExprKind {
         target: Box<Expr>,
         value: Box<Expr>,
     },
-    /// Prefix operation: op right
-    Prefix {
-        op: PreOp,
+    /// Unary operation: op right
+    Unary {
+        op: UnOp,
         right: Box<Expr>,
     },
     /// Postfix operation: left op
@@ -452,13 +452,13 @@ impl FromToken<BinOp> for BinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreOp {
+pub enum UnOp {
     Not,
     Neg,
     Ref,
 }
 
-impl FromToken<PreOp> for PreOp {
+impl FromToken<UnOp> for UnOp {
     fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Dash => Self::Neg,

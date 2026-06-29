@@ -145,13 +145,13 @@ pub fn parse_postfix_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) ->
     })
 }
 
-pub fn parse_prefix_expr(parser: &mut Parser) -> Result<Expr> {
+pub fn parse_unary_expr(parser: &mut Parser) -> Result<Expr> {
     let operator = parser.advance();
     let right = parse_expr(parser, BindingPower::Unary)?;
 
     let span = Span::new(operator.span.start(), right.span.end());
     Ok(Expr {
-        kind: ExprKind::Prefix {
+        kind: ExprKind::Unary {
             operator,
             right: Box::new(right),
         },

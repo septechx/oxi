@@ -700,8 +700,8 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 punct_with_color(&operator.value, ctx.color)
             )?;
         }
-        ExprKind::Prefix { operator, right } => {
-            writeln!(out, "{}", "Prefix".with_color(ctx.color),)?;
+        ExprKind::Unary { operator, right } => {
+            writeln!(out, "{}", "Unary".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
             writeln!(out, "{}Operator:", expr_ctx.indent_str())?;
             write!(

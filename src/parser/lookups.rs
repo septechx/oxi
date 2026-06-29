@@ -310,9 +310,10 @@ pub fn create_token_lookups() {
         nud(T::CharLiteral, parse_primary_expr, &mut nud_lu);
         nud(T::OpenParen, parse_parenthesis_expr, &mut nud_lu);
         nud(T::OpenCurly, parse_block_expr, &mut nud_lu);
-        nud(T::Dash, parse_prefix_expr, &mut nud_lu);
-        nud(T::Amp, parse_prefix_expr, &mut nud_lu);
-        nud(T::At, parse_prefix_expr, &mut nud_lu);
+        nud(T::Dash, parse_unary_expr, &mut nud_lu);
+        nud(T::Amp, parse_unary_expr, &mut nud_lu);
+        nud(T::At, parse_unary_expr, &mut nud_lu);
+        nud(T::Bang, parse_unary_expr, &mut nud_lu);
 
         // Call & Member
         led(

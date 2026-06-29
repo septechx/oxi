@@ -155,7 +155,7 @@ pub enum ExprKind {
         left: Box<Expr>,
         operator: Token,
     },
-    Prefix {
+    Unary {
         operator: Token,
         right: Box<Expr>,
     },

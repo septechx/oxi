@@ -126,7 +126,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
             rewrite_expr(target, member_res);
             rewrite_expr(value, member_res);
         }
-        ExprKind::Prefix { right: expr, .. } | ExprKind::Postfix { left: expr, .. } => {
+        ExprKind::Unary { right: expr, .. } | ExprKind::Postfix { left: expr, .. } => {
             rewrite_expr(expr, member_res);
         }
         ExprKind::As { expr, .. } => {

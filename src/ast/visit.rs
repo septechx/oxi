@@ -370,7 +370,7 @@ impl Visitable for Expr {
                 ExprKind::Postfix { left, operator: _ } => {
                     left.visit(visitor);
                 }
-                ExprKind::Prefix { operator: _, right } => {
+                ExprKind::Unary { operator: _, right } => {
                     right.visit(visitor);
                 }
                 ExprKind::Assignment {
@@ -455,7 +455,7 @@ impl Visitable for Expr {
                 ExprKind::Postfix { left, operator: _ } => {
                     left.visit_mut(visitor);
                 }
-                ExprKind::Prefix { operator: _, right } => {
+                ExprKind::Unary { operator: _, right } => {
                     right.visit_mut(visitor);
                 }
                 ExprKind::Assignment {

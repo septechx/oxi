@@ -953,3 +953,38 @@ fn postfix_question() {
         .succeeds(true);
     });
 }
+
+#[test]
+fn multiple_vars_negate() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() i32 {
+                let x = 0;
+                let y = x + 1;
+                let z = -y;
+                z
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}
+
+#[test]
+fn not_expr() {
+    with(|t| {
+        t.add_source(
+            "main.oxi",
+            r#"
+            pub fn main() bool {
+                let x = true;
+                let y = !x;
+                y
+            }
+            "#,
+        )
+        .succeeds(true);
+    })
+}

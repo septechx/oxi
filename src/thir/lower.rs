@@ -4,7 +4,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
 use crate::hashmap::FxHashMap;
-use crate::hir::{self, PosOp, PreOp, PrimTy, QPath};
+use crate::hir::{self, PosOp, PrimTy, QPath, UnOp};
 use crate::hir::{BinOp, HirId};
 use crate::resolve::Res;
 use crate::span::Span;
@@ -175,7 +175,7 @@ impl<'a> ThirLowerer<'a> {
             hir::ExprKind::Assign { target, value } => {
                 self.lower_assign(target, value, ty, span, hir_id)
             }
-            hir::ExprKind::Prefix { op, right } => self.lower_prefix(*op, right, ty, span, hir_id),
+            hir::ExprKind::Unary { op, right } => self.lower_prefix(*op, right, ty, span, hir_id),
             hir::ExprKind::Postfix { left, op } => self.lower_postfix(left, *op, ty, span, hir_id),
             hir::ExprKind::Call { callee, params } => {
                 self.lower_call(callee, params, ty, span, hir_id)
@@ -519,7 +519,7 @@ impl<'a> ThirLowerer<'a> {
 
     fn lower_prefix(
         &mut self,
-        op: PreOp,
+        op: UnOp,
         right: &hir::Expr,
         ty: &Ty,
         span: Span,
@@ -527,7 +527,7 @@ impl<'a> ThirLowerer<'a> {
     ) -> ExprId {
         let arg = self.lower_expr(right);
         match op {
-            PreOp::Ref => self.alloc_expr(
+            UnOp::Ref => self.alloc_expr(
                 ExprKind::Borrow {
                     kind: Mutability::Constant,
                     arg,

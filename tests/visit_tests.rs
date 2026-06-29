@@ -130,7 +130,7 @@ mod tests {
                 ExprKind::Symbol(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
                 ExprKind::Postfix { .. } => "PostfixExpr",
-                ExprKind::Prefix { .. } => "PrefixExpr",
+                ExprKind::Unary { .. } => "UnaryExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
                 ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
@@ -362,8 +362,8 @@ mod tests {
     #[test]
     fn test_prefix_expr_visited_once() {
         let expr = Expr {
-            kind: ExprKind::Prefix {
-                operator: dummy_token(TokenKind::NotEquals),
+            kind: ExprKind::Unary {
+                operator: dummy_token(TokenKind::Bang),
                 right: Box::new(dummy_expr_symbol("x")),
             },
             span: dummy_span(),
@@ -372,7 +372,7 @@ mod tests {
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
         visitor.assert_visited("expr", "Expr", 2);
-        visitor.assert_visited("expr", "PrefixExpr", 1);
+        visitor.assert_visited("expr", "UnaryExpr", 1);
         visitor.assert_visited("expr", "SymbolExpr", 1);
     }
 
@@ -1360,7 +1360,7 @@ mod tests {
                 ExprKind::Symbol(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
                 ExprKind::Postfix { .. } => "PostfixExpr",
-                ExprKind::Prefix { .. } => "PrefixExpr",
+                ExprKind::Unary { .. } => "UnaryExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
                 ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",

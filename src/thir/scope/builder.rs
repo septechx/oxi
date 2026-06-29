@@ -168,7 +168,7 @@ impl ScopeTreeBuilder {
                     self.build_expr(element);
                 }
             }
-            ExprKind::Prefix { right, .. } => {
+            ExprKind::Unary { right, .. } => {
                 self.build_expr(right);
             }
             ExprKind::Postfix { left, .. } => {

@@ -154,8 +154,8 @@ fn build_file(cli: Cli) -> Result<()> {
     let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
 
     with_ctx_mut(|ctx| {
-        dbg!(&ctx.interner);
-        dbg!(thir_crate);
+        println!("interner = {:#?}", ctx.interner);
+        println!("thir = {:#?}", thir_crate);
     });
 
     Ok(())
