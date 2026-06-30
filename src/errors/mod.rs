@@ -248,23 +248,6 @@ pub mod builders {
     use super::widgets::*;
     use super::*;
 
-    // TODO: Remove this
-    pub fn error_at1(
-        code: Option<Box<str>>,
-        message: impl Into<String>,
-        module_id: ModuleId,
-        span: Span,
-        ctx: &Ctx,
-    ) -> CompilationError {
-        let loc_widget =
-            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
-            .expect("failed to create error");
-        CompilationError::new(ErrorLevel::Error, code, message.into())
-            .add_widget(loc_widget)
-            .add_widget(code_widget)
-    }
-
     pub fn emit(ctx: &mut Ctx, entry: impl DiagEntry, params: &[(&str, &dyn Display)]) {
         let error = prepare_diag(&entry, params);
         ctx.errors.add(error, ctx.enable_printing);
