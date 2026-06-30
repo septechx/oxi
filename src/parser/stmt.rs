@@ -185,7 +185,7 @@ pub fn parse_struct_decl_item(
             continue;
         }
 
-        unexpected_token(parser.current_token());
+        unexpected_token(parser.current_token(), "struct field");
     }
 
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;

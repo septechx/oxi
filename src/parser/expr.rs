@@ -27,7 +27,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
     let nud_fn = nud_lu
         .get(&token.kind)
         .cloned()
-        .unwrap_or_else(|| unexpected_token(token.clone()));
+        .unwrap_or_else(|| unexpected_token(token.clone(), "start of expression"));
 
     let mut left = nud_fn(parser)?;
 
@@ -46,7 +46,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
         let led_fn = led_lu
             .get(&token_kind.kind)
             .cloned()
-            .unwrap_or_else(|| unexpected_token(token_kind.clone()));
+            .unwrap_or_else(|| unexpected_token(token_kind.clone(), "infix operator"));
 
         left = led_fn(parser, left.clone(), current_bp)?;
         end_span = left.span;

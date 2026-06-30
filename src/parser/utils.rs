@@ -10,14 +10,14 @@ use crate::{
     span::Span,
 };
 
-pub fn unexpected_token(token: Token) -> ! {
+pub fn unexpected_token(token: Token, expected: impl std::fmt::Display) -> ! {
     crate::with_ctx_mut(|ctx| {
         builders::emit_at(
             ctx,
             token.span,
             token.module_id,
             diag::UnexpectedToken,
-            diag_params! { actual = token.kind },
+            diag_params! { expected = expected, actual = token.kind },
         );
     });
     unreachable!()

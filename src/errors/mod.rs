@@ -199,10 +199,43 @@ pub trait DiagEntry {
 }
 
 pub fn format_diag(template: &str, args: &[(&str, &dyn Display)]) -> String {
+    let template_args: Vec<&str> = {
+        let mut rest = template;
+        let mut args = Vec::new();
+        while let Some(start) = rest.find('{') {
+            if let Some(end) = rest[start..].find('}') {
+                let candidate = &rest[start + 1..start + end];
+                if !candidate.is_empty()
+                    && candidate.chars().all(|c| c.is_alphanumeric() || c == '_')
+                {
+                    args.push(candidate);
+                }
+                rest = &rest[start + end + 1..];
+            } else {
+                break;
+            }
+        }
+        args
+    };
+
+    for arg in &template_args {
+        assert!(
+            args.iter().any(|(key, _)| *key == *arg),
+            "Missing argument `{arg}` for template `{template}`"
+        );
+    }
+
+    for (key, _) in args {
+        assert!(
+            template_args.contains(key),
+            "Unexpected argument `{key}` passed to template `{template}`"
+        );
+    }
+
     let mut s = template.to_string();
     for (key, val) in args {
-        let palceholder = format!("{{{key}}}");
-        s = s.replace(&palceholder, &val.to_string());
+        let placeholder = format!("{{{key}}}");
+        s = s.replace(&placeholder, &val.to_string());
     }
     s
 }
