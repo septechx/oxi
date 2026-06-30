@@ -141,6 +141,13 @@ impl Drop for Test {
             }
         });
 
+        if let Err(e) = &res
+            && self.should_succeed != Some(false)
+            && !with_ctx(|ctx| ctx.errors.has_errors_above_level(self.fail_on_level))
+        {
+            panic!("Compiler driver failed without reporting diagnostics: {e}");
+        }
+
         if self.check_for_errors() {
             if res.is_err()
                 && self.expected_errors.is_empty()

@@ -26,16 +26,12 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use clap::Parser;
 use oxic_diag::include_diagnostics;
-use thin_vec::ThinVec;
 
-use crate::ast::validate::validate_ast;
 use crate::cli::{Cli, ColorChoice};
 use crate::context::{Ctx, with_ctx_mut};
 use crate::driver::compile_sources;
+use crate::driver::frontend_stage;
 use crate::errors::builders;
-use crate::lexer::tokenize;
-use crate::parser::parse;
-use crate::resolve::Resolver;
 
 include_diagnostics!("diagnostics.toml");
 
@@ -112,20 +108,7 @@ fn build_files(cli: Cli) -> Result<()> {
         };
         colored::control::set_override(use_color);
 
-        let mut asts = ThinVec::with_capacity(sources.len());
-        for (file_path, source_text) in &sources {
-            let (tokens, module_id) = tokenize(source_text.clone(), file_path)?;
-            check_for_errors()?;
-            let ast = parse(tokens, file_path)?;
-            check_for_errors()?;
-            validate_ast(&ast, module_id);
-            check_for_errors()?;
-            asts.push(ast);
-        }
-
-        with_ctx_mut(|ctx| {
-            Resolver::assign_node_ids(ctx, &mut asts);
-        });
+        let asts = frontend_stage(&sources, check_for_errors)?;
 
         for ast in asts {
             logln!("{}", ast.display(use_color)?);

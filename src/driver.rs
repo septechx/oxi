@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use thin_vec::ThinVec;
 
+use crate::ast::Ast;
 use crate::ast::validate::validate_ast;
 use crate::context::with_ctx_mut;
 use crate::diag;
@@ -17,13 +18,12 @@ use crate::thir::lower_thir;
 use crate::thir::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
 
-pub fn compile_sources(
-    sources: Vec<(PathBuf, String)>,
-    entrypoint: &str,
+pub fn frontend_stage(
+    sources: &[(PathBuf, String)],
     check_for_errors: impl Fn() -> Result<()>,
-) -> Result<()> {
+) -> Result<ThinVec<Ast>> {
     let mut asts = ThinVec::with_capacity(sources.len());
-    for (file_path, source_text) in &sources {
+    for (file_path, source_text) in sources {
         let (tokens, module_id) = tokenize(source_text.clone(), file_path)?;
         check_for_errors()?;
 
@@ -39,6 +39,16 @@ pub fn compile_sources(
     with_ctx_mut(|ctx| {
         Resolver::assign_node_ids(ctx, &mut asts);
     });
+
+    Ok(asts)
+}
+
+pub fn compile_sources(
+    sources: Vec<(PathBuf, String)>,
+    entrypoint: &str,
+    check_for_errors: impl Fn() -> Result<()>,
+) -> Result<()> {
+    let asts = frontend_stage(&sources, &check_for_errors)?;
 
     let paths: Vec<PathBuf> = sources.iter().map(|(p, _)| p.clone()).collect();
 
