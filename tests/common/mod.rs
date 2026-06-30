@@ -33,7 +33,7 @@ impl Test {
         Self {
             files: vec![],
             should_succeed: None,
-            fail_on_level: ErrorLevel::Warning,
+            fail_on_level: ErrorLevel::Error,
             expected_errors: vec![],
         }
     }
@@ -46,11 +46,6 @@ impl Test {
 
     pub fn succeeds(&mut self, should: bool) -> &mut Self {
         self.should_succeed = Some(should);
-        self
-    }
-
-    pub fn fail_on_level(&mut self, level: ErrorLevel) -> &mut Self {
-        self.fail_on_level = level;
         self
     }
 

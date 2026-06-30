@@ -1,5 +1,4 @@
 use crate::common::with;
-use oxic::errors::ErrorLevel;
 
 #[test]
 fn test_attribute_works() {
@@ -13,8 +12,7 @@ fn test_attribute_works() {
                 }
                 "#,
         )
-        .succeeds(true)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(true);
     })
 }
 
@@ -30,8 +28,7 @@ fn attribute_with_arguments() {
                 }
                 "#,
         )
-        .succeeds(true)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(true);
     })
 }
 
@@ -48,7 +45,6 @@ fn multiple_attributes() {
                 }
                 "#,
         )
-        .succeeds(true)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(true);
     })
 }
