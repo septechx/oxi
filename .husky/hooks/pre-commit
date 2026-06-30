@@ -4,3 +4,6 @@ set -e
 
 echo '+cargo fmt -- --check'
 cargo fmt -- --check
+
+echo '+cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- .'
+cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- .
