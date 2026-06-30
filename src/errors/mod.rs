@@ -337,14 +337,17 @@ pub mod builders {
         };
     }
 
-    fn prepare_diag(entry: &impl DiagEntry, params: &[(&str, &dyn Display)]) -> CompilationError {
+    pub fn prepare_diag(
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
         let template = entry.message();
         let formatted = format_diag(template, params);
 
         CompilationError::new(ErrorLevel::Warning, Some(entry.code().into()), formatted)
     }
 
-    fn prepare_diag_at(
+    pub fn prepare_diag_at(
         ctx: &Ctx,
         span: Span,
         module_id: ModuleId,
@@ -369,7 +372,7 @@ pub mod builders {
             )
     }
 
-    fn prepare_diag_with_info(
+    pub fn prepare_diag_with_info(
         ctx: &Ctx,
         span: Span,
         module_id: ModuleId,
@@ -382,7 +385,7 @@ pub mod builders {
         )
     }
 
-    fn prepare_diag_with_info_raw(
+    pub fn prepare_diag_with_info_raw(
         info: &str,
         line: usize,
         entry: &impl DiagEntry,
@@ -391,7 +394,7 @@ pub mod builders {
         prepare_diag(entry, params).add_widget(InfoWidget::from_raw(line, info.into()))
     }
 
-    fn prepare_diag_at_with_info(
+    pub fn prepare_diag_at_with_info(
         ctx: &Ctx,
         span: Span,
         module_id: ModuleId,

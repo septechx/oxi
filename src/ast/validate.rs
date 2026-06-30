@@ -1,18 +1,18 @@
-use crate::{
-    ast::{
-        AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt,
-        StmtKind,
-        visit::{VisitAction, Visitable, Visitor},
-    },
-    context::{with_ctx, with_ctx_mut},
-    errors::{
-        builders,
-        widgets::{CodeWidget, HighlightType, InfoWidget, LocationWidget},
-    },
-    hashmap::FxHashMap,
-    hir::ModuleId,
-    lexer::token::TokenKind,
+use oxic_diag::include_diagnostics;
+
+use crate::ast::visit::{VisitAction, Visitable, Visitor};
+use crate::ast::{
+    AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
 };
+use crate::context::with_ctx_mut;
+use crate::diag_params;
+use crate::errors::builders;
+use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
+use crate::hashmap::FxHashMap;
+use crate::hir::ModuleId;
+use crate::lexer::token::TokenKind;
+
+include_diagnostics!("diagnostics.toml");
 
 struct AstValidator {
     module_id: ModuleId,
@@ -30,39 +30,30 @@ impl AstValidator {
         let mut seen = FxHashMap::default();
         for ident in names {
             if let Some(first_span) = seen.insert(&ident.value, ident.span) {
-                let ident_str = with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
-                let msg = format!("Duplicate definition of `{}` in {}", ident_str, context);
-
-                let err = {
-                    let loc_widget = LocationWidget::new(ident.span, self.module_id)
-                        .expect("failed to get source location");
-                    let code_widget =
-                        CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
-                            .expect("failed to get source location");
-                    let ident_str = with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
-                    let info_widget = InfoWidget::new(
+                with_ctx_mut(|ctx| {
+                    let ident_str = ctx.interner.lookup(ident.value).to_string();
+                    let err = builders::prepare_diag_at_with_info(
+                        ctx,
                         first_span,
                         self.module_id,
-                        format!("First definition of `{}` here", ident_str),
+                        &diag::DuplicateDefinition,
+                        diag_params! { item = ident_str, scope = context },
+                        format!("First definition of `{}` here", ident_str).as_str(),
                     )
-                    .expect("failed to get source location");
-                    let first_loc_widget = LocationWidget::new(first_span, self.module_id)
-                        .expect("failed to get source location");
-                    let first_code_widget =
-                        CodeWidget::new(first_span, self.module_id, HighlightType::Info)
-                            .expect("failed to get source location");
-
-                    builders::error1(None, msg)
-                        .add_widget(loc_widget)
-                        .add_widget(code_widget)
-                        .add_widget(info_widget)
-                        .add_widget(first_loc_widget)
-                        .add_widget(first_code_widget)
-                };
-
-                crate::CTX.with_borrow_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(err, enable_printing);
+                    .add_widget(
+                        LocationWidget::new_with_ctx(first_span, self.module_id, ctx)
+                            .expect("failed to create error"),
+                    )
+                    .add_widget(
+                        CodeWidget::new_with_ctx(
+                            first_span,
+                            self.module_id,
+                            HighlightType::Info,
+                            ctx,
+                        )
+                        .expect("failed to create error"),
+                    );
+                    ctx.errors.add(err, ctx.enable_printing);
                 });
             }
         }
@@ -74,31 +65,23 @@ impl AstValidator {
         if f.is_extern {
             if f.body.is_some() {
                 with_ctx_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(
-                        builders::error_at1(
-                            None,
-                            "Extern functions cannot have a body",
-                            self.module_id,
-                            f.name.span,
-                            ctx,
-                        ),
-                        enable_printing,
+                    builders::emit_at(
+                        ctx,
+                        f.name.span,
+                        self.module_id,
+                        diag::ExternFunctionBody,
+                        diag_params! {},
                     );
                 });
             }
         } else if f.body.is_none() && !self.in_interface {
             with_ctx_mut(|ctx| {
-                let enable_printing = ctx.enable_printing;
-                ctx.errors.add(
-                    builders::error_at1(
-                        None,
-                        "Non-extern function must have a body",
-                        self.module_id,
-                        f.name.span,
-                        ctx,
-                    ),
-                    enable_printing,
+                builders::emit_at(
+                    ctx,
+                    f.name.span,
+                    self.module_id,
+                    diag::NonExternFunctionBody,
+                    diag_params! {},
                 );
             });
         }
@@ -132,16 +115,12 @@ impl AstValidator {
 
                 if i != len - 1 {
                     with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                "Expression without semicolon must be at the end of a block",
-                                self.module_id,
-                                stmt.span,
-                                ctx,
-                            ),
-                            enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            stmt.span,
+                            self.module_id,
+                            diag::TailExprNotAtTail,
+                            diag_params! {},
                         );
                     });
                 }
@@ -276,45 +255,30 @@ impl Visitor for AstValidator {
                 let mut seen = FxHashMap::default();
                 for (ident, val) in fields.iter() {
                     if let Some(first_span) = seen.insert(&ident.value, ident.span) {
-                        let ident_str =
-                            with_ctx(|ctx| ctx.interner.lookup(ident.value).to_string());
-                        let msg =
-                            format!("Duplicate field `{}` in struct instantiation", ident_str);
-
-                        let err = {
-                            let loc_widget = LocationWidget::new(ident.span, self.module_id)
-                                .expect("failed to get source location");
-                            let code_widget =
-                                CodeWidget::new(ident.span, self.module_id, HighlightType::Error)
-                                    .expect("failed to get source location");
-                            let info_widget = InfoWidget::new(
+                        with_ctx_mut(|ctx| {
+                            let ident_str = ctx.interner.lookup(ident.value).to_string();
+                            let err = builders::prepare_diag_at_with_info(
+                                ctx,
                                 first_span,
                                 self.module_id,
-                                with_ctx(|ctx| {
-                                    format!(
-                                        "First initialization of `{}` here",
-                                        ctx.interner.lookup(ident.value)
-                                    )
-                                }),
+                                &diag::DuplicateField,
+                                diag_params! { field = ident_str },
+                                "First initialization of `{}` here",
                             )
-                            .expect("failed to get source location");
-                            let first_loc_widget = LocationWidget::new(first_span, self.module_id)
-                                .expect("failed to get source location");
-                            let first_code_widget =
-                                CodeWidget::new(first_span, self.module_id, HighlightType::Info)
-                                    .expect("failed to get source location");
-
-                            builders::error1(None, msg)
-                                .add_widget(loc_widget)
-                                .add_widget(code_widget)
-                                .add_widget(info_widget)
-                                .add_widget(first_loc_widget)
-                                .add_widget(first_code_widget)
-                        };
-
-                        crate::CTX.with_borrow_mut(|ctx| {
-                            let enable_printing = ctx.enable_printing;
-                            ctx.errors.add(err, enable_printing);
+                            .add_widget(
+                                LocationWidget::new_with_ctx(first_span, self.module_id, ctx)
+                                    .expect("failed to create error"),
+                            )
+                            .add_widget(
+                                CodeWidget::new_with_ctx(
+                                    first_span,
+                                    self.module_id,
+                                    HighlightType::Info,
+                                    ctx,
+                                )
+                                .expect("failed to create error"),
+                            );
+                            ctx.errors.add(err, ctx.enable_printing);
                         });
                     }
                     val.visit(self);
@@ -360,16 +324,12 @@ impl Visitor for AstValidator {
             ExprKind::Break(_) => {
                 if !self.in_loop {
                     with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                "Break statement outside of loop",
-                                self.module_id,
-                                expr.span,
-                                ctx,
-                            ),
-                            enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            expr.span,
+                            self.module_id,
+                            diag::BreakOutsideLoop,
+                            diag_params! {},
                         );
                     });
                 }
@@ -378,16 +338,12 @@ impl Visitor for AstValidator {
             ExprKind::Return(_) => {
                 if !self.in_function {
                     with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                "Return statement outside of function",
-                                self.module_id,
-                                expr.span,
-                                ctx,
-                            ),
-                            enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            expr.span,
+                            self.module_id,
+                            diag::ReturnOutsideFunction,
+                            diag_params! {},
                         );
                     });
                 }
@@ -396,15 +352,12 @@ impl Visitor for AstValidator {
             ExprKind::Assignment { assignee, .. } => {
                 if !Self::is_lvalue(assignee) {
                     with_ctx_mut(|ctx| {
-                        ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                "Invalid assignment target",
-                                self.module_id,
-                                assignee.span,
-                                ctx,
-                            ),
-                            ctx.enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            assignee.span,
+                            self.module_id,
+                            diag::InvalidAssignmentTarget,
+                            diag_params! {},
                         );
                     });
                 }
