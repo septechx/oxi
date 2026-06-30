@@ -70,7 +70,7 @@ impl Test {
 
             match (has_error, self.should_succeed == Some(false)) {
                 // success, expected success
-                (false, false) => false,
+                (false, false) => missing_expected_error,
 
                 // success, expected failure
                 (false, true) => true,
@@ -85,11 +85,44 @@ impl Test {
     }
 
     fn checkpoint(&self) -> Result<(), ()> {
-        if self.check_for_errors() {
-            Err(())
-        } else {
-            Ok(())
-        }
+        if self.should_abort() { Err(()) } else { Ok(()) }
+    }
+
+    /// Abort pipeline only on:
+    /// - All expected errors already found (early success — no need to continue)
+    /// - Unexpected errors in a "should succeed" test
+    /// - Missing expected errors after some errors occurred
+    ///
+    /// Does NOT abort on `(false, true)` — errors may be emitted by later stages.
+    fn should_abort(&self) -> bool {
+        with_ctx(|ctx| {
+            // Early success: all expected errors satisfied, stop pipeline to avoid
+            // hitting compiler panics in later stages on invalid code.
+            if self.should_succeed == Some(false)
+                && !self.expected_errors.is_empty()
+                && self
+                    .expected_errors
+                    .iter()
+                    .all(|code| ctx.errors.has_code(code))
+            {
+                return true;
+            }
+
+            let has_error = ctx.errors.has_errors_above_level(self.fail_on_level);
+            if !has_error {
+                return false;
+            }
+
+            let missing_expected = self
+                .expected_errors
+                .iter()
+                .any(|code| !ctx.errors.has_code(code));
+
+            match self.should_succeed == Some(false) {
+                true => missing_expected,
+                false => true,
+            }
+        })
     }
 
     fn hard_check<T, E: Display>(&self, result: Result<T, E>, msg: &str) -> Result<T, ()> {
@@ -199,8 +232,20 @@ impl Drop for Test {
         }
 
         let res = self.run_pipeline(&file_paths);
-        if self.should_succeed == Some(false) && res.is_ok() {
-            panic!("Expected pipeline to fail, but it succeeded");
+
+        if self.check_for_errors() {
+            // If the pipeline failed via hard_check (hard error, no diagnostics),
+            // and no specific error codes were expected, that's a successful failure.
+            if res.is_err()
+                && self.expected_errors.is_empty()
+                && !with_ctx(|ctx| ctx.errors.has_errors_above_level(self.fail_on_level))
+            {
+                return;
+            }
+            panic!(
+                "Test failed: expected diagnostic errors {:?} were not satisfied",
+                self.expected_errors
+            );
         }
     }
 }
