@@ -1,0 +1,15 @@
+[invalid_operator]
+level = "Error"
+message = "Invalid {kind} operator"
+
+[expected_path_to_struct]
+level = "Error"
+message = "Expected path to struct, found `{}`"
+
+[expected_path_to_interface]
+level = "Error"
+message = "Expected path to interface, found `{}`"
+
+[exptected_type_found_interface]
+level = "Error"
+message = "Expected type, found interface `{}`"

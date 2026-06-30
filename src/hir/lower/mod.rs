@@ -3,11 +3,12 @@ mod item;
 mod stmt;
 
 use crate::ast::{self, NodeId};
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::index::{AstIndex, AstOwner};
 use crate::hir::owner::HirId;
-use crate::hir::types::*;
 use crate::hir::{AstLoweringContext, Crate, DefId, DefKind};
+use crate::hir::{diag, types::*};
 use crate::resolve::{PartialRes, Res};
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -83,31 +84,27 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 if let QPath::Resolved(resolved) = &qpath
                     && let Res::Def(def_id) = resolved.res
                     && self.resolver.defs[def_id.0 as usize].kind == DefKind::Interface
-                {
-                    let iface_name = self.ctx.interner.lookup(
-                        self.resolver.defs[def_id.0 as usize]
-                            .name
-                            .expect("interface def should have a name"),
-                    );
-                    if let Some(module_id) = self
+                    && let Some(module_id) = self
                         .current_owner
                         .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
                         .copied()
-                    {
-                        self.ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                format!(
-                                    "Type error: expected a type, found interface `{}`",
-                                    iface_name,
-                                ),
-                                module_id,
-                                ty.span,
-                                self.ctx,
-                            ),
-                            self.ctx.enable_printing,
-                        );
-                    }
+                {
+                    let iface_name = self
+                        .ctx
+                        .interner
+                        .lookup(
+                            self.resolver.defs[def_id.0 as usize]
+                                .name
+                                .expect("interface def should have a name"),
+                        )
+                        .to_string();
+                    builders::emit_at(
+                        self.ctx,
+                        ty.span,
+                        module_id,
+                        diag::ExptectedTypeFoundInterface,
+                        diag_params! { iface = iface_name },
+                    );
                 }
                 TyKind::Path(qpath)
             }

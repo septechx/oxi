@@ -1,11 +1,12 @@
 use thin_vec::ThinVec;
 
 use crate::ast::{self, Ident, NodeId, Visibility};
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
 use crate::hir::owner::{HirId, MaybeOwner, OwnerInfo, OwnerNodes, ParentedNode};
-use crate::hir::types::*;
 use crate::hir::{AstLoweringContext, BodyId, Crate, DefId, ItemLocalId, OwnerId};
+use crate::hir::{diag, types::*};
 use crate::span::Span;
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
@@ -87,15 +88,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .full_res();
         let Some(self_res) = self_res else {
             // We cannot use a location or code widget as we do not have a module id
-            self.ctx.errors.add(
-                builders::error1(
-                    None,
-                    format!(
-                        "Expected path to struct, found `{}`",
-                        self_ty.0.display(self.ctx)
-                    ),
-                ),
-                self.ctx.enable_printing,
+            // TODO: Get a module id from somewhere
+            builders::emit(
+                self.ctx,
+                diag::ExpectedPathToStruct,
+                diag_params! { path = self_ty.0.display(self.ctx) },
             );
             return OwnerInfo {
                 nodes: OwnerNodes {
@@ -115,15 +112,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .full_res();
         let Some(interface_res) = interface_res else {
             // We cannot use a location or code widget as we do not have a module id
-            self.ctx.errors.add(
-                builders::error1(
-                    None,
-                    format!(
-                        "Expected path to interface, found `{}`",
-                        interface.0.display(self.ctx)
-                    ),
-                ),
-                self.ctx.enable_printing,
+            // TODO: Get a module id from somewhere
+            builders::emit(
+                self.ctx,
+                diag::ExpectedPathToInterface,
+                diag_params! { path = interface.0.display(self.ctx) },
             );
             return OwnerInfo {
                 nodes: OwnerNodes {

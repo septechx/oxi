@@ -1,9 +1,10 @@
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{self, NodeId};
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::types::{AssOp, BinOp, Block, Expr, ExprKind, FromToken, Stmt, StmtKind, UnOp};
-use crate::hir::{AstLoweringContext, DefId};
+use crate::hir::{AstLoweringContext, DefId, diag};
 use crate::lexer::token::{Token, TokenKind};
 use crate::resolve::Res;
 
@@ -235,15 +236,12 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
     fn lower_operator<T: FromToken<T>>(&mut self, op: &Token, kind: &str) -> Option<T> {
         T::from_token(op).or_else(|| {
-            self.ctx.errors.add(
-                builders::error_at1(
-                    None,
-                    format!("Invalid {kind} operator"),
-                    op.module_id,
-                    op.span,
-                    self.ctx,
-                ),
-                self.ctx.enable_printing,
+            builders::emit_at(
+                self.ctx,
+                op.span,
+                op.module_id,
+                diag::InvalidOperator,
+                diag_params! { kind = kind },
             );
             None
         })
