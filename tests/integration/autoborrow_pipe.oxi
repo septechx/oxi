@@ -1,0 +1,17 @@
+// @expect-error type_mismatch
+
+struct Foo {
+    val: i32,
+
+    pub fn new(val: i32) Foo {
+        return Foo { val };
+    }
+
+    pub fn get(self: &Self) i32 {
+        return self.val;
+    }
+}
+
+pub fn main() i32 {
+    return Foo::new(3) |> Foo::get;
+}

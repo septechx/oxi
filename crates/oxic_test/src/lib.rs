@@ -29,8 +29,6 @@ pub fn oxic_test(_input: TokenStream) -> TokenStream {
     collect_oxi_files(&integration_dir, &integration_dir, &mut tests)
         .unwrap_or_else(|e| panic!("Failed to collect .oxi files: {e}"));
 
-    println!("{}", tests);
-
     tests.into()
 }
 

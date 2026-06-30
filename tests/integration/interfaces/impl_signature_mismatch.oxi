@@ -1,0 +1,13 @@
+// @expect-error signature_mismatch
+
+interface I {
+    fn f(self: &Self) i32;
+}
+
+struct S {}
+
+impl I for S {
+    fn f(self: &Self) void {}
+}
+
+pub fn main() void {}

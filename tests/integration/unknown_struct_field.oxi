@@ -1,0 +1,10 @@
+// @expect-error unknown_field
+
+struct S {
+    x: i32,
+}
+
+pub fn main() i32 {
+    let s = S { x: 10 };
+    s.y
+}

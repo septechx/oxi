@@ -1,0 +1,70 @@
+fn main() i32 {
+    let α = 42;
+    let β = α + 1;
+    return β;
+}
+
+fn π() i32 {
+    return 314;
+}
+
+fn main2() i32 {
+    return π();
+}
+
+fn main3() i32 {
+    let переменная = 1;
+    let значение = переменная + 2;
+    return значение;
+}
+
+fn main4() i32 {
+    let my_α = 1;
+    let π_value = 2;
+    return my_α + π_value;
+}
+
+fn main5() i32 {
+    let 😀 = 42;
+    return 😀;
+}
+
+fn main6() i32 {
+    let 🚀 = 10;
+    let 🌟 = 20;
+    return 🚀 + 🌟;
+}
+
+struct 🚀 {
+    ❤️: i32,
+}
+
+fn main7() i32 {
+    let 🤠 = 🚀 { ❤️: 12 };
+    let 🌟 = 20;
+    return 🤠.❤️ + 🌟;
+}
+
+fn main8() i32 {
+    let aa🚀b = 10;
+    let 🌟d = 20;
+    return aa🚀b + 🌟d;
+}
+
+struct Δύο {
+    α: i32,
+    β: i32,
+}
+
+fn main9() i32 {
+    let d = Δύο { α: 1, β: 2 };
+    return d.α + d.β;
+}
+
+fn add(α: i32, β: i32) i32 {
+    return α + β;
+}
+
+fn main10() i32 {
+    return add(10, 20);
+}

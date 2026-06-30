@@ -1,0 +1,8 @@
+// @expect-error field_already_defined
+
+struct S {
+    x: i32,
+    x: i32,
+}
+
+pub fn main() void {}

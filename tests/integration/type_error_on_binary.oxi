@@ -1,0 +1,7 @@
+// @expect-error non_numeric_operand
+
+pub fn main() void {
+    loop {
+        break 12;
+    } + true
+}

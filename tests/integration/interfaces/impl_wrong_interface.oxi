@@ -1,0 +1,11 @@
+// @expect-error impl_expected_path_to_interface
+
+struct S {}
+
+impl i32 for S {
+    fn f(self: &Self) i32 {
+        return 10;
+    }
+}
+
+pub fn main() void {}

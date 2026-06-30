@@ -1,0 +1,30 @@
+mod ifaces {
+    pub interface I {
+        fn f(self: &Self) i32;
+        fn new(v: i32) Self;
+    }
+}
+
+mod structs {
+    pub struct S {
+        v: i32,
+    }
+}
+
+import ifaces::I;
+import structs::S;
+
+impl I for S {
+    fn f(self: &Self) i32 {
+        return self.v;
+    }
+
+    fn new(v: i32) Self {
+        return S { v };
+    }
+}
+
+pub fn main() i32 {
+    let s = S::new(10);
+    return s.f();
+}
