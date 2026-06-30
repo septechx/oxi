@@ -5,6 +5,7 @@ pub mod backend;
 pub mod bindings;
 pub mod cli;
 pub mod context;
+pub mod driver;
 pub mod errors;
 pub mod hashmap;
 pub mod hir;
@@ -25,19 +26,12 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use clap::Parser;
 use oxic_diag::include_diagnostics;
-use thin_vec::ThinVec;
 
-use crate::ast::validate::validate_ast;
-use crate::cli::Cli;
+use crate::cli::{Cli, ColorChoice};
 use crate::context::{Ctx, with_ctx_mut};
+use crate::driver::compile_sources;
+use crate::driver::frontend_stage;
 use crate::errors::builders;
-use crate::hir::AstLoweringContext;
-use crate::lexer::tokenize;
-use crate::parser::parse;
-use crate::resolve::{Resolver, build_module_tree};
-use crate::thir::lower_thir;
-use crate::thir::scope::build_scope_trees;
-use crate::typeck::typeck_crate;
 
 include_diagnostics!("diagnostics.toml");
 
@@ -57,7 +51,7 @@ pub fn main() -> Result<()> {
         });
     }
 
-    build_file(cli)?;
+    build_files(cli)?;
 
     CTX.with(|ctx| {
         ctx.borrow().errors.print_all();
@@ -66,27 +60,29 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn check_for_errors() {
+fn check_for_errors() -> Result<()> {
     CTX.with(|ctx| {
         let e = &ctx.borrow().errors;
         if e.has_errors() {
             e.print_all();
             std::process::exit(1);
         }
-    });
+        Ok(())
+    })
 }
 
-fn build_file(cli: Cli) -> Result<()> {
+fn build_files(cli: Cli) -> Result<()> {
     let entrypoint = match &cli.entrypoint {
-        Some(ep) => ep,
+        Some(ep) => ep.clone(),
         None if cli.input.len() == 1 => cli.input[0]
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("main"),
-        None => "main",
+            .unwrap_or("main")
+            .to_string(),
+        None => "main".to_string(),
     };
 
-    let mut asts = ThinVec::with_capacity(cli.input.len());
+    let mut sources = Vec::with_capacity(cli.input.len());
     for file_path in &cli.input {
         let source_text = match fs::read_to_string(file_path) {
             Err(err) => with_ctx_mut(|ctx| {
@@ -99,32 +95,20 @@ fn build_file(cli: Cli) -> Result<()> {
             }),
             Ok(source_text) => source_text,
         };
-
-        let (tokens, module_id) = tokenize(source_text, file_path)?;
-        check_for_errors();
-
-        let ast = parse(tokens, file_path)?;
-        check_for_errors();
-
-        validate_ast(&ast, module_id);
-        check_for_errors();
-
-        asts.push(ast);
+        sources.push((file_path.clone(), source_text));
     }
-
-    with_ctx_mut(|ctx| {
-        Resolver::assign_node_ids(ctx, &mut asts);
-    });
 
     if cli.print_ast {
         let use_color = match cli.color {
-            cli::ColorChoice::Always => true,
-            cli::ColorChoice::Never => false,
-            cli::ColorChoice::Auto => {
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => {
                 std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
             }
         };
         colored::control::set_override(use_color);
+
+        let asts = frontend_stage(&sources, check_for_errors)?;
 
         for ast in asts {
             logln!("{}", ast.display(use_color)?);
@@ -133,44 +117,5 @@ fn build_file(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let module_tree = match build_module_tree(&asts, &cli.input, entrypoint) {
-        Ok(tree) => tree,
-        Err(e) => with_ctx_mut(|ctx| {
-            builders::emit(
-                ctx,
-                diag::FailedToBuildModuleTree,
-                diag_params! { error = e },
-            );
-            unreachable!()
-        }),
-    };
-    check_for_errors();
-
-    let resolver = with_ctx_mut(|ctx| {
-        let mut resolver = Resolver::new(&asts, &module_tree, ctx);
-        resolver.resolve();
-        resolver.into_resolver_outputs()
-    });
-    check_for_errors();
-
-    let mut hir_crate = with_ctx_mut(|ctx| {
-        let mut lowering_ctx = AstLoweringContext::new(ctx, &asts, &module_tree, &resolver);
-        lowering_ctx.lower_crate()
-    });
-    check_for_errors();
-
-    let typeck = with_ctx_mut(|ctx| typeck_crate(ctx, &mut hir_crate, &resolver));
-    check_for_errors();
-    typeck.assert_no_errors();
-
-    let scope_trees = build_scope_trees(&hir_crate);
-
-    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
-
-    with_ctx_mut(|ctx| {
-        println!("interner = {:#?}", ctx.interner);
-        println!("thir = {:#?}", thir_crate);
-    });
-
-    Ok(())
+    compile_sources(sources, &entrypoint, check_for_errors)
 }
