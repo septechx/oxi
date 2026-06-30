@@ -1,3 +1,5 @@
+use std::fmt::{self, Display, Formatter};
+
 use thin_vec::ThinVec;
 
 use crate::ast::{self, Ident, Literal, Mutability, Visibility, idents_to_string};
@@ -450,6 +452,31 @@ impl FromToken<BinOp> for BinOp {
     }
 }
 
+impl Display for BinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            BinOp::Eq => write!(f, "="),
+            BinOp::Ne => write!(f, "!="),
+            BinOp::Lt => write!(f, "<"),
+            BinOp::Le => write!(f, "<="),
+            BinOp::Gt => write!(f, ">"),
+            BinOp::Ge => write!(f, ">="),
+            BinOp::And => write!(f, "&&"),
+            BinOp::Or => write!(f, "||"),
+            BinOp::Add => write!(f, "+"),
+            BinOp::Sub => write!(f, "-"),
+            BinOp::Mul => write!(f, "*"),
+            BinOp::Div => write!(f, "/"),
+            BinOp::Rem => write!(f, "%"),
+            BinOp::Shl => write!(f, "<<"),
+            BinOp::Shr => write!(f, ">>"),
+            BinOp::BitAnd => write!(f, "&"),
+            BinOp::BitOr => write!(f, "|"),
+            BinOp::BitXor => write!(f, "^"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
     Not,
@@ -465,6 +492,16 @@ impl FromToken<UnOp> for UnOp {
             TokenKind::Bang => Self::Not,
             _ => return None,
         })
+    }
+}
+
+impl Display for UnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            UnOp::Not => write!(f, "!"),
+            UnOp::Neg => write!(f, "-"),
+            UnOp::Ref => write!(f, "&"),
+        }
     }
 }
 

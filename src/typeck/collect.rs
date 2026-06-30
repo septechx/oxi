@@ -66,6 +66,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for err in icx.errors {
             let (msg, span, module_id) =
                 format_unify_error(&err, self.resolver, &self.ctx.interner);
+            // TODO: Use the new diagnostic system
             self.ctx.errors.add(
                 builders::error_at1(None, msg, module_id, span, self.ctx),
                 self.ctx.enable_printing,

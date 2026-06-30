@@ -5,10 +5,10 @@ use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use proc_macro::{Span, TokenStream, tracked::path as track_path};
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
 use quote::quote;
 use serde::Deserialize;
-use syn::{LitStr, parse_macro_input};
+use syn::{Ident, LitStr, parse_macro_input};
 
 #[derive(Deserialize)]
 struct Diagnostic {
@@ -23,7 +23,9 @@ pub fn include_diagnostics(input: TokenStream) -> TokenStream {
     let resource_str = parse_macro_input!(input as LitStr);
     let resource_span = resource_str.span().unwrap();
     let relative_path = resource_str.value();
-    let absolute_path = relative_to_absolute(resource_span, &relative_path);
+    let Some(absolute_path) = relative_to_absolute(resource_span, &relative_path) else {
+        return quote! { pub mod diag {} }.into();
+    };
 
     track_path(&absolute_path);
 
@@ -40,15 +42,20 @@ pub fn include_diagnostics(input: TokenStream) -> TokenStream {
         if !validate_level(&diagnostic.level) {
             panic!("Invalid level: {}", diagnostic.level);
         }
-        let pascal_key = snake_to_pascal(&key);
-        let level = diagnostic.level;
+
+        let pascal_key = Ident::new(&snake_to_pascal(&key), Span2::call_site());
+        let level = Ident::new(&diagnostic.level, Span2::call_site());
         let message = diagnostic.message;
+
+        let key_lit = LitStr::new(&key, Span2::call_site());
+        let message_lit = LitStr::new(&message, Span2::call_site());
+
         body.extend(quote! {
             pub struct #pascal_key;
-            impl ::oxic::errors::DiagEntry for #pascal_key {
-                fn code(&self) -> &'static str { #key }
-                fn level(&self) -> ::oxic::errors::ErrorLevel { ::oxic::errors::ErrorLevel::#level }
-                fn message(&self) -> &'static str { #message }
+            impl crate::errors::DiagEntry for #pascal_key {
+                fn code(&self) -> &'static str { #key_lit }
+                fn level(&self) -> crate::errors::ErrorLevel { crate::errors::ErrorLevel::#level }
+                fn message(&self) -> &'static str { #message_lit }
             }
         });
     }
@@ -69,16 +76,16 @@ fn validate_level(level: &str) -> bool {
     matches!(level, "Warning" | "Error" | "Fatal")
 }
 
-fn relative_to_absolute(span: Span, relative_path: &str) -> PathBuf {
+fn relative_to_absolute(span: Span, relative_path: &str) -> Option<PathBuf> {
     let path = Path::new(relative_path);
-    if path.is_absolute() {
+    Some(if path.is_absolute() {
         path.to_path_buf()
     } else {
-        let mut source_file_path = span.local_file().unwrap();
+        let mut source_file_path = span.local_file()?;
         source_file_path.pop();
         source_file_path.push(relative_path);
         source_file_path
-    }
+    })
 }
 
 fn snake_to_pascal(s: &str) -> String {
@@ -92,4 +99,3 @@ fn snake_to_pascal(s: &str) -> String {
         })
         .collect()
 }
-

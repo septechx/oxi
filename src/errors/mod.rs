@@ -332,9 +332,9 @@ pub mod builders {
 
     #[macro_export]
     macro_rules! diag_params {
-        ($($key:ident = $val:expr),* $(,)?) => {{
+        ($($key:ident = $val:expr),* $(,)?) => {
             &[ $((stringify!($key), &$val as &dyn std::fmt::Display)),* ]
-        }};
+        };
     }
 
     fn prepare_diag(entry: &impl DiagEntry, params: &[(&str, &dyn Display)]) -> CompilationError {

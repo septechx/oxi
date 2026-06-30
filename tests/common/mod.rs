@@ -1,4 +1,3 @@
-use std::assert_matches;
 use std::fmt::Display;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};

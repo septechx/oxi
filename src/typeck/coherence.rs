@@ -1,14 +1,15 @@
 use std::collections::hash_map::Entry;
 
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::Typeck;
 use crate::typeck::infctx::InferCtx;
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
+use crate::typeck::{Typeck, diag};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(super) fn check_coherence(&mut self) {
@@ -40,34 +41,22 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 .unwrap_or(ModuleId(0));
 
             let Some(struct_def_id) = self.resolve_struct(self_ty.res) else {
-                self.ctx.errors.add(
-                    builders::error_at1(
-                        None,
-                        format!(
-                            "Expected path to struct in impl, found `{}`",
-                            self_ty.display(self.ctx)
-                        ),
-                        impl_module,
-                        self_ty.span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                builders::emit_at(
+                    self.ctx,
+                    self_ty.span,
+                    impl_module,
+                    diag::ImplExpectedPathToStruct,
+                    diag_params! { type = self_ty.display(self.ctx) },
                 );
                 continue;
             };
             let Some(interface_def_id) = self.resolve_interface(interface_ty.res) else {
-                self.ctx.errors.add(
-                    builders::error_at1(
-                        None,
-                        format!(
-                            "Expected path to interface in impl, found `{}`",
-                            interface_ty.display(self.ctx)
-                        ),
-                        impl_module,
-                        interface_ty.span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                builders::emit_at(
+                    self.ctx,
+                    interface_ty.span,
+                    impl_module,
+                    diag::ImplExpectedPathToInterface,
+                    diag_params! { type = interface_ty.display(self.ctx) },
                 );
                 continue;
             };
@@ -78,27 +67,30 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             if let Entry::Vacant(e) = self.coherence.impls.entry(key) {
                 e.insert(def_id);
             } else {
-                self.ctx.errors.add(
-                    builders::error_at1(
-                        None,
-                        format!(
-                            "Conflicting implementations of `{}` for `{}`",
-                            self.ctx.interner.lookup(
-                                self.resolver.defs[interface_def_id.0 as usize]
-                                    .name
-                                    .expect("interface has name"),
-                            ),
-                            self.ctx.interner.lookup(
-                                self.resolver.defs[struct_def_id.0 as usize]
-                                    .name
-                                    .expect("struct has name"),
-                            )
-                        ),
-                        impl_module,
-                        impl_span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                let iface = self
+                    .ctx
+                    .interner
+                    .lookup(
+                        self.resolver.defs[interface_def_id.0 as usize]
+                            .name
+                            .expect("interface has name"),
+                    )
+                    .to_string();
+                let strct = self
+                    .ctx
+                    .interner
+                    .lookup(
+                        self.resolver.defs[struct_def_id.0 as usize]
+                            .name
+                            .expect("struct has name"),
+                    )
+                    .to_string();
+                builders::emit_at(
+                    self.ctx,
+                    impl_span,
+                    impl_module,
+                    diag::ConflictingImplementations,
+                    diag_params! { iface = iface, struct = strct },
                 );
             }
 
@@ -126,18 +118,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         .get(interface_method)
                         .copied()
                         .unwrap_or(impl_module);
-                    self.ctx.errors.add(
-                        builders::error_at1(
-                            None,
-                            format!(
-                                "Missing implementation of interface method `{}`",
-                                self.ctx.interner.lookup(*name)
-                            ),
-                            iface_module,
-                            iface_span,
-                            self.ctx,
-                        ),
-                        self.ctx.enable_printing,
+                    let method = self.ctx.interner.lookup(*name).to_string();
+                    builders::emit_at(
+                        self.ctx,
+                        iface_span,
+                        iface_module,
+                        diag::MissingImplementation,
+                        diag_params! { method = method },
                     );
                     continue;
                 };
@@ -157,18 +144,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     )
                     .is_err()
                     {
-                        self.ctx.errors.add(
-                            builders::error_at1(
-                                None,
-                                format!(
-                                    "Signature mismatch in method `{}`",
-                                    self.ctx.interner.lookup(*name)
-                                ),
-                                impl_module,
-                                method_span,
-                                self.ctx,
-                            ),
-                            self.ctx.enable_printing,
+                        let method = self.ctx.interner.lookup(*name).to_string();
+                        builders::emit_at(
+                            self.ctx,
+                            method_span,
+                            impl_module,
+                            diag::SignatureMismatch,
+                            diag_params! { method = method },
                         );
                     }
                 }
