@@ -153,13 +153,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.adjustments.extend(adjustments);
 
         for err in icx.errors {
-            // TODO: Use the new diagnostic system
-            let (msg, span, module_id) =
-                format_unify_error(&err, self.resolver, &self.ctx.interner);
-            self.ctx.errors.add(
-                builders::error_at1(None, msg, module_id, span, self.ctx),
-                self.ctx.enable_printing,
-            );
+            emit_unify_error(&err, self.resolver, self.ctx);
         }
     }
 }
@@ -1028,39 +1022,35 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn report_type_error(&mut self, err: UnifyError) {
-        let (msg, span, module_id) = format_unify_error(&err, self.resolver, &self.ctx.interner);
-        // TODO: Use the new diagnostic system
-        self.ctx.errors.add(
-            builders::error_at1(None, msg, module_id, span, self.ctx),
-            self.ctx.enable_printing,
-        );
+        emit_unify_error(&err, self.resolver, self.ctx);
     }
 }
 
-pub(super) fn format_unify_error(
-    err: &UnifyError,
-    resolver: &ResolverOutputs,
-    interner: &crate::interner::Interner,
-) -> (String, Span, ModuleId) {
+pub(super) fn emit_unify_error(err: &UnifyError, resolver: &ResolverOutputs, ctx: &mut Ctx) {
     match err {
         UnifyError::Mismatch {
             expected,
             found,
             span,
             module_id,
-        } => (
-            format!(
-                "Type mismatch: expected `{}`, found `{}`",
-                ty_display(expected, resolver, interner),
-                ty_display(found, resolver, interner)
-            ),
-            *span,
-            *module_id,
-        ),
+        } => {
+            builders::emit_at(
+                ctx,
+                *span,
+                *module_id,
+                diag::TypeMismatch,
+                diag_params! {
+                    expected = ty_display(expected, resolver, &ctx.interner),
+                    found = ty_display(found, resolver, &ctx.interner)
+                },
+            );
+        }
         UnifyError::OccursCheck {
             span, module_id, ..
-        } => ("Recursive type detected".to_string(), *span, *module_id),
-    }
+        } => {
+            builders::emit_at(ctx, *span, *module_id, diag::RecursiveType, diag_params! {});
+        }
+    };
 }
 
 fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> String {

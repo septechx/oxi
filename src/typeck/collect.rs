@@ -1,7 +1,6 @@
 use thin_vec::ThinVec;
 
-use super::check::format_unify_error;
-use crate::errors::builders;
+use super::check::emit_unify_error;
 use crate::hir::{AssocItemKind, DefId, FnDecl, ItemKind, MaybeOwner, Node, OwnerInfo};
 use crate::interner::Symbol;
 use crate::typeck::Typeck;
@@ -64,13 +63,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
 
         for err in icx.errors {
-            let (msg, span, module_id) =
-                format_unify_error(&err, self.resolver, &self.ctx.interner);
-            // TODO: Use the new diagnostic system
-            self.ctx.errors.add(
-                builders::error_at1(None, msg, module_id, span, self.ctx),
-                self.ctx.enable_printing,
-            );
+            emit_unify_error(&err, self.resolver, self.ctx);
         }
     }
 

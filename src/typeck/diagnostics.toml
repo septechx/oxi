@@ -57,3 +57,11 @@ message = "Missing implementation of interface method `{method}`"
 [signature_mismatch]
 level = "Error"
 message = "Signature mismatch in method `{method}`"
+
+[type_mismatch]
+level = "Error"
+message = "Type mismatch: expected `{expected}`, found `{found}`"
+
+[recursive_type]
+level = "Error"
+message = "Recursive type detected"
