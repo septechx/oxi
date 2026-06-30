@@ -6,12 +6,13 @@ use crate::ast::{
     NodeId, Path, Stmt, Type, Visibility, idents_to_string,
 };
 use crate::context::Ctx;
+use crate::diag_params;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
 use crate::hir::{DefId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::path::PathError;
-use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver};
+use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, Resolver, diag};
 use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
@@ -148,34 +149,24 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 let module_prefix =
                     &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
                 let module_path = idents_to_string(module_prefix, &self.ctx.interner);
-                let msg = if module_path.is_empty() {
-                    format!(
-                        "`{}` was not found",
-                        self.ctx.interner.lookup(last_seg.value)
-                    )
+                let name = self.ctx.interner.lookup(last_seg.value).to_string();
+                if module_path.is_empty() {
+                    builders::emit_at(
+                        self.ctx,
+                        last_seg.span,
+                        pi.module,
+                        diag::ItemNotFound,
+                        diag_params! { name = name },
+                    );
                 } else {
-                    format!(
-                        "`{}` was not found in module `{}`",
-                        self.ctx.interner.lookup(last_seg.value),
-                        module_path
-                    )
-                };
-                let loc_widget = LocationWidget::new_with_ctx(last_seg.span, pi.module, self.ctx)
-                    .expect("failed to create error");
-                let code_widget = CodeWidget::new_with_ctx(
-                    last_seg.span,
-                    pi.module,
-                    HighlightType::Error,
-                    self.ctx,
-                )
-                .expect("failed to create error");
-                let enable_printing = self.ctx.enable_printing;
-                self.ctx.errors.add(
-                    builders::error1(None, msg)
-                        .add_widget(loc_widget)
-                        .add_widget(code_widget),
-                    enable_printing,
-                );
+                    builders::emit_at(
+                        self.ctx,
+                        last_seg.span,
+                        pi.module,
+                        diag::ItemNotFoundInModule,
+                        diag_params! { name = name, module = module_path },
+                    );
+                }
             }
         }
     }
@@ -200,6 +191,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let module_node_idx = match self.get_module_node_idx(current_module, segments, pi) {
             Ok(idx) => idx,
             Err((res_status, err)) => {
+                // TODO: Use the new diagnostic system
                 self.ctx.errors.add(err, self.ctx.enable_printing);
                 return res_status;
             }
@@ -232,20 +224,12 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         };
 
         if segments.len() < 2 {
-            let loc_widget = LocationWidget::new_with_ctx(pi.import_item.span, pi.module, self.ctx)
-                .expect("failed to create error");
-            let code_widget = CodeWidget::new_with_ctx(
+            builders::emit_at(
+                self.ctx,
                 pi.import_item.span,
                 pi.module,
-                HighlightType::Error,
-                self.ctx,
-            )
-            .expect("failed to create error");
-            self.ctx.errors.add(
-                builders::error1(None, "Cannot import a path with 1 segment")
-                    .add_widget(loc_widget)
-                    .add_widget(code_widget),
-                self.ctx.enable_printing,
+                diag::ImportSingleSegment,
+                diag_params! {},
             );
             return ResolutionStatus::Failed;
         }
@@ -263,6 +247,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let module_node_idx = match self.get_module_node_idx(current_module, module_prefix, pi) {
             Ok(idx) => idx,
             Err((res_status, err)) => {
+                // TODO: Use the new diagnostic system
                 self.ctx.errors.add(err, self.ctx.enable_printing);
                 return res_status;
             }
@@ -278,20 +263,12 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
 
         let target_binding = target_res.best_binding();
         if target_binding.visibility != Visibility::Public {
-            let loc_widget = LocationWidget::new_with_ctx(pi.import_item.span, pi.module, self.ctx)
-                .expect("failed to create error");
-            let code_widget = CodeWidget::new_with_ctx(
+            builders::emit_at(
+                self.ctx,
                 pi.import_item.span,
                 pi.module,
-                HighlightType::Error,
-                self.ctx,
-            )
-            .expect("failed to create error");
-            self.ctx.errors.add(
-                builders::error1(None, "Cannot import a private item")
-                    .add_widget(loc_widget)
-                    .add_widget(code_widget),
-                self.ctx.enable_printing,
+                diag::ImportPrivateItem,
+                diag_params! {},
             );
             return ResolutionStatus::Failed;
         }

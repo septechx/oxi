@@ -1,5 +1,13 @@
+mod early;
+mod late;
+mod path;
+
+mod mod_tree;
+pub use mod_tree::{ModuleTree, build_module_tree};
+
 use std::ops::{Index, IndexMut};
 
+use oxic_diag::include_diagnostics;
 use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
@@ -8,12 +16,7 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{Def, DefId, DefKind, ModuleId, PrimTy};
 use crate::interner::Symbol;
 
-pub use mod_tree::{ModuleTree, build_module_tree};
-
-mod early;
-mod late;
-mod mod_tree;
-mod path;
+include_diagnostics!("diagnostics.toml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PartialRes {
