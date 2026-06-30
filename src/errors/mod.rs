@@ -102,6 +102,10 @@ impl ErrorCollector {
         self
     }
 
+    pub fn set_panic_on_fatal(&mut self, should_panic: bool) {
+        self.should_panic_on_fatal = should_panic;
+    }
+
     pub fn add(&mut self, error: CompilationError, enable_printing: bool) {
         if error.level == ErrorLevel::Fatal && self.should_panic_on_fatal {
             if enable_printing {
