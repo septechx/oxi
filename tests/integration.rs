@@ -1,5 +1,7 @@
 mod common;
 
+oxic_test::oxic_test!();
+
 #[path = "integration/attributes.rs"]
 mod attributes;
 
