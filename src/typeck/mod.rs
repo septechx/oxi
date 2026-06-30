@@ -10,12 +10,16 @@ mod unify;
 mod types;
 pub use types::*;
 
+use oxic_diag::include_diagnostics;
+
 use crate::ast::Mutability;
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
 use crate::hir::{Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
+
+include_diagnostics!("diagnostics.toml");
 
 pub fn typeck_crate(
     ctx: &mut Ctx,

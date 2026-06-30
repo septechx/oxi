@@ -1,5 +1,3 @@
-use oxic::errors::ErrorLevel;
-
 use crate::common::with;
 
 #[test]
@@ -16,7 +14,7 @@ fn type_error_on_binary_tail_in_void_fn() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("non_numeric_operand");
     })
 }
 
@@ -115,13 +113,13 @@ fn string_literals_and_slice_operations() {
         ctx.add_source(
             "main.oxi",
             r#"
-        pub fn main() usize {
-            let s = "Hello world!";
-            let ptr = s.ptr;
-            let len = s.len;
-            return len;
-        }
-    "#,
+            pub fn main() usize {
+                let s = "Hello world!";
+                let ptr = s.ptr;
+                let len = s.len;
+                return len;
+            }
+            "#,
         )
         .succeeds(true);
     })
@@ -241,7 +239,7 @@ fn pointer_to_primitive_field_access() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("type_with_no_fields");
     })
 }
 
@@ -257,7 +255,7 @@ fn invalid_cast_operand_type_error() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("non_numeric_operand");
     })
 }
 
@@ -310,7 +308,7 @@ fn tail_expr_not_at_tail_of_block_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("tail_expr_not_at_tail");
     });
 }
 
@@ -329,7 +327,7 @@ fn tail_expr_not_at_tail_of_nested_block_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("tail_expr_not_at_tail");
     });
 }
 
@@ -348,7 +346,7 @@ fn tail_expr_not_at_tail_of_if_block_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("tail_expr_not_at_tail");
     });
 }
 
@@ -367,7 +365,7 @@ fn tail_expr_not_at_tail_of_while_body_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("tail_expr_not_at_tail");
     });
 }
 
@@ -386,13 +384,14 @@ fn tail_expr_not_at_tail_of_loop_body_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("tail_expr_not_at_tail");
     });
 }
 
 #[test]
 fn tail_expr_at_tail_of_while_body_fails() {
     with(|t| {
+        // TODO: Update tyck so type errors emit error codes
         t.add_source(
             "main.oxi",
             r#"
@@ -403,14 +402,14 @@ fn tail_expr_at_tail_of_while_body_fails() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
 #[test]
 fn tail_expr_at_tail_of_loop_body_fails() {
     with(|t| {
+        // TODO: Update tyck so type errors emit error codes
         t.add_source(
             "main.oxi",
             r#"
@@ -421,14 +420,14 @@ fn tail_expr_at_tail_of_loop_body_fails() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
 #[test]
 fn bare_inline_block_as_loop_statement_fails() {
     with(|t| {
+        // TODO: Update tyck so type errors emit error codes
         t.add_source(
             "main.oxi",
             r#"
@@ -441,14 +440,14 @@ fn bare_inline_block_as_loop_statement_fails() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
 #[test]
 fn bare_if_as_loop_statement_fails() {
     with(|t| {
+        // TODO: Update tyck so type errors emit error codes
         t.add_source(
             "main.oxi",
             r#"
@@ -461,8 +460,7 @@ fn bare_if_as_loop_statement_fails() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -1016,7 +1014,7 @@ fn empty_untyped_array_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("infer_empty_array");
     })
 }
 

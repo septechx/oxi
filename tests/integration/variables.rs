@@ -1,5 +1,3 @@
-use oxic::errors::ErrorLevel;
-
 use crate::common::with;
 
 #[test]
@@ -67,8 +65,7 @@ fn let_explicit_type_mismatches_init() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -107,8 +104,7 @@ fn let_explicit_type_mismatches_fn_return() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -160,8 +156,7 @@ fn const_explicit_type_mismatches_init() {
             fn main() void {}
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -201,8 +196,7 @@ fn const_explicit_type_mismatches_fn_return() {
             fn main() void {}
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -237,8 +231,7 @@ fn let_explicit_bool_type_mismatches_init() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 
@@ -301,8 +294,7 @@ fn let_explicit_slice_type_mismatches_init() {
             }
             "#,
         )
-        .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .succeeds(false);
     });
 }
 

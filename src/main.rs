@@ -24,11 +24,13 @@ use std::io::IsTerminal;
 
 use anyhow::Result;
 use clap::Parser;
+use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
 
 use crate::ast::validate::validate_ast;
 use crate::cli::Cli;
 use crate::context::{Ctx, with_ctx_mut};
+use crate::errors::builders;
 use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
@@ -36,6 +38,8 @@ use crate::resolve::{Resolver, build_module_tree};
 use crate::thir::lower_thir;
 use crate::thir::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
+
+include_diagnostics!("diagnostics.toml");
 
 pub static DEFAULT_ROOT: &str = "..";
 
@@ -85,11 +89,14 @@ fn build_file(cli: Cli) -> Result<()> {
     let mut asts = ThinVec::with_capacity(cli.input.len());
     for file_path in &cli.input {
         let source_text = match fs::read_to_string(file_path) {
-            Err(err) => fatal!(format!(
-                "Source file `{}` not found: {}",
-                file_path.display(),
-                err
-            )),
+            Err(err) => with_ctx_mut(|ctx| {
+                builders::emit(
+                    ctx,
+                    diag::SourceFileNotFound,
+                    diag_params! { file = file_path.display(), error = err },
+                );
+                unreachable!()
+            }),
             Ok(source_text) => source_text,
         };
 
@@ -128,7 +135,14 @@ fn build_file(cli: Cli) -> Result<()> {
 
     let module_tree = match build_module_tree(&asts, &cli.input, entrypoint) {
         Ok(tree) => tree,
-        Err(e) => fatal!(e.to_string()),
+        Err(e) => with_ctx_mut(|ctx| {
+            builders::emit(
+                ctx,
+                diag::FailedToBuildModuleTree,
+                diag_params! { error = e },
+            );
+            unreachable!()
+        }),
     };
     check_for_errors();
 

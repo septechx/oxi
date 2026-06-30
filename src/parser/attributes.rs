@@ -51,11 +51,15 @@ macro_rules! no_attributes {
         let attributes = $modifiers;
 
         if !attributes.is_empty() {
-            $crate::error_at!(
-                attributes[0].span,
-                parser.current_token().module_id,
-                "Attribute not allowed here"
-            );
+            $crate::with_ctx_mut(|ctx| {
+                $crate::builders::emit_at(
+                    ctx,
+                    attributes[0].span,
+                    parser.current_token().module_id,
+                    $crate::parser::diag::AttributeNotAllowedHere,
+                    $crate::diag_params! {},
+                );
+            });
         }
     }};
 }

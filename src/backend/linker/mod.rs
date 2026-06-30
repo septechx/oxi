@@ -6,10 +6,14 @@ pub mod linkers {
     pub use super::ld::LdLinker;
 }
 
-use anyhow::{Result, anyhow};
 use std::{path::Path, process::Command};
 
-use crate::fatal;
+use anyhow::{Result, anyhow};
+
+use crate::backend::diag;
+use crate::context::with_ctx_mut;
+use crate::diag_params;
+use crate::errors::builders;
 
 #[derive(Debug, Clone)]
 pub struct LinkerOptions {
@@ -96,7 +100,10 @@ fn run_linker(linker: &impl Linker) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        fatal!(stderr);
+        with_ctx_mut(|ctx| {
+            builders::emit(ctx, diag::LinkerFailed, diag_params! { error = stderr });
+            unreachable!();
+        });
     }
 
     Ok(())

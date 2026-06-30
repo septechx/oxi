@@ -1,4 +1,3 @@
-use std::assert_matches;
 use std::fmt::Display;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -24,6 +23,7 @@ pub struct Test {
     files: Vec<(String, String)>,
     should_succeed: Option<bool>,
     fail_on_level: ErrorLevel,
+    expected_errors: Vec<String>,
 }
 
 impl Test {
@@ -33,7 +33,8 @@ impl Test {
         Self {
             files: vec![],
             should_succeed: None,
-            fail_on_level: ErrorLevel::Warning,
+            fail_on_level: ErrorLevel::Error,
+            expected_errors: vec![],
         }
     }
 
@@ -48,28 +49,80 @@ impl Test {
         self
     }
 
-    pub fn fail_on_level(&mut self, level: ErrorLevel) -> &mut Self {
-        self.fail_on_level = level;
+    pub fn expect_error(&mut self, error: &str) -> &mut Self {
+        self.expected_errors.push(error.to_string());
         self
     }
 
     fn check_for_errors(&self) -> bool {
         with_ctx(|ctx| {
-            if ctx.errors.has_errors_above_level(self.fail_on_level) {
+            let has_error = ctx.errors.has_errors_above_level(self.fail_on_level);
+
+            // If specific error codes were expected, they must all be present.
+            let missing_expected_error = self
+                .expected_errors
+                .iter()
+                .any(|code| !ctx.errors.has_code(code));
+
+            if has_error {
                 ctx.errors.print_errors(ErrorLevel::Warning);
-                return true;
             }
-            false
+
+            match (has_error, self.should_succeed == Some(false)) {
+                // success, expected success
+                (false, false) => missing_expected_error,
+
+                // success, expected failure
+                (false, true) => true,
+
+                // failure, expected success
+                (true, false) => true,
+
+                // failure, expected failure
+                (true, true) => missing_expected_error,
+            }
         })
     }
 
     fn checkpoint(&self) -> Result<(), ()> {
-        if self.check_for_errors() {
-            assert_matches!(self.should_succeed, Some(false));
-            Err(())
-        } else {
-            Ok(())
-        }
+        if self.should_abort() { Err(()) } else { Ok(()) }
+    }
+
+    /// Abort pipeline only on:
+    /// - All expected errors already found (early success — no need to continue)
+    /// - Unexpected errors in a "should succeed" test
+    /// - Missing expected errors after some errors occurred
+    ///
+    /// Does NOT abort on `(false, true)` — errors may be emitted by later stages.
+    fn should_abort(&self) -> bool {
+        with_ctx(|ctx| {
+            // Early success: all expected errors satisfied, stop pipeline to avoid
+            // hitting compiler panics in later stages on invalid code.
+            if self.should_succeed == Some(false)
+                && !self.expected_errors.is_empty()
+                && self
+                    .expected_errors
+                    .iter()
+                    .all(|code| ctx.errors.has_code(code))
+            {
+                return true;
+            }
+
+            let has_error = ctx.errors.has_errors_above_level(self.fail_on_level);
+            if !has_error {
+                return false;
+            }
+
+            let missing_expected = self
+                .expected_errors
+                .iter()
+                .any(|code| !ctx.errors.has_code(code));
+
+            match self.should_succeed == Some(false) {
+                true => missing_expected,
+                false => true,
+            }
+        })
     }
 
     fn hard_check<T, E: Display>(&self, result: Result<T, E>, msg: &str) -> Result<T, ()> {
@@ -77,8 +130,21 @@ impl Test {
             Ok(v) => Ok(v),
             Err(e) => {
                 if self.should_succeed == Some(false) {
-                    return Err(());
+                    let expected_emitted = with_ctx(|ctx| {
+                        self.expected_errors
+                            .iter()
+                            .all(|code| ctx.errors.has_code(code))
+                    });
+                    if self.expected_errors.is_empty() || expected_emitted {
+                        return Err(());
+                    }
+
+                    panic!(
+                        "{}: {} (expected diagnostic errors {:?}, but execution failed before they were emitted)",
+                        msg, e, self.expected_errors
+                    );
                 }
+
                 panic!("{}: {}", msg, e);
             }
         }
@@ -166,8 +232,20 @@ impl Drop for Test {
         }
 
         let res = self.run_pipeline(&file_paths);
-        if self.should_succeed == Some(false) && res.is_ok() {
-            panic!("Expected pipeline to fail, but it succeeded");
+
+        if self.check_for_errors() {
+            // If the pipeline failed via hard_check (hard error, no diagnostics),
+            // and no specific error codes were expected, that's a successful failure.
+            if res.is_err()
+                && self.expected_errors.is_empty()
+                && !with_ctx(|ctx| ctx.errors.has_errors_above_level(self.fail_on_level))
+            {
+                return;
+            }
+            panic!(
+                "Test failed: expected diagnostic errors {:?} were not satisfied",
+                self.expected_errors
+            );
         }
     }
 }

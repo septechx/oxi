@@ -1,0 +1,59 @@
+[infer_empty_array]
+level = "Error"
+message = "Cannot infer type of empty array"
+
+[non_numeric_operand]
+level = "Error"
+message = "Cannot apply operator `{operator}` to non-numeric operand"
+
+[deref_non_pointer]
+level = "Error"
+message = "Cannot dereference non-pointer type `{type}`"
+
+[method_not_found]
+level = "Error"
+message = "Method `{method}` not found on type `{type}`"
+
+[call_non_function]
+level = "Error"
+message = "Cannot call non-function expression"
+
+[unexpected_parameters]
+level = "Error"
+message = "Expected {expected} parameter{s}, found {found}"
+
+[unknown_field]
+level = "Error"
+message = "Unknown field `{field}` on type `{type}`"
+
+[missing_field]
+level = "Error"
+message = "Missing field `{field}` on type `{type}`"
+
+[type_with_no_fields]
+level = "Error"
+message = "Cannot access field `{field}` on type `{type}` which has no fields"
+
+[unknown_field_in_slice]
+level = "Error"
+message = "Unknown field `{field}` on slice"
+
+[impl_expected_path_to_struct]
+level = "Error"
+message = "Expected path to struct in impl, found `{type}`"
+
+[impl_expected_path_to_interface]
+level = "Error"
+message = "Expected path to interface in impl, found `{type}`"
+
+[conflicting_implementations]
+level = "Error"
+message = "Conflicting implementations of `{iface}` for `{struct}`"
+
+[missing_implementation]
+level = "Error"
+message = "Missing implementation of interface method `{method}`"
+
+[signature_mismatch]
+level = "Error"
+message = "Signature mismatch in method `{method}`"

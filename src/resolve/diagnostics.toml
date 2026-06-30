@@ -1,0 +1,35 @@
+[file_not_referenced_by_mod]
+level = "Warning"
+message = "Provided file `{file}` is not referenced by any `mod` declaration"
+
+[item_not_found]
+level = "Error"
+message = "Could not find item `{name}`"
+
+[item_not_found_in_module]
+level = "Error"
+message = "Could not find item `{name}` in module `{module}`"
+
+[import_single_segment]
+level = "Error"
+message = "Cannot import a path with only 1 segment"
+
+[import_private_item]
+level = "Error"
+message = "Cannot import a private item"
+
+[failed_to_resolve_path]
+level = "Error"
+message = "Failed to resolve path"
+
+[failed_to_resolve_in_module]
+level = "Error"
+message = "Failed to resolve `{name}` in module `{module}`"
+
+[no_parent_for_super]
+level = "Error"
+message = "No parent module for `super`"
+
+[module_not_found]
+level = "Error"
+message = "Module `{name}` not found"

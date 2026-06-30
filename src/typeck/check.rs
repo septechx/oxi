@@ -2,20 +2,21 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Literal, Mutability};
 use crate::context::Ctx;
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
     ItemKind, MaybeOwner, ModuleId, Node, PosOp, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
 };
-use crate::interner::Symbol;
+use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
-use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, Typeck};
+use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, Typeck, diag};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
 // catch uses of `break` outside of loops
@@ -133,15 +134,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let var_module = icx.ty_var_module(var);
-            self.ctx.errors.add(
-                builders::error_at(
-                    "Cannot infer type of empty array",
-                    var_module,
-                    var_span,
-                    self.ctx,
-                ),
-                self.ctx.enable_printing,
-            );
+            builders::emit_at(
+                self.ctx,
+                var_span,
+                var_module,
+                diag::InferEmptyArray,
+                diag_params! {},
+            )
         }
 
         let resolved: FxHashMap<HirId, Ty> = node_types
@@ -154,10 +153,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.adjustments.extend(adjustments);
 
         for err in icx.errors {
+            // TODO: Use the new diagnostic system
             let (msg, span, module_id) =
                 format_unify_error(&err, self.resolver, &self.ctx.interner);
             self.ctx.errors.add(
-                builders::error_at(msg, module_id, span, self.ctx),
+                builders::error_at1(None, msg, module_id, span, self.ctx),
                 self.ctx.enable_printing,
             );
         }
@@ -411,10 +411,22 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             _ => {
                 if !left.is_numeric(self.icx) {
-                    self.numerical_error(left_span);
+                    builders::emit_at(
+                        self.ctx,
+                        left_span,
+                        self.module_id,
+                        diag::NonNumericOperand,
+                        diag_params! { operator = op },
+                    );
                     return Ty::Error;
                 } else if !right.is_numeric(self.icx) {
-                    self.numerical_error(right_span);
+                    builders::emit_at(
+                        self.ctx,
+                        right_span,
+                        self.module_id,
+                        diag::NonNumericOperand,
+                        diag_params! { operator = op },
+                    );
                     return Ty::Error;
                 }
 
@@ -422,18 +434,6 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 left
             }
         }
-    }
-
-    fn numerical_error(&mut self, span: Span) {
-        self.ctx.errors.add(
-            builders::error_at(
-                "Cannot call numerical operator on non-numeric operand",
-                self.module_id,
-                span,
-                self.ctx,
-            ),
-            self.ctx.enable_printing,
-        );
     }
 
     fn check_prefix(&mut self, op: UnOp, right: &Expr) -> Ty {
@@ -448,7 +448,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             UnOp::Neg => {
                 let resolved = self.icx.resolve(&right);
                 if !resolved.is_numeric(self.icx) {
-                    self.numerical_error(right_span);
+                    builders::emit_at(
+                        self.ctx,
+                        right_span,
+                        self.module_id,
+                        diag::NonNumericOperand,
+                        diag_params! { operator = op },
+                    );
                     return Ty::Error;
                 }
                 resolved
@@ -463,14 +469,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         match left {
             Ty::Ptr(inner, _) => (*inner).clone(),
             _ => {
-                self.ctx.errors.add(
-                    builders::error_at(
-                        "Cannot dereference non-pointer type",
-                        self.module_id,
-                        span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                builders::emit_at(
+                    self.ctx,
+                    span,
+                    self.module_id,
+                    diag::DerefNonPointer,
+                    diag_params! { type = ty_display(&left, self.resolver, &self.ctx.interner) },
                 );
                 Ty::Error
             }
@@ -517,9 +521,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         receiver_hir_id: Option<HirId>,
     ) -> Ty {
         let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
-            self.ctx.errors.add(
-                builders::error_at("Method not found", self.module_id, callee_span, self.ctx),
-                self.ctx.enable_printing,
+            builders::emit_at(
+                self.ctx,
+                callee_span,
+                self.module_id,
+                diag::MethodNotFound,
+                diag_params! { method = member, type = ty_display(&recv_ty, self.resolver, &self.ctx.interner) },
             );
             return Ty::Error;
         };
@@ -576,14 +583,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 *ret
             }
             _ => {
-                self.ctx.errors.add(
-                    builders::error_at(
-                        "Cannot call non-function expression",
-                        self.module_id,
-                        callee_span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                builders::emit_at(
+                    self.ctx,
+                    callee_span,
+                    self.module_id,
+                    diag::CallNonFunction,
+                    diag_params! {},
                 );
                 Ty::Error
             }
@@ -607,15 +612,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
         if args.len() != arg_tys.len() {
             let expected = arg_tys.len();
-            let err = format!(
-                "expected {} parameter{}, found {}",
-                expected,
-                if expected == 1 { "" } else { "s" },
-                args.len(),
-            );
-            self.ctx.errors.add(
-                builders::error_at(err, self.module_id, call_span, self.ctx),
-                self.ctx.enable_printing,
+            builders::emit_at(
+                self.ctx,
+                call_span,
+                self.module_id,
+                diag::UnexpectedParameters,
+                diag_params! {
+                    expected = expected,
+                    s = if expected == 1 { "" } else { "s" },
+                    found = args.len()
+                },
             );
             return false;
         }
@@ -698,26 +704,30 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let struct_names: FxHashSet<Symbol> = field_table.keys().copied().collect();
 
         for name in init_names.difference(&struct_names) {
-            self.ctx.errors.add(
-                builders::error_at(
-                    format!("unknown field `{}`", self.ctx.interner.lookup(*name)),
-                    self.module_id,
-                    *sym_to_span.get(name).expect("field exists"),
-                    self.ctx,
-                ),
-                self.ctx.enable_printing,
+            let field = self.ctx.interner.lookup(*name).to_string();
+            builders::emit_at(
+                self.ctx,
+                *sym_to_span.get(name).expect("field exists"),
+                self.module_id,
+                diag::UnknownField,
+                diag_params! {
+                    field = field,
+                    type = ty_display(&struct_ty, self.resolver, &self.ctx.interner)
+                },
             );
         }
 
         for name in struct_names.difference(&init_names) {
-            self.ctx.errors.add(
-                builders::error_at(
-                    format!("missing field `{}`", self.ctx.interner.lookup(*name)),
-                    self.module_id,
-                    span,
-                    self.ctx,
-                ),
-                self.ctx.enable_printing,
+            let field = self.ctx.interner.lookup(*name).to_string();
+            builders::emit_at(
+                self.ctx,
+                span,
+                self.module_id,
+                diag::MissingField,
+                diag_params! {
+                    field = field,
+                    type = ty_display(&struct_ty, self.resolver, &self.ctx.interner)
+                },
             );
         }
 
@@ -928,14 +938,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
         match recv_ty {
             Ty::Adt(_) => {
-                self.ctx.errors.add(
-                    builders::error_at(
-                        format!("unknown field `{}`", self.ctx.interner.lookup(member)),
-                        self.module_id,
-                        member_span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                let field = self.ctx.interner.lookup(member).to_string();
+                builders::emit_at(
+                    self.ctx,
+                    member_span,
+                    self.module_id,
+                    diag::UnknownField,
+                    diag_params! {
+                        field = field,
+                        type = ty_display(&recv_ty, self.resolver, &self.ctx.interner)
+                    },
                 );
             }
             Ty::Ptr(inner, _) => {
@@ -952,27 +964,28 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     return field_ty.clone();
                 }
                 if let Ty::Adt(_) = inner.as_ref() {
-                    self.ctx.errors.add(
-                        builders::error_at(
-                            format!("unknown field `{}`", self.ctx.interner.lookup(member)),
-                            self.module_id,
-                            member_span,
-                            self.ctx,
-                        ),
-                        self.ctx.enable_printing,
+                    let field = self.ctx.interner.lookup(member).to_string();
+                    builders::emit_at(
+                        self.ctx,
+                        member_span,
+                        self.module_id,
+                        diag::UnknownField,
+                        diag_params! {
+                            field = field,
+                            type = ty_display(&inner, self.resolver, &self.ctx.interner)
+                        },
                     );
                 } else {
-                    self.ctx.errors.add(
-                        builders::error_at(
-                            format!(
-                                "cannot access field `{}` on type which has no fields",
-                                self.ctx.interner.lookup(member)
-                            ),
-                            self.module_id,
-                            member_span,
-                            self.ctx,
-                        ),
-                        self.ctx.enable_printing,
+                    let field = self.ctx.interner.lookup(member).to_string();
+                    builders::emit_at(
+                        self.ctx,
+                        member_span,
+                        self.module_id,
+                        diag::TypeWithNoFields,
+                        diag_params! {
+                            field = field,
+                            type = ty_display(&inner, self.resolver, &self.ctx.interner)
+                        },
                     );
                 }
             }
@@ -988,28 +1001,26 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .insert(hir_id, MemberRes::Field { index: 0 });
                     return Ty::Ptr(elem.clone(), Mutability::Constant);
                 }
-                self.ctx.errors.add(
-                    builders::error_at(
-                        format!("unknown field `{}` of slice", interner.lookup(member)),
-                        self.module_id,
-                        member_span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                let field = self.ctx.interner.lookup(member).to_string();
+                builders::emit_at(
+                    self.ctx,
+                    member_span,
+                    self.module_id,
+                    diag::UnknownFieldInSlice,
+                    diag_params! { field = field },
                 );
             }
             _ => {
-                self.ctx.errors.add(
-                    builders::error_at(
-                        format!(
-                            "cannot access field `{}` on type which has no fields",
-                            self.ctx.interner.lookup(member)
-                        ),
-                        self.module_id,
-                        member_span,
-                        self.ctx,
-                    ),
-                    self.ctx.enable_printing,
+                let field = self.ctx.interner.lookup(member).to_string();
+                builders::emit_at(
+                    self.ctx,
+                    member_span,
+                    self.module_id,
+                    diag::TypeWithNoFields,
+                    diag_params! {
+                        field = field,
+                        type = ty_display(&recv_ty, self.resolver, &self.ctx.interner)
+                    },
                 );
             }
         }
@@ -1018,8 +1029,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
     fn report_type_error(&mut self, err: UnifyError) {
         let (msg, span, module_id) = format_unify_error(&err, self.resolver, &self.ctx.interner);
+        // TODO: Use the new diagnostic system
         self.ctx.errors.add(
-            builders::error_at(msg, module_id, span, self.ctx),
+            builders::error_at1(None, msg, module_id, span, self.ctx),
             self.ctx.enable_printing,
         );
     }
@@ -1051,7 +1063,7 @@ pub(super) fn format_unify_error(
     }
 }
 
-fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &crate::interner::Interner) -> String {
+fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> String {
     match ty {
         Ty::Var(_) => "<var>".to_string(),
         Ty::Prim(p) => p.name_str().to_string(),

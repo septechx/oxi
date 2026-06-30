@@ -6,6 +6,7 @@ use crate::{
         AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
         Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
     },
+    diag_params,
     errors::builders,
     get_modifiers,
     lexer::token::TokenKind,
@@ -13,6 +14,7 @@ use crate::{
     parser::{
         Parser,
         attributes::parse_attributes,
+        diag,
         expr::parse_expr,
         lookups::{BindingPower, ITEM_LU},
         modifiers::{Modifier, parse_modifiers},
@@ -34,15 +36,12 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
     } else {
         let tok = parser.current_token();
         crate::with_ctx_mut(|ctx| {
-            let enable_printing = ctx.enable_printing;
-            ctx.errors.add(
-                builders::fatal_at(
-                    format!("Expected top-level item (static, struct, interface, impl, fn, import, mod), but found {} instead.", tok.kind), 
-                    tok.module_id,
-                    tok.span,
-                    ctx
-                ),
-                enable_printing,
+            builders::emit_at(
+                ctx,
+                tok.span,
+                tok.module_id,
+                diag::ExpectedTopLevel,
+                diag_params! { actual = tok.kind },
             );
         });
 
@@ -129,15 +128,12 @@ pub fn parse_struct_decl_item(
             if let ItemKind::Fn(fn_decl) = stmt.kind {
                 if fn_decl.body.is_none() {
                     crate::with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::error_at(
-                                "Struct methods must have a body",
-                                parser.current_token().module_id,
-                                fn_decl.name.span,
-                                ctx,
-                            ),
-                            enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            fn_decl.name.span,
+                            parser.current_token().module_id,
+                            diag::StructMethodMissingBody,
+                            diag_params! {},
                         );
                     });
                 }
@@ -156,12 +152,7 @@ pub fn parse_struct_decl_item(
 
         if parser.current_token().kind == TokenKind::Identifier {
             let property_name = parser.expect_identifier()?;
-            parser.expect_error(
-                TokenKind::Colon,
-                Some(String::from(
-                    "Expected colon after property name in struct property declaration",
-                )),
-            )?;
+            parser.expect(TokenKind::Colon)?;
             let type_ = parse_type(parser, BindingPower::DefaultBp)?;
 
             if parser.current_token().kind != TokenKind::CloseCurly {
@@ -170,18 +161,14 @@ pub fn parse_struct_decl_item(
 
             if fields.iter().any(|arg| arg.0.value == property_name.value) {
                 crate::with_ctx_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(
-                        builders::error_at(
-                            format!(
-                                "Property {} has already been defined in struct",
-                                ctx.interner.lookup(property_name.value)
-                            ),
-                            parser.current_token().module_id,
-                            property_name.span,
-                            ctx,
-                        ),
-                        enable_printing,
+                    let field = ctx.interner.lookup(property_name.value).to_string();
+                    let strct = ctx.interner.lookup(name.value).to_string();
+                    builders::emit_at(
+                        ctx,
+                        property_name.span,
+                        parser.current_token().module_id,
+                        diag::FieldAlreadyDefined,
+                        diag_params! { field = field, struct = strct },
                     );
                 });
                 continue;
@@ -198,7 +185,7 @@ pub fn parse_struct_decl_item(
             continue;
         }
 
-        unexpected_token(parser.current_token());
+        unexpected_token(parser.current_token(), "struct field");
     }
 
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
@@ -254,15 +241,12 @@ pub fn parse_interface_decl_item(
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_some() {
                 crate::with_ctx_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(
-                        builders::error_at(
-                            "Expected interface method to not have a body",
-                            parser.current_token().module_id,
-                            stmt.span,
-                            ctx,
-                        ),
-                        enable_printing,
+                    builders::emit_at(
+                        ctx,
+                        stmt.span,
+                        parser.current_token().module_id,
+                        diag::InterfaceMethodHasBody,
+                        diag_params! {},
                     );
                 });
             }
@@ -343,39 +327,38 @@ pub fn parse_fn_decl_item(
 
     parser.expect(TokenKind::CloseParen)?;
 
-    let return_type = parse_type(parser, BindingPower::DefaultBp)?;
-    let mut end_span = return_type.span;
+    // TODO: Maybe check if a '->' token is here and emit a helpful error message?
 
+    let return_type = parse_type(parser, BindingPower::DefaultBp)?;
+
+    let end_span;
     let mut body: Option<Block> = None;
-    if parser.current_token().kind == TokenKind::OpenCurly {
-        let open_brace_span = parser.current_token().span;
-        parser.advance();
-        let (stmts, body_span) = parse_body(parser, open_brace_span)?;
-        end_span = body_span;
-        body = Some(Block {
-            stmts,
-            span: body_span,
-        });
-    } else {
-        match parser.current_token().kind {
-            TokenKind::Semicolon => {
-                end_span = parser.expect(TokenKind::Semicolon)?.span;
-            }
-            _ => {
-                let tok = parser.current_token();
-                crate::with_ctx_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(
-                        builders::error_at(
-                            "Expected function body or terminator after signature",
-                            tok.module_id,
-                            tok.span,
-                            ctx,
-                        ),
-                        enable_printing,
-                    );
-                });
-            }
+    match parser.current_token().kind {
+        TokenKind::OpenCurly => {
+            let open_brace_span = parser.current_token().span;
+            parser.advance();
+            let (stmts, body_span) = parse_body(parser, open_brace_span)?;
+            end_span = body_span;
+            body = Some(Block {
+                stmts,
+                span: body_span,
+            });
+        }
+        TokenKind::Semicolon => {
+            end_span = parser.expect(TokenKind::Semicolon)?.span;
+        }
+        _ => {
+            let tok = parser.current_token();
+            crate::with_ctx_mut(|ctx| {
+                builders::emit_at(
+                    ctx,
+                    tok.span,
+                    tok.module_id,
+                    diag::ExpectedTermOrBodyAfterSignature,
+                    diag_params! {},
+                );
+                unreachable!();
+            });
         }
     }
 
@@ -426,15 +409,12 @@ pub fn parse_impl_item(
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_none() {
                 crate::with_ctx_mut(|ctx| {
-                    let enable_printing = ctx.enable_printing;
-                    ctx.errors.add(
-                        builders::error_at(
-                            "Impl methods must have a body",
-                            parser.current_token().module_id,
-                            fn_decl.name.span,
-                            ctx,
-                        ),
-                        enable_printing,
+                    builders::emit_at(
+                        ctx,
+                        fn_decl.name.span,
+                        parser.current_token().module_id,
+                        diag::ImplMethodMissingBody,
+                        diag_params! {},
                     );
                 });
             }
@@ -621,15 +601,12 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
 
     if assigned_value.is_none() && is_constant {
         crate::with_ctx_mut(|ctx| {
-            let enable_printing = ctx.enable_printing;
-            ctx.errors.add(
-                builders::warning_at(
-                    "Declared constant without providing a value",
-                    parser.current_token().module_id,
-                    span,
-                    ctx,
-                ),
-                enable_printing,
+            builders::emit_at(
+                ctx,
+                span,
+                parser.current_token().module_id,
+                diag::ConstItemWithoutValue,
+                diag_params! {},
             );
         });
     }

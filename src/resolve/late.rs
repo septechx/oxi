@@ -3,16 +3,15 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
 use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, NodeId, Path, Stmt, StmtKind,
-    Type, TypeKind,
+    Type, TypeKind, idents_to_string,
 };
+use crate::diag_params;
 use crate::errors::builders;
-use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind};
 use crate::interner::{Symbol, sym};
 use crate::resolve::path::PathError;
-use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver};
-use crate::span::Span;
+use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver, diag};
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub(super) fn late_resolve(&mut self) {
@@ -148,7 +147,13 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             return Res::Def(res.best_binding().def_id);
         }
 
-        self.report_path_error(path, "Failed to resolve path");
+        builders::emit_at(
+            self.resolver.ctx,
+            path.span,
+            self.resolver.source_module_id(),
+            diag::FailedToResolvePath,
+            diag_params! {},
+        );
         Res::Err
     }
 
@@ -199,15 +204,26 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         {
             Ok(idx) => idx,
             Err(err) => {
-                let (span, msg) = match err {
+                match err {
                     PathError::NoParentForSuper { span } => {
-                        (span, "No parent module for `super`".into())
+                        builders::emit_at(
+                            self.resolver.ctx,
+                            span,
+                            self.resolver.source_module_id(),
+                            diag::NoParentForSuper,
+                            diag_params! {},
+                        );
                     }
                     PathError::ModuleNotFound { name, span } => {
-                        (span, format!("Module `{name}` not found"))
+                        builders::emit_at(
+                            self.resolver.ctx,
+                            span,
+                            self.resolver.source_module_id(),
+                            diag::ModuleNotFound,
+                            diag_params! { name = name },
+                        );
                     }
                 };
-                self.report_path_error_at(span, &msg);
                 return PartialRes::new(Res::Err);
             }
         };
@@ -219,16 +235,20 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             return PartialRes::new(Res::Def(res.best_binding().def_id));
         }
 
-        let err_str = format!(
-            "Failed to resolve `{}` in module `{}`",
-            self.resolver.ctx.interner.lookup(last.value),
-            Path {
-                segments: segments[..segments.len() - 1].into(),
-                span: Span::new(0, 0),
-            }
-            .display(self.resolver.ctx)
+        let name = self.resolver.ctx.interner.lookup(last.value).to_string();
+        builders::emit_at(
+            self.resolver.ctx,
+            last.span,
+            self.resolver.source_module_id(),
+            diag::FailedToResolveInModule,
+            diag_params! {
+                name = name,
+                module = idents_to_string(
+                    &segments[..segments.len() - 1],
+                    &self.resolver.ctx.interner
+                )
+            },
         );
-        self.report_path_error_at(last.span, &err_str);
         PartialRes::new(Res::Err)
     }
 
@@ -256,26 +276,6 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 .or_default()
                 .insert(f.name.value, binding);
         }
-    }
-
-    fn report_path_error(&mut self, path: &Path, msg: &str) {
-        self.report_path_error_at(path.span, msg);
-    }
-
-    fn report_path_error_at(&mut self, span: Span, msg: &str) {
-        let module_id = self.resolver.source_module_id();
-        let loc_widget = LocationWidget::new_with_ctx(span, module_id, self.resolver.ctx)
-            .expect("failed to create error");
-        let code_widget =
-            CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, self.resolver.ctx)
-                .expect("failed to create error");
-        let enable_printing = self.resolver.ctx.enable_printing;
-        self.resolver.ctx.errors.add(
-            builders::error(msg)
-                .add_widget(loc_widget)
-                .add_widget(code_widget),
-            enable_printing,
-        );
     }
 
     fn inject_self_ty(&mut self, node_id: NodeId) {

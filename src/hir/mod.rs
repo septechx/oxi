@@ -7,6 +7,7 @@ mod types;
 use std::ffi::OsString;
 use std::path;
 
+use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
 
 use crate::ast::{Ast, NodeId, NodeMap};
@@ -18,6 +19,8 @@ use crate::resolve::{ModuleTree, ResolverOutputs};
 pub use def::*;
 pub use owner::{Crate, HirId, MaybeOwner, OwnerInfo};
 pub use types::*;
+
+include_diagnostics!("diagnostics.toml");
 
 crate::newtype_ids!(ModuleId, DefId, OwnerId, ItemLocalId);
 

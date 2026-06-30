@@ -68,11 +68,15 @@ macro_rules! no_modifiers {
         let modifiers = $modifiers;
 
         if !modifiers.is_empty() {
-            $crate::error_at!(
-                modifiers[0].span,
-                parser.current_token().module_id,
-                "Modifier not allowed here"
-            );
+            $crate::with_ctx_mut(|ctx| {
+                $crate::errors::builders::emit_at(
+                    ctx,
+                    modifiers[0].span,
+                    parser.current_token().module_id,
+                    $crate::parser::diag::ModifierNotAllowedHere,
+                    $crate::diag_params! {},
+                );
+            });
         }
     }};
 }
@@ -92,19 +96,27 @@ macro_rules! get_modifiers {
         if !modifiers.is_empty() && !expected_order.is_empty() {
             for (idx, modifier) in modifiers.iter().enumerate() {
                 if !expected_order.contains(&modifier.kind) {
-                    $crate::error_at!(
-                        modifier.span,
-                        module_id,
-                        format!("Unexpected modifier '{}'", modifier.kind)
-                    );
+                    $crate::with_ctx_mut(|ctx| {
+                        $crate::errors::builders::emit_at(
+                            ctx,
+                            modifier.span,
+                            module_id,
+                            $crate::parser::diag::UnexpectedModifier,
+                            $crate::diag_params! { modifier = modifier.kind },
+                        );
+                    });
                 }
 
                 if modifiers.iter().enumerate().any(|(i, m)| i != idx && m.kind == modifier.kind) {
-                    $crate::error_at!(
-                        modifier.span,
-                        module_id,
-                        format!("Duplicate modifier '{}'", modifier.kind)
-                    );
+                    $crate::with_ctx_mut(|ctx| {
+                        $crate::errors::builders::emit_at(
+                            ctx,
+                            modifier.span,
+                            module_id,
+                            $crate::parser::diag::DuplicateModifier,
+                            $crate::diag_params! { modifier = modifier.kind },
+                        );
+                    });
                 }
 
                 if let Some(expected_idx) = expected_order.iter().position(|&e| e == modifier.kind) {
@@ -116,15 +128,18 @@ macro_rules! get_modifiers {
                     }
                     if let Some(prev) = prev_idx {
                         if expected_idx < prev {
-                            $crate::error_at!(
-                                modifier.span,
-                                module_id,
-                                format!(
-                                    "Modifier '{}' must appear before '{}'",
-                                    modifier.kind,
-                                    expected_order[prev]
-                                )
-                            );
+                            $crate::with_ctx_mut(|ctx| {
+                                $crate::errors::builders::emit_at(
+                                    ctx,
+                                    modifier.span,
+                                    module_id,
+                                    $crate::parser::diag::ModifierMustAppearBefore,
+                                    $crate::diag_params! {
+                                        modifier = modifier.kind,
+                                        previous = expected_order[prev]
+                                    },
+                                );
+                            });
                         }
                     }
                 }

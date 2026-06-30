@@ -1,5 +1,3 @@
-use oxic::errors::ErrorLevel;
-
 use crate::common::with;
 
 #[test]
@@ -83,7 +81,7 @@ fn impl_missing_interface_method() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("missing_implementation");
     })
 }
 
@@ -107,7 +105,7 @@ fn impl_signature_mismatch() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("signature_mismatch");
     })
 }
 
@@ -135,7 +133,7 @@ fn impl_conflicting_duplicate() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("conflicting_implementations");
     })
 }
 
@@ -157,7 +155,7 @@ fn impl_wrong_self_type() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("impl_expected_path_to_struct");
     })
 }
 
@@ -179,7 +177,7 @@ fn impl_wrong_interface() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("impl_expected_path_to_interface");
     })
 }
 
@@ -369,7 +367,7 @@ fn interface_used_as_param_type() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -393,7 +391,7 @@ fn interface_used_as_return_type() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -413,7 +411,7 @@ fn interface_used_as_param_type_in_free_fn() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -435,7 +433,7 @@ fn interface_used_as_struct_field_type() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -459,6 +457,6 @@ fn interface_used_in_ptr_param_type() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("expected_type_found_interface");
     })
 }

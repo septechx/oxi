@@ -27,14 +27,16 @@ impl Display for ErrorLevel {
 #[derive(Debug)]
 pub struct CompilationError {
     level: ErrorLevel,
+    code: Option<Box<str>>,
     message: Box<str>,
     widgets: Vec<Box<dyn for<'a> Widget<Formatter<'a>>>>,
 }
 
 impl CompilationError {
-    pub fn new(level: ErrorLevel, message: impl Into<Box<str>>) -> Self {
+    pub fn new(level: ErrorLevel, code: Option<Box<str>>, message: impl Into<Box<str>>) -> Self {
         Self {
             level,
+            code,
             message: message.into(),
             widgets: Vec::new(),
         }
@@ -48,8 +50,16 @@ impl CompilationError {
         self
     }
 
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
+
     fn display_with_context(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}: {}", self.level, self.message.bold())?;
+        if let Some(code) = &self.code {
+            writeln!(f, "{}[{}]: {}", self.level, code, self.message.bold())?;
+        } else {
+            writeln!(f, "{}: {}", self.level, self.message.bold())?;
+        }
 
         for widget in &self.widgets {
             widget.render(f)?;
@@ -104,11 +114,10 @@ impl ErrorCollector {
 
         if self.errors.len() >= self.max_errors {
             if enable_printing {
-                let max_error = builders::fatal(format!(
-                    "Too many errors ({}), stopping compilation",
+                eprintln!(
+                    "fatal[too_many_errors]: Too many errors ({}), stopping compilation",
                     self.max_errors
-                ));
-                eprintln!("{}", max_error);
+                );
             }
             std::process::exit(1);
         }
@@ -164,12 +173,71 @@ impl ErrorCollector {
     pub fn has_errors_above_level(&self, min_level: ErrorLevel) -> bool {
         self.errors.iter().any(|e| e.level >= min_level)
     }
+
+    pub fn find_code(&self, code: &str) -> Vec<&CompilationError> {
+        self.errors
+            .iter()
+            .filter(|e| e.code() == Some(code))
+            .collect()
+    }
+
+    pub fn has_code(&self, code: &str) -> bool {
+        self.errors.iter().any(|e| e.code() == Some(code))
+    }
 }
 
 impl Default for ErrorCollector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub trait DiagEntry {
+    fn code(&self) -> &'static str;
+    fn level(&self) -> ErrorLevel;
+    fn message(&self) -> &'static str;
+}
+
+pub fn format_diag(template: &str, args: &[(&str, &dyn Display)]) -> String {
+    let template_args: Vec<&str> = {
+        let mut rest = template;
+        let mut args = Vec::new();
+        while let Some(start) = rest.find('{') {
+            if let Some(end) = rest[start..].find('}') {
+                let candidate = &rest[start + 1..start + end];
+                if !candidate.is_empty()
+                    && candidate.chars().all(|c| c.is_alphanumeric() || c == '_')
+                {
+                    args.push(candidate);
+                }
+                rest = &rest[start + end + 1..];
+            } else {
+                break;
+            }
+        }
+        args
+    };
+
+    for arg in &template_args {
+        assert!(
+            args.iter().any(|(key, _)| *key == *arg),
+            "Missing argument `{arg}` for template `{template}`"
+        );
+    }
+
+    for (key, _) in args {
+        assert!(
+            template_args.contains(key),
+            "Unexpected argument `{key}` passed to template `{template}`"
+        );
+    }
+
+    let mut s = template.to_string();
+    for (key, val) in args {
+        let placeholder = format!("{{{key}}}");
+        s = s.replace(&placeholder, &val.to_string());
+    }
+    s
 }
 
 pub mod builders {
@@ -180,34 +248,9 @@ pub mod builders {
     use super::widgets::*;
     use super::*;
 
-    pub fn warning(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Warning, message.into())
-    }
-
-    pub fn error(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Error, message.into())
-    }
-
-    pub fn fatal(message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Fatal, message.into())
-    }
-
-    pub fn warning_at(
-        message: impl Into<String>,
-        module_id: ModuleId,
-        span: Span,
-        ctx: &Ctx,
-    ) -> CompilationError {
-        let loc_widget =
-            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Warning, ctx)
-            .expect("failed to create error");
-        warning(message.into())
-            .add_widget(loc_widget)
-            .add_widget(code_widget)
-    }
-
-    pub fn error_at(
+    // TODO: Remove this
+    pub fn error_at1(
+        code: Option<Box<str>>,
         message: impl Into<String>,
         module_id: ModuleId,
         span: Span,
@@ -217,24 +260,137 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        error(message.into())
+        CompilationError::new(ErrorLevel::Error, code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }
 
-    pub fn fatal_at(
-        message: impl Into<String>,
-        module_id: ModuleId,
+    pub fn emit(ctx: &mut Ctx, entry: impl DiagEntry, params: &[(&str, &dyn Display)]) {
+        let error = prepare_diag(&entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_at(
+        ctx: &mut Ctx,
         span: Span,
-        ctx: &Ctx,
+        module_id: ModuleId,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_at(ctx, span, module_id, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_with_info(
+        ctx: &mut Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_with_info(ctx, span, module_id, info, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_with_info_raw(
+        ctx: &mut Ctx,
+        info: &str,
+        line: usize,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_with_info_raw(info, line, &entry, params);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    pub fn emit_at_with_info(
+        ctx: &mut Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) {
+        let error = prepare_diag_at_with_info(ctx, span, module_id, &entry, params, info);
+        ctx.errors.add(error, ctx.enable_printing);
+    }
+
+    #[macro_export]
+    macro_rules! diag_params {
+        ($($key:ident = $val:expr),* $(,)?) => {
+            &[ $((stringify!($key), &$val as &dyn std::fmt::Display)),* ]
+        };
+    }
+
+    pub fn prepare_diag(
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
     ) -> CompilationError {
-        let loc_widget =
-            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
-            .expect("failed to create error");
-        fatal(message.into())
-            .add_widget(loc_widget)
-            .add_widget(code_widget)
+        let template = entry.message();
+        let formatted = format_diag(template, params);
+
+        CompilationError::new(entry.level(), Some(entry.code().into()), formatted)
+    }
+
+    pub fn prepare_diag_at(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params)
+            .add_widget(
+                LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error"),
+            )
+            .add_widget(
+                CodeWidget::new_with_ctx(
+                    span,
+                    module_id,
+                    match entry.level() {
+                        ErrorLevel::Warning => HighlightType::Warning,
+                        ErrorLevel::Error | ErrorLevel::Fatal => HighlightType::Error,
+                    },
+                    ctx,
+                )
+                .expect("failed to create error"),
+            )
+    }
+
+    pub fn prepare_diag_with_info(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        info: &str,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params).add_widget(
+            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+        )
+    }
+
+    pub fn prepare_diag_with_info_raw(
+        info: &str,
+        line: usize,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+    ) -> CompilationError {
+        prepare_diag(entry, params).add_widget(InfoWidget::from_raw(line, info.into()))
+    }
+
+    pub fn prepare_diag_at_with_info(
+        ctx: &Ctx,
+        span: Span,
+        module_id: ModuleId,
+        entry: &impl DiagEntry,
+        params: &[(&str, &dyn Display)],
+        info: &str,
+    ) -> CompilationError {
+        prepare_diag_at(ctx, span, module_id, entry, params).add_widget(
+            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+        )
     }
 }
 
@@ -253,11 +409,11 @@ mod tests {
         let mut collector = ErrorCollector::new();
 
         collector.add(
-            CompilationError::new(ErrorLevel::Warning, "Warning message".to_string()),
+            CompilationError::new(ErrorLevel::Warning, None, "Warning message".to_string()),
             true,
         );
         collector.add(
-            CompilationError::new(ErrorLevel::Error, "Error message".to_string()),
+            CompilationError::new(ErrorLevel::Error, None, "Error message".to_string()),
             true,
         );
 

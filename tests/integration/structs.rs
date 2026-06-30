@@ -1,5 +1,3 @@
-use oxic::errors::ErrorLevel;
-
 use crate::common::with;
 
 #[test]
@@ -37,7 +35,7 @@ fn duplicate_struct_property_fails() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("field_already_defined");
     })
 }
 
@@ -135,6 +133,6 @@ fn pointer_to_struct_unknown_field() {
             "#,
         )
         .succeeds(false)
-        .fail_on_level(ErrorLevel::Error);
+        .expect_error("unknown_field");
     })
 }

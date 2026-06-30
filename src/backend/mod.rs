@@ -1,5 +1,7 @@
 pub mod linker;
 
+use std::{ffi::CStr, path::Path};
+
 use anyhow::{Result, anyhow};
 use inkwell::{
     OptimizationLevel,
@@ -9,7 +11,9 @@ use inkwell::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
     },
 };
-use std::{ffi::CStr, path::Path};
+use oxic_diag::include_diagnostics;
+
+include_diagnostics!("diagnostics.toml");
 
 #[derive(Debug)]
 pub struct BackendOptions {
