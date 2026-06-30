@@ -10,15 +10,19 @@ mod utils;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::{Ast, Ident, Item},
-    context::with_ctx_mut,
-    errors::builders,
-    lexer::token::{Token, TokenKind, TokenStream},
-    parser::{lookups::create_token_lookups, stmt::parse_item, types::create_token_type_lookups},
-};
+use crate::ast::{Ast, Ident, Item};
+use crate::context::with_ctx_mut;
+use crate::diag_params;
+use crate::errors::builders;
+use crate::lexer::token::{Token, TokenKind, TokenStream};
+use crate::parser::lookups::create_token_lookups;
+use crate::parser::stmt::parse_item;
+use crate::parser::types::create_token_type_lookups;
+
+include_diagnostics!("diagnostics.toml");
 
 pub struct Parser {
     tokens: ThinVec<Token>,
@@ -79,26 +83,17 @@ impl Parser {
         self.pos < self.tokens.len()
     }
 
-    pub fn expect_error(&mut self, expected_kind: TokenKind, err: Option<String>) -> Result<Token> {
+    pub fn expect(&mut self, expected_kind: TokenKind) -> Result<Token> {
         let token = self.current_token();
 
         if token.kind != expected_kind {
             crate::with_ctx_mut(|ctx| {
-                let enable_printing = ctx.enable_printing;
-                ctx.errors.add(
-                    builders::error_at1(
-                        None,
-                        err.unwrap_or_else(|| {
-                            format!(
-                                "Syntax error: Expected {} but received {} instead.",
-                                expected_kind, token.kind
-                            )
-                        }),
-                        token.module_id,
-                        token.span,
-                        ctx,
-                    ),
-                    enable_printing,
+                builders::emit_at(
+                    ctx,
+                    token.span,
+                    token.module_id,
+                    diag::UnexpectedToken,
+                    diag_params! { expected = expected_kind, actual = token.kind },
                 );
             });
         }
@@ -106,23 +101,18 @@ impl Parser {
         Ok(self.advance())
     }
 
-    pub fn expect(&mut self, expected_kind: TokenKind) -> Result<Token> {
-        self.expect_error(expected_kind, None)
-    }
-
     pub fn expect_identifier(&mut self) -> Result<Ident> {
         let token = self.current_token();
 
         if token.kind != TokenKind::Identifier {
             with_ctx_mut(|ctx| {
-                let err = builders::fatal_at1(
-                    None,
-                    format!("Syntax error: Expected identifier, found {}", token.kind),
-                    token.module_id,
-                    token.span,
+                builders::emit_at(
                     ctx,
+                    token.span,
+                    token.module_id,
+                    diag::ExpectedIdentifier,
+                    diag_params! { actual = token.kind },
                 );
-                ctx.errors.add(err, ctx.enable_printing);
             });
         }
 

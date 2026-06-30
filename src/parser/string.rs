@@ -1,7 +1,9 @@
 use crate::context::with_ctx_mut;
+use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::ModuleId;
 use crate::interner::Symbol;
+use crate::parser::diag;
 use crate::span::Span;
 
 pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> Symbol {
@@ -20,16 +22,12 @@ pub fn process_string(str: &str, span: Span, module_id: ModuleId) -> Symbol {
                     let error_span =
                         Span::new(span.start() + i as u32, span.start() + (i + 2) as u32);
                     crate::with_ctx_mut(|ctx| {
-                        let enable_printing = ctx.enable_printing;
-                        ctx.errors.add(
-                            builders::warning_at1(
-                                None,
-                                format!("Unknown escape sequence \\{c}"),
-                                module_id,
-                                error_span,
-                                ctx,
-                            ),
-                            enable_printing,
+                        builders::emit_at(
+                            ctx,
+                            error_span,
+                            module_id,
+                            diag::UnknownEscapeSequence,
+                            diag_params! { c = c },
                         );
                     });
                 }

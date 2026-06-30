@@ -3,10 +3,11 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Block, Expr, ExprKind, Ident, Literal, NodeId, Path},
+    diag_params,
     errors::builders,
     lexer::token::TokenKind,
     parser::{
-        Parser,
+        Parser, diag,
         lookups::{BP_LU, BindingPower, LED_LU, NUD_LU},
         string::process_string,
         types::parse_type,
@@ -343,16 +344,12 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
             parser.advance();
         } else if tok.kind != TokenKind::CloseParen {
             crate::with_ctx_mut(|ctx| {
-                let enable_printing = ctx.enable_printing;
-                ctx.errors.add(
-                    builders::fatal_at1(
-                        None,
-                        "Expected comma or closing parenthesis in expression",
-                        tok.module_id,
-                        tok.span,
-                        ctx,
-                    ),
-                    enable_printing,
+                builders::emit_at(
+                    ctx,
+                    tok.span,
+                    tok.module_id,
+                    diag::ExpectedCommaOrClosingParen,
+                    diag_params! { actual = tok.kind },
                 );
             });
         }

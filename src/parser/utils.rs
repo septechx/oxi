@@ -3,24 +3,21 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ident, Path, Stmt},
+    diag_params,
     errors::builders,
     lexer::token::{Token, TokenKind},
-    parser::{Parser, stmt::parse_stmt},
+    parser::{Parser, diag, stmt::parse_stmt},
     span::Span,
 };
 
 pub fn unexpected_token(token: Token) -> ! {
     crate::with_ctx_mut(|ctx| {
-        let enable_printing = ctx.enable_printing;
-        ctx.errors.add(
-            builders::fatal_at1(
-                None,
-                format!("Syntax error: Unexpected token `{}`", token.value),
-                token.module_id,
-                token.span,
-                ctx,
-            ),
-            enable_printing,
+        builders::emit_at(
+            ctx,
+            token.span,
+            token.module_id,
+            diag::UnexpectedToken,
+            diag_params! { actual = token.kind },
         );
     });
     unreachable!()

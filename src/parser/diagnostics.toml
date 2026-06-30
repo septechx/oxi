@@ -1,0 +1,43 @@
+[unexpected_token]
+level = "Fatal"
+message = "Expected `{expected}` but received `{actual}` instead."
+
+[expected_identifier]
+level = "Fatal"
+message = "Expected identifier, found `{actual}`"
+
+[expected_comma_or_closing_paren]
+level = "Fatal"
+message = "Expected `,` or `)` but received `{actual}` instead."
+
+[expected_top_level]
+level = "Fatal"
+message = "Expected top-level item, but found `{actual}` instead."
+
+[struct_method_missing_body]
+level = "Error"
+message = "Struct methods must have a body"
+
+[field_already_defined]
+level = "Error"
+message = "Field `{field}` has already been defined in struct `{struct}`"
+
+[interface_method_has_body]
+level = "Error"
+message = "Expected interface method to not have a body"
+
+[expected_term_or_body_after_signature]
+level = "Error"
+message = "Expected function body or terminator after signature"
+
+[impl_method_missing_body]
+level = "Error"
+message = "Impl methods must have a body"
+
+[const_item_without_value]
+level = "Warning"
+message = "Declared constant without providing a value"
+
+[unknown_escape_sequence]
+level = "Warning"
+message = "Unknown escape sequence `\\{c}`"
