@@ -1,0 +1,7 @@
+[linker_failed]
+level = "Fatal"
+message = "Linker failed: {error}"
+
+[linker_not_found]
+level = "Fatal"
+message = "No suitable linker found. Tried: {linkers}"

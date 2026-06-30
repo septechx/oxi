@@ -7,7 +7,6 @@ use crate::ast::{
 };
 use crate::context::Ctx;
 use crate::diag_params;
-use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::errors::{CompilationError, builders};
 use crate::hir::{DefId, ModuleId};
 use crate::interner::Symbol;
@@ -190,10 +189,9 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let current_module = pi.module.0 as usize;
         let module_node_idx = match self.get_module_node_idx(current_module, segments, pi) {
             Ok(idx) => idx,
-            Err((res_status, err)) => {
-                // TODO: Use the new diagnostic system
+            Err(err) => {
                 self.ctx.errors.add(err, self.ctx.enable_printing);
-                return res_status;
+                return ResolutionStatus::Failed;
             }
         };
 
@@ -246,10 +244,9 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let module_prefix = &segments[..segments.len() - 1];
         let module_node_idx = match self.get_module_node_idx(current_module, module_prefix, pi) {
             Ok(idx) => idx,
-            Err((res_status, err)) => {
-                // TODO: Use the new diagnostic system
+            Err(err) => {
                 self.ctx.errors.add(err, self.ctx.enable_printing);
-                return res_status;
+                return ResolutionStatus::Failed;
             }
         };
 
@@ -291,31 +288,25 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         current_module: usize,
         segments: &[Ident],
         pi: &PendingImport,
-    ) -> Result<usize, (ResolutionStatus, CompilationError)> {
+    ) -> Result<usize, CompilationError> {
         match self.resolve_module_path(current_module, segments) {
             Ok(idx) => Ok(idx),
-            Err(err) => {
-                let (span, msg) = match err {
-                    PathError::NoParentForSuper { span } => {
-                        (span, "No parent module for `super`".into())
-                    }
-                    PathError::ModuleNotFound { name, span } => {
-                        (span, format!("Module `{name}` not found"))
-                    }
-                };
-                let loc_widget = LocationWidget::new_with_ctx(span, pi.module, self.ctx)
-                    .expect("failed to create error");
-                let code_widget =
-                    CodeWidget::new_with_ctx(span, pi.module, HighlightType::Error, self.ctx)
-                        .expect("failed to create error");
-
-                Err((
-                    ResolutionStatus::Failed,
-                    builders::error1(None, msg)
-                        .add_widget(loc_widget)
-                        .add_widget(code_widget),
-                ))
-            }
+            Err(err) => Err(match err {
+                PathError::NoParentForSuper { span } => builders::prepare_diag_at(
+                    self.ctx,
+                    span,
+                    pi.module,
+                    &diag::NoParentForSuper,
+                    diag_params! {},
+                ),
+                PathError::ModuleNotFound { name, span } => builders::prepare_diag_at(
+                    self.ctx,
+                    span,
+                    pi.module,
+                    &diag::ModuleNotFound,
+                    diag_params! { name = name },
+                ),
+            }),
         }
     }
 }

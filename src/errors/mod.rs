@@ -114,14 +114,10 @@ impl ErrorCollector {
 
         if self.errors.len() >= self.max_errors {
             if enable_printing {
-                let max_error = builders::fatal1(
-                    None,
-                    format!(
-                        "Too many errors ({}), stopping compilation",
-                        self.max_errors
-                    ),
+                eprintln!(
+                    "fatal[too_many_errors]: Too many errors ({}), stopping compilation",
+                    self.max_errors
                 );
-                eprintln!("{}", max_error);
             }
             std::process::exit(1);
         }
@@ -219,34 +215,7 @@ pub mod builders {
     use super::widgets::*;
     use super::*;
 
-    pub fn warning1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Warning, code, message.into())
-    }
-
-    pub fn error1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Error, code, message.into())
-    }
-
-    pub fn fatal1(code: Option<Box<str>>, message: impl Into<String>) -> CompilationError {
-        CompilationError::new(ErrorLevel::Fatal, code, message.into())
-    }
-
-    pub fn warning_at1(
-        code: Option<Box<str>>,
-        message: impl Into<String>,
-        module_id: ModuleId,
-        span: Span,
-        ctx: &Ctx,
-    ) -> CompilationError {
-        let loc_widget =
-            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Warning, ctx)
-            .expect("failed to create error");
-        warning1(code, message.into())
-            .add_widget(loc_widget)
-            .add_widget(code_widget)
-    }
-
+    // TODO: Remove this
     pub fn error_at1(
         code: Option<Box<str>>,
         message: impl Into<String>,
@@ -258,23 +227,7 @@ pub mod builders {
             LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
         let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
             .expect("failed to create error");
-        error1(code, message.into())
-            .add_widget(loc_widget)
-            .add_widget(code_widget)
-    }
-
-    pub fn fatal_at1(
-        code: Option<Box<str>>,
-        message: impl Into<String>,
-        module_id: ModuleId,
-        span: Span,
-        ctx: &Ctx,
-    ) -> CompilationError {
-        let loc_widget =
-            LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error");
-        let code_widget = CodeWidget::new_with_ctx(span, module_id, HighlightType::Error, ctx)
-            .expect("failed to create error");
-        fatal1(code, message.into())
+        CompilationError::new(ErrorLevel::Error, code, message.into())
             .add_widget(loc_widget)
             .add_widget(code_widget)
     }

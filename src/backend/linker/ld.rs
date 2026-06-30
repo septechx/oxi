@@ -1,6 +1,9 @@
 use std::process::Command;
 
-use crate::fatal;
+use crate::backend::diag;
+use crate::context::with_ctx_mut;
+use crate::diag_params;
+use crate::errors::builders;
 
 use super::Linker;
 
@@ -20,10 +23,14 @@ impl LdLinker {
             }
         }
 
-        fatal!(format!(
-            "No suitable linker found. Tried: {}",
-            linkers.join(", ")
-        ))
+        with_ctx_mut(|ctx| {
+            builders::emit(
+                ctx,
+                diag::LinkerNotFound,
+                diag_params! { linkers = linkers.join(", ") },
+            );
+            unreachable!()
+        })
     }
 }
 

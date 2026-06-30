@@ -1,0 +1,3 @@
+[illegal_token]
+level = "Error"
+message = "Illegal token `{token}`"

@@ -41,3 +41,23 @@ message = "Declared constant without providing a value"
 [unknown_escape_sequence]
 level = "Warning"
 message = "Unknown escape sequence `\\{c}`"
+
+[attribute_not_allowed_here]
+level = "Error"
+message = "Attribute not allowed here"
+
+[modifier_not_allowed_here]
+level = "Error"
+message = "Modifier not allowed here"
+
+[unexpected_modifier]
+level = "Error"
+message = "Unexpected modifier `{modifier}`"
+
+[duplicate_modifier]
+level = "Error"
+message = "Duplicate modifier `{modifier}`"
+
+[modifier_must_appear_before]
+level = "Error"
+message = "Modifier `{modifier}` must appear before `{previous}`"
