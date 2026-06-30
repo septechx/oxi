@@ -24,4 +24,4 @@ install PREFIX="/usr": (build "release")
 lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
     cargo fmt -- --check
-    cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- .
+    cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- src/

@@ -23,9 +23,8 @@ fn main() {
     let path = cwd.join(rel_path);
 
     let mut found = vec![];
-    search(&mut found, path);
-
     let mut error = false;
+    search(&mut found, path, &mut error);
     for diagnostics in found {
         for (key, diagnostic) in diagnostics.1 {
             if !validate_key(&key) {
@@ -56,16 +55,30 @@ fn main() {
     }
 }
 
-fn search(found: &mut Vec<(PathBuf, Diagnostics)>, dir: PathBuf) {
+fn search(found: &mut Vec<(PathBuf, Diagnostics)>, dir: PathBuf, error: &mut bool) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
 
         if path.is_dir() {
-            search(found, path);
+            search(found, path, error);
         } else if path.file_name().unwrap() == "diagnostics.toml" {
-            let contents = std::fs::read_to_string(&path).unwrap();
-            let diagnostics: Diagnostics = toml::from_str(&contents).unwrap();
+            let contents = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[{}]: Failed to read diagnostics file: {}", path.display(), e);
+                    *error = true;
+                    continue;
+                }
+            };
+            let diagnostics: Diagnostics = match toml::from_str(&contents) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("[{}]: Failed to parse diagnostics: {}", path.display(), e);
+                    *error = true;
+                    continue;
+                }
+            };
             found.push((normalize_path(path), diagnostics));
         }
     }
