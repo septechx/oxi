@@ -102,6 +102,7 @@ fn run_linker(linker: &impl Linker) -> Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         with_ctx_mut(|ctx| {
             builders::emit(ctx, diag::LinkerFailed, diag_params! { error = stderr });
+            unreachable!();
         });
     }
 

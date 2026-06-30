@@ -97,9 +97,12 @@ impl Test {
             Ok(v) => Ok(v),
             Err(e) => {
                 if self.should_succeed == Some(false) {
-                    // We expected failure, but this bypassed ctx.errors.
-                    // If the test expected specific diagnostics, they can never appear.
-                    if self.expected_errors.is_empty() {
+                    let expected_emitted = with_ctx(|ctx| {
+                        self.expected_errors
+                            .iter()
+                            .all(|code| ctx.errors.has_code(code))
+                    });
+                    if self.expected_errors.is_empty() || expected_emitted {
                         return Err(());
                     }
 

@@ -1017,7 +1017,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     member_span,
                     self.module_id,
                     diag::TypeWithNoFields,
-                    diag_params! { field = field },
+                    diag_params! {
+                        field = field,
+                        type = ty_display(&recv_ty, self.resolver, &self.ctx.interner)
+                    },
                 );
             }
         }

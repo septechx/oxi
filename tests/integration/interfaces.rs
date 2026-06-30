@@ -81,7 +81,7 @@ fn impl_missing_interface_method() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("missing_implementation");
     })
 }
 
@@ -367,7 +367,7 @@ fn interface_used_as_param_type() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -391,7 +391,7 @@ fn interface_used_as_return_type() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -411,7 +411,7 @@ fn interface_used_as_param_type_in_free_fn() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -433,7 +433,7 @@ fn interface_used_as_struct_field_type() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("expected_type_found_interface");
     })
 }
 
@@ -457,6 +457,6 @@ fn interface_used_in_ptr_param_type() {
             "#,
         )
         .succeeds(false)
-        .expect_error("exptected_type_found_interface");
+        .expect_error("expected_type_found_interface");
     })
 }

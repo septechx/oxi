@@ -102,7 +102,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         self.ctx,
                         ty.span,
                         module_id,
-                        diag::ExptectedTypeFoundInterface,
+                        diag::ExpectedTypeFoundInterface,
                         diag_params! { iface = iface_name },
                     );
                 }

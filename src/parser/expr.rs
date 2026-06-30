@@ -351,6 +351,7 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
                     diag::ExpectedCommaOrClosingParen,
                     diag_params! { actual = tok.kind },
                 );
+                unreachable!();
             });
         }
     }

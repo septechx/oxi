@@ -69,7 +69,7 @@ macro_rules! no_modifiers {
 
         if !modifiers.is_empty() {
             $crate::with_ctx_mut(|ctx| {
-                $crate::builders::emit_at(
+                $crate::errors::builders::emit_at(
                     ctx,
                     modifiers[0].span,
                     parser.current_token().module_id,
@@ -97,7 +97,7 @@ macro_rules! get_modifiers {
             for (idx, modifier) in modifiers.iter().enumerate() {
                 if !expected_order.contains(&modifier.kind) {
                     $crate::with_ctx_mut(|ctx| {
-                        $crate::builders::emit_at(
+                        $crate::errors::builders::emit_at(
                             ctx,
                             modifier.span,
                             module_id,
@@ -109,7 +109,7 @@ macro_rules! get_modifiers {
 
                 if modifiers.iter().enumerate().any(|(i, m)| i != idx && m.kind == modifier.kind) {
                     $crate::with_ctx_mut(|ctx| {
-                        $crate::builders::emit_at(
+                        $crate::errors::builders::emit_at(
                             ctx,
                             modifier.span,
                             module_id,
@@ -129,7 +129,7 @@ macro_rules! get_modifiers {
                     if let Some(prev) = prev_idx {
                         if expected_idx < prev {
                             $crate::with_ctx_mut(|ctx| {
-                                $crate::builders::emit_at(
+                                $crate::errors::builders::emit_at(
                                     ctx,
                                     modifier.span,
                                     module_id,

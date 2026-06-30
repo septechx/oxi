@@ -455,7 +455,7 @@ impl FromToken<BinOp> for BinOp {
 impl Display for BinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            BinOp::Eq => write!(f, "="),
+            BinOp::Eq => write!(f, "=="),
             BinOp::Ne => write!(f, "!="),
             BinOp::Lt => write!(f, "<"),
             BinOp::Le => write!(f, "<="),

@@ -327,9 +327,11 @@ pub fn parse_fn_decl_item(
 
     parser.expect(TokenKind::CloseParen)?;
 
-    let return_type = parse_type(parser, BindingPower::DefaultBp)?;
-    let mut end_span = return_type.span;
+    // TODO: Maybe check if a '->' token is here and emit a helpful error message?
 
+    let return_type = parse_type(parser, BindingPower::DefaultBp)?;
+
+    let end_span;
     let mut body: Option<Block> = None;
     match parser.current_token().kind {
         TokenKind::OpenCurly => {
@@ -355,6 +357,7 @@ pub fn parse_fn_decl_item(
                     diag::ExpectedTermOrBodyAfterSignature,
                     diag_params! {},
                 );
+                unreachable!();
             });
         }
     }

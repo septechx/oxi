@@ -34,7 +34,7 @@ impl AstValidator {
                     let ident_str = ctx.interner.lookup(ident.value).to_string();
                     let err = builders::prepare_diag_at_with_info(
                         ctx,
-                        first_span,
+                        ident.span,
                         self.module_id,
                         &diag::DuplicateDefinition,
                         diag_params! { item = ident_str, scope = context },
@@ -259,7 +259,7 @@ impl Visitor for AstValidator {
                             let ident_str = ctx.interner.lookup(ident.value).to_string();
                             let err = builders::prepare_diag_at_with_info(
                                 ctx,
-                                first_span,
+                                ident.span,
                                 self.module_id,
                                 &diag::DuplicateField,
                                 diag_params! { field = ident_str },

@@ -10,6 +10,6 @@ message = "Expected path to struct, found `{path}`"
 level = "Error"
 message = "Expected path to interface, found `{path}`"
 
-[exptected_type_found_interface]
+[expected_type_found_interface]
 level = "Error"
 message = "Expected type, found interface `{iface}`"

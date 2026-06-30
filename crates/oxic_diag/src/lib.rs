@@ -69,7 +69,9 @@ pub fn include_diagnostics(input: TokenStream) -> TokenStream {
 }
 
 fn validate_key(key: &str) -> bool {
-    key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn validate_level(level: &str) -> bool {

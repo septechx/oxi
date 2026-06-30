@@ -80,6 +80,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             })
             .collect();
 
+        let module_id = *self.def_to_module.get(&def_id).expect("module id exists");
+
         let self_res = self
             .resolver
             .res_map
@@ -87,10 +89,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .expect("resolution exists")
             .full_res();
         let Some(self_res) = self_res else {
-            // We cannot use a location or code widget as we do not have a module id
-            // TODO: Get a module id from somewhere
-            builders::emit(
+            builders::emit_at(
                 self.ctx,
+                self_ty.0.span,
+                module_id,
                 diag::ExpectedPathToStruct,
                 diag_params! { path = self_ty.0.display(self.ctx) },
             );
@@ -111,10 +113,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .expect("resolution exists")
             .full_res();
         let Some(interface_res) = interface_res else {
-            // We cannot use a location or code widget as we do not have a module id
-            // TODO: Get a module id from somewhere
-            builders::emit(
+            builders::emit_at(
                 self.ctx,
+                interface.0.span,
+                module_id,
                 diag::ExpectedPathToInterface,
                 diag_params! { path = interface.0.display(self.ctx) },
             );

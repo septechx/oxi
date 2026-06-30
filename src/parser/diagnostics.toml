@@ -27,7 +27,7 @@ level = "Error"
 message = "Expected interface method to not have a body"
 
 [expected_term_or_body_after_signature]
-level = "Error"
+level = "Fatal"
 message = "Expected function body or terminator after signature"
 
 [impl_method_missing_body]

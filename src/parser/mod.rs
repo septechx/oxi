@@ -95,6 +95,7 @@ impl Parser {
                     diag::UnexpectedToken,
                     diag_params! { expected = expected_kind, actual = token.kind },
                 );
+                unreachable!();
             });
         }
 
