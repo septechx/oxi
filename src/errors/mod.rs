@@ -297,7 +297,7 @@ pub mod builders {
         let template = entry.message();
         let formatted = format_diag(template, params);
 
-        CompilationError::new(ErrorLevel::Warning, Some(entry.code().into()), formatted)
+        CompilationError::new(entry.level(), Some(entry.code().into()), formatted)
     }
 
     pub fn prepare_diag_at(
