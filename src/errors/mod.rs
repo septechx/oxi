@@ -198,6 +198,12 @@ pub trait DiagEntry {
     fn message(&self) -> &'static str;
 }
 
+fn validate_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 pub fn format_diag(template: &str, args: &[(&str, &dyn Display)]) -> String {
     let template_args: Vec<&str> = {
         let mut rest = template;
@@ -205,11 +211,11 @@ pub fn format_diag(template: &str, args: &[(&str, &dyn Display)]) -> String {
         while let Some(start) = rest.find('{') {
             if let Some(end) = rest[start..].find('}') {
                 let candidate = &rest[start + 1..start + end];
-                if !candidate.is_empty()
-                    && candidate.chars().all(|c| c.is_alphanumeric() || c == '_')
-                {
-                    args.push(candidate);
-                }
+                assert!(
+                    !candidate.is_empty() && validate_key(candidate),
+                    "Invalid placeholder `{{{candidate}}}` in diagnostic template `{template}`"
+                );
+                args.push(candidate);
                 rest = &rest[start + end + 1..];
             } else {
                 break;
