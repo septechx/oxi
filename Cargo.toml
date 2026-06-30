@@ -18,7 +18,7 @@ thin-vec = "0.2.18"
 oxic_diag = { path = "crates/oxic_diag" }
 
 [dev-dependencies]
-husky-rs = "0.3.3"
+cargo-husky = { version = "1.5.0", default-features = false, features = ["user-hooks"] }
 
 [build-dependencies]
 cc = "1.2.62"
