@@ -16,8 +16,8 @@ use crate::{
 pub enum BindingPower {
     DefaultBp,
     Comma,
-    Pipe,
     Assignment,
+    Pipe,
     Logical,
     Relational,
     Bitwise,
