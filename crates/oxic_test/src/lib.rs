@@ -114,6 +114,7 @@ fn get_auxiliary_modules(dir: &Path, modules: Vec<String>) -> Vec<(String, Strin
         .into_iter()
         .map(|module| {
             let path = auxiliary_dir.join(format!("{module}.oxi"));
+            track_path(&path);
             let source = std::fs::read_to_string(&path)
                 .unwrap_or_else(|_| panic!("Failed to read auxiliary module at {:?}", path));
             (module, source)

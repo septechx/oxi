@@ -8,7 +8,11 @@ pub struct TestCase {
 pub fn parse_file(input: &str) -> Result<TestCase> {
     let mut auxiliary_modules = Vec::new();
     let mut expected_errors = Vec::new();
-    for line in input.lines() {
+    for (idx, line) in input.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || (idx == 0 && line.starts_with("#!")) {
+            continue;
+        }
         if line.starts_with("// @auxiliary-module") {
             let rest = line.strip_prefix("// @auxiliary-module").unwrap();
             auxiliary_modules.push(rest.trim().to_string());
