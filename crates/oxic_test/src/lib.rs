@@ -15,14 +15,22 @@ use syn::{Ident, LitStr};
 #[proc_macro]
 pub fn oxic_test(_input: TokenStream) -> TokenStream {
     let Some(source_path) = Span::call_site().local_file() else {
-        return TokenStream::new();
+        // rust-analyzer doesn't support getting the source file path, so we just return a test that
+        // always fails. https://github.com/rust-lang/rust-analyzer/issues/15950
+        return quote! {
+            #[test]
+            fn oxic_test_fallback() {
+                panic!("oxic_test: failed to get source file path");
+            }
+        }
+        .into();
     };
     let mut integration_dir = source_path;
     integration_dir.pop();
     integration_dir.push("integration");
 
     if !integration_dir.is_dir() {
-        return TokenStream::new();
+        panic!("integration directory not found at {:?}", integration_dir);
     }
 
     let mut tests = TokenStream2::new();
