@@ -17,6 +17,7 @@ pub enum BindingPower {
     DefaultBp,
     Comma,
     Assignment,
+    Pipe,
     Logical,
     Relational,
     Bitwise,
@@ -71,6 +72,15 @@ pub fn create_token_lookups() {
         let mut nud_lu = NudLookup::default();
         let mut led_lu = LedLookup::default();
         let mut item_lu = ItemLookup::default();
+
+        // Pipe
+        led(
+            T::Pipe,
+            BP::Pipe,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
 
         // Assignment
         led(
@@ -189,6 +199,8 @@ pub fn create_token_lookups() {
             &mut bp_lu,
             &mut led_lu,
         );
+
+        // Logical
         led(
             T::DotDotExcl,
             BP::Logical,
@@ -204,7 +216,14 @@ pub fn create_token_lookups() {
             &mut led_lu,
         );
         led(
-            T::Pipe,
+            T::AmpAmp,
+            BP::Logical,
+            parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::BarBar,
             BP::Logical,
             parse_binary_expr,
             &mut bp_lu,

@@ -1,0 +1,7 @@
+pub fn main() u8 {
+    if true {
+        loop {}
+    } else {
+        12
+    }
+}

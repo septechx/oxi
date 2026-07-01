@@ -1,0 +1,17 @@
+mod foo {
+    pub fn bar() i32 {
+        return 10 + crate::bar::foo::bar();
+    }
+}
+
+pub fn main() i32 {
+    return foo::bar() + bar::foo::bar();
+}
+
+mod bar {
+    mod foo {
+        pub fn bar() i32 {
+            return 20;
+        }
+    }
+}

@@ -1,0 +1,13 @@
+// @expect-error expected_type_found_interface
+
+interface I {
+    fn f(self: &I) void;
+}
+
+struct S {}
+
+impl I for S {
+    fn f(self: &I) void {}
+}
+
+pub fn main() void {}

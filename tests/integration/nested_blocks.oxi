@@ -1,0 +1,35 @@
+pub fn main() i32 {
+    {
+        {
+            {
+                12
+            }
+        }
+    }
+}
+
+pub fn foo() void {
+    {
+        {
+            {
+                12; 
+            };
+        };
+    };
+}
+
+pub fn bar() u128 {
+    if true {
+        {
+            let y = {
+                let x = 1;
+                x + 2
+            };
+            y
+        }
+    } else {
+        {
+            12
+        }
+    }
+}

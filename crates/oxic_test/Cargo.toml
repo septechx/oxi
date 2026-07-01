@@ -1,0 +1,13 @@
+[package]
+name = "oxic_test"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0.18", features = ["full"] }
+quote = "1.0.46"
+proc-macro2 = "1.0.106"
+anyhow = "1.0.103"

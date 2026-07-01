@@ -24,6 +24,8 @@ pub fn include_diagnostics(input: TokenStream) -> TokenStream {
     let resource_span = resource_str.span().unwrap();
     let relative_path = resource_str.value();
     let Some(absolute_path) = relative_to_absolute(resource_span, &relative_path) else {
+        // rust-analyzer doesn't support getting the source file path, so we just return an empty
+        // module. https://github.com/rust-lang/rust-analyzer/issues/15950
         return quote! { pub mod diag {} }.into();
     };
 
