@@ -1,0 +1,7 @@
+// @expect-error impl_expected_path_to_interface
+
+struct Bar {}
+
+struct Foo {}
+
+impl Bar for Foo {}

@@ -1,0 +1,5 @@
+// @expect-error failed_to_resolve_path
+
+pub fn main() void {
+    undefined_var;
+}

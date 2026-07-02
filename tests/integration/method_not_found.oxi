@@ -1,0 +1,10 @@
+// @expect-error method_not_found
+
+struct Foo {
+    x: i32,
+}
+
+pub fn main() void {
+    let f = Foo { x: 1 };
+    f.bar();
+}

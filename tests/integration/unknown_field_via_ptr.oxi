@@ -1,0 +1,9 @@
+// @expect-error unknown_field
+
+struct Foo {
+    x: i32,
+}
+
+pub fn f(p: &Foo) i32 {
+    return p.y;
+}

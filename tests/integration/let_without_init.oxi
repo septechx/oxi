@@ -1,0 +1,5 @@
+pub fn main() i32 {
+    let mut x: i32;
+    x = 5;
+    x
+}

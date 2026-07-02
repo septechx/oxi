@@ -105,6 +105,20 @@ mod tests {
     }
 
     #[test]
+    fn shebang_line_is_skipped() {
+        let kinds = token_kinds("#!/usr/bin/env oxi\npub fn main() void {}");
+        assert!(!kinds.contains(&TokenKind::Illegal));
+        assert!(kinds.contains(&TokenKind::Pub));
+        assert!(kinds.contains(&TokenKind::Fn));
+    }
+
+    #[test]
+    fn char_literal_simple() {
+        let kinds = token_kinds(r"let c = 'a';");
+        assert!(kinds.contains(&TokenKind::CharLiteral));
+    }
+
+    #[test]
     fn every_token_kind_used_at_least_once() {
         let all_token_kinds = [
             TokenKind::Let,

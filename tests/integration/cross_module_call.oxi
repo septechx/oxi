@@ -1,0 +1,7 @@
+// @auxiliary-module helper
+
+mod helper;
+
+pub fn main() i32 {
+    return helper::add(3, 4);
+}

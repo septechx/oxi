@@ -1,0 +1,7 @@
+// @auxiliary-module bar
+// @expect-error import_private_item
+
+mod bar;
+import bar::baz;
+
+pub fn main() void {}

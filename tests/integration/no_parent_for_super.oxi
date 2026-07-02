@@ -1,0 +1,5 @@
+// @expect-error no_parent_for_super
+
+import super::foo;
+
+pub fn main() void {}

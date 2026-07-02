@@ -1,0 +1,5 @@
+// @expect-error import_single_segment
+
+import Foo;
+
+pub fn main() void {}

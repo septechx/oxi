@@ -1,0 +1,4 @@
+// @expect-error duplicate_modifier
+
+pub pub fn foo() void {}
+pub fn main() void {}

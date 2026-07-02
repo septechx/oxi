@@ -1,0 +1,6 @@
+// @expect-error unknown_field_in_slice
+
+pub fn main() void {
+    let a = [1, 2, 3];
+    a.foo;
+}

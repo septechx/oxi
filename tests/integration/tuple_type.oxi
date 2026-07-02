@@ -1,0 +1,3 @@
+pub fn main() void {
+    let t: (i32, bool) = (1, true);
+}

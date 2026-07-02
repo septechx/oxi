@@ -1,0 +1,5 @@
+// @expect-error module_not_found
+
+import nonexistent::Foo;
+
+pub fn main() void {}

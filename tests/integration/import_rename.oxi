@@ -1,0 +1,8 @@
+// @auxiliary-module baz
+
+mod baz;
+import baz::qux as z;
+
+pub fn main() void {
+    z();
+}
