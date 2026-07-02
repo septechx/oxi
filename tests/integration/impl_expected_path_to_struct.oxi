@@ -1,0 +1,7 @@
+// @expect-error impl_expected_path_to_struct
+
+interface MyInterface {}
+
+impl MyInterface for MyInterface {
+    fn foo() void {}
+}

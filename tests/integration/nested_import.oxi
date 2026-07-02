@@ -1,0 +1,9 @@
+// @auxiliary-module quux
+
+mod quux;
+import quux::{a, b};
+
+pub fn main() void {
+    a();
+    b();
+}

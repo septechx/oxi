@@ -1,0 +1,6 @@
+// @expect-error duplicate_definition
+
+pub fn foo() void {}
+pub fn foo() void {}
+
+pub fn main() void {}

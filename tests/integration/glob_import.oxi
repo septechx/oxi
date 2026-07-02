@@ -1,0 +1,9 @@
+// @auxiliary-module foo
+
+mod foo;
+import foo::*;
+
+pub fn main() void {
+    bar();
+    baz();
+}

@@ -1,0 +1,7 @@
+// @expect-error missing_field
+
+struct Foo { x: i32, y: i32, }
+
+pub fn main() void {
+    let f = Foo { x: 1 };
+}

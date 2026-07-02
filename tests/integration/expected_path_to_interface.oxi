@@ -1,0 +1,7 @@
+// @expect-error expected_path_to_interface
+
+struct Foo {}
+
+impl Foo::Bar for Foo {
+    fn foo() void {}
+}

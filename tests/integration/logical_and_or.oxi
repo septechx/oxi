@@ -1,0 +1,5 @@
+pub fn main() bool {
+    let a = true;
+    let b = false;
+    a && b || a
+}

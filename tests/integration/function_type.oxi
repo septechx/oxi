@@ -1,0 +1,3 @@
+pub fn main() void {
+    let f: (i32) -> i32;
+}

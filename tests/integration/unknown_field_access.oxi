@@ -1,0 +1,8 @@
+// @expect-error unknown_field
+
+struct Foo { x: i32, }
+
+pub fn main() void {
+    let f = Foo { x: 1 };
+    let y = f.z;
+}

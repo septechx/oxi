@@ -1,0 +1,6 @@
+pub fn main() i32 {
+    let x = loop {
+        break 42;
+    };
+    x
+}
