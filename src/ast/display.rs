@@ -855,11 +855,11 @@ fn write_type(ty: &Type, ctx: &DisplayContext) -> String {
         }
         TypeKind::Slice(ty) => {
             let inner = write_type(ty.as_ref(), ctx);
-            format!("[]{}", inner)
+            format!("[{}]", inner)
         }
         TypeKind::FixedArray(ty, length) => {
             let inner = write_type(ty.as_ref(), ctx);
-            format!("[{}]{}", length, inner)
+            format!("[{}; {}]", inner, length)
         }
         TypeKind::Function { params, ret } => {
             let params: Vec<String> = params.iter().map(|p| write_type(p, ctx)).collect();
