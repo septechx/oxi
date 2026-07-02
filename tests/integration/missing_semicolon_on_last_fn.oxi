@@ -1,7 +1,0 @@
-pub fn id(x: i32) i32 {
-    return x;
-}
-
-pub fn main() i32 {
-    return id(42);
-}

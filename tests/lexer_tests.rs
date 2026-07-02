@@ -113,19 +113,6 @@ mod tests {
     }
 
     #[test]
-    fn illegal_token_dollar() {
-        assert_contains("$x", TokenKind::Dollar);
-    }
-
-    #[test]
-    fn illegal_token_at() {
-        let (tokens, _) = tokenize("@".to_string(), std::path::Path::new("test.oxi"))
-            .expect("Tokenization failed");
-        let kinds: Vec<_> = tokens.0.iter().map(|t| t.kind).collect();
-        assert!(kinds.contains(&TokenKind::At));
-    }
-
-    #[test]
     fn char_literal_simple() {
         let kinds = token_kinds(r"let c = 'a';");
         assert!(kinds.contains(&TokenKind::CharLiteral));

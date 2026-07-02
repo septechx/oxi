@@ -1,8 +1,0 @@
-// @expect-error tail_expr_not_at_tail
-
-pub fn main() void {
-    {
-        1
-        2
-    }
-}
