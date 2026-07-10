@@ -266,7 +266,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
-            ExprKind::Unary { op, right } => self.check_prefix(*op, right),
+            ExprKind::Unary { op, right } => self.check_unary(*op, right),
             ExprKind::Dereference { expr } => self.check_dereference(expr),
             ExprKind::Reference { expr, mutability } => self.check_reference(expr, *mutability),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
@@ -328,6 +328,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::MemberAccess { base, member } => {
                 self.check_member_access(*member, base, expr_span, hir_id)
             }
+            ExprKind::Index { base, index } => self.check_index(base, index, expr_span, hir_id),
             ExprKind::As { expr, ty } => {
                 self.check_expr(expr);
                 Ty::from_hir(self.icx, ty)
@@ -431,7 +432,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
-    fn check_prefix(&mut self, op: UnOp, right: &Expr) -> Ty {
+    fn check_unary(&mut self, op: UnOp, right: &Expr) -> Ty {
         let right_span = right.span;
         let right = self.check_expr(right);
         match op {
@@ -1024,6 +1025,33 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
         Ty::Error
+    }
+
+    fn check_index(&mut self, base: &Expr, index: &Expr, expr_span: Span, _hir_id: HirId) -> Ty {
+        let base_ty = self.check_expr(base);
+        let base = self.icx.resolve(&base_ty);
+        match base {
+            Ty::Slice(elem) | Ty::Array(elem, _) => {
+                let index_ty = self.check_expr(index);
+                let usize_ty = Ty::Prim(PrimTy::Uint(UintTy::Usize));
+                if let Err(err) = unify(self.icx, &usize_ty, &index_ty, index.span, self.module_id)
+                {
+                    self.report_type_error(err);
+                }
+                *elem.clone()
+            }
+            _ => {
+                self.check_expr(index);
+                builders::emit_at(
+                    self.ctx,
+                    expr_span,
+                    self.module_id,
+                    diag::CannotIndex,
+                    diag_params! { type = ty_display(&base, self.resolver, &self.ctx.interner) },
+                );
+                Ty::Error
+            }
+        }
     }
 
     fn report_type_error(&mut self, err: UnifyError) {

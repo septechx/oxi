@@ -372,6 +372,10 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
             ExprKind::Dereference { expr } => expr.visit(self),
             ExprKind::Reference { expr, .. } => expr.visit(self),
             ExprKind::Unary { right, .. } => right.visit(self),
+            ExprKind::Range { start, end, .. } => {
+                start.visit(self);
+                end.visit(self);
+            }
             ExprKind::Assignment {
                 assignee, value, ..
             } => {
@@ -394,6 +398,10 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 parameters.visit(self);
             }
             ExprKind::MemberAccess { base, .. } => base.visit(self),
+            ExprKind::Index { base, index } => {
+                base.visit(self);
+                index.visit(self);
+            }
             ExprKind::As { expr, ty } => {
                 expr.visit(self);
                 ty.visit(self);

@@ -192,6 +192,7 @@ impl<'a> ThirLowerer<'a> {
             hir::ExprKind::Field { base, index, .. } => {
                 self.lower_field(base, *index, ty, span, hir_id)
             }
+            hir::ExprKind::Index { base, index } => self.lower_index(base, index, ty, span, hir_id),
             hir::ExprKind::StructInit { def, fields } => {
                 self.lower_struct_init(fields, *def, ty, span, hir_id)
             }
@@ -441,6 +442,27 @@ impl<'a> ThirLowerer<'a> {
             ExprKind::Field {
                 base: base_id,
                 index,
+            },
+            ty.clone(),
+            span,
+            hir_id,
+        )
+    }
+
+    fn lower_index(
+        &mut self,
+        base: &hir::Expr,
+        index: &hir::Expr,
+        ty: &Ty,
+        span: Span,
+        hir_id: HirId,
+    ) -> ExprId {
+        let base_id = self.lower_expr(base);
+        let index_id = self.lower_expr(index);
+        self.alloc_expr(
+            ExprKind::Index {
+                base: base_id,
+                index: index_id,
             },
             ty.clone(),
             span,

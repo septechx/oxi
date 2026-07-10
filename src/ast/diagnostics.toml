@@ -30,3 +30,6 @@ message = "Break statement outside of loop"
 level = "Error"
 message = "Invalid assignment target"
 
+[invalid_index_target]
+level = "Error"
+message = "Invalid index target"

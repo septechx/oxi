@@ -376,6 +376,10 @@ impl Visitable for Expr {
                 ExprKind::Unary { operator: _, right } => {
                     right.visit(visitor);
                 }
+                ExprKind::Range { start, end, .. } => {
+                    start.visit(visitor);
+                    end.visit(visitor);
+                }
                 ExprKind::Assignment {
                     assignee, value, ..
                 } => {
@@ -396,6 +400,10 @@ impl Visitable for Expr {
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit(visitor);
+                }
+                ExprKind::Index { base, index } => {
+                    base.visit(visitor);
+                    index.visit(visitor);
                 }
                 ExprKind::As { expr, ty } => {
                     expr.visit(visitor);
@@ -460,6 +468,10 @@ impl Visitable for Expr {
                 ExprKind::Unary { operator: _, right } => {
                     right.visit_mut(visitor);
                 }
+                ExprKind::Range { start, end, .. } => {
+                    start.visit_mut(visitor);
+                    end.visit_mut(visitor);
+                }
                 ExprKind::Assignment {
                     assignee, value, ..
                 } => {
@@ -480,6 +492,10 @@ impl Visitable for Expr {
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit_mut(visitor);
+                }
+                ExprKind::Index { base, index } => {
+                    base.visit_mut(visitor);
+                    index.visit_mut(visitor);
                 }
                 ExprKind::As { expr, ty } => {
                     expr.visit_mut(visitor);

@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     ast::{
         AssocItem, AssocItemKind, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind, Item,
-        ItemKind, Literal, Mutability, Path, Stmt, StmtKind, Type, TypeKind, Visibility,
+        ItemKind, Literal, Mutability, Path, RangeKind, Stmt, StmtKind, Type, TypeKind, Visibility,
         idents_to_string,
     },
     context::with_ctx,
@@ -727,6 +727,31 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             write!(out, "{}", expr_ctx.indent_str())?;
             write_expr(out, right, &expr_ctx)?;
         }
+        ExprKind::Range { start, end, kind } => {
+            writeln!(out, "{}", "Range".with_color(ctx.color),)?;
+            let expr_ctx = ctx.indented();
+            writeln!(out, "{}Start:", expr_ctx.indent_str())?;
+            if let Some(start) = start {
+                write_expr(out, start, &expr_ctx)?;
+            } else {
+                writeln!(out, " (empty)")?;
+            }
+            write!(out, "{}End:", expr_ctx.indent_str())?;
+            if let Some(end) = end {
+                write_expr(out, end, &expr_ctx)?;
+            } else {
+                writeln!(out, " (empty)")?;
+            }
+            write!(out, "{}Kind:", expr_ctx.indent_str())?;
+            write!(
+                out,
+                "{}",
+                match kind {
+                    RangeKind::Inclusive => "inclusive".with_color(ctx.color),
+                    RangeKind::Exclusive => "exclusive".with_color(ctx.color),
+                }
+            )?;
+        }
         ExprKind::Assignment {
             assignee,
             operator,
@@ -821,6 +846,14 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 expr_ctx.indent_str(),
                 with_ctx(|ctx| ctx.interner.lookup(member.value).to_string())
             )?;
+        }
+        ExprKind::Index { base, index } => {
+            writeln!(out, "{}", "Index".with_color(ctx.color),)?;
+            let expr_ctx = ctx.indented();
+            write_expr_inline_or_nested(out, "Base: ", base, &expr_ctx)?;
+            writeln!(out)?;
+            write!(out, "{}", "Index: ".with_color(ctx.color))?;
+            write_expr(out, index, &expr_ctx)?;
         }
         ExprKind::As { expr, ty } => {
             writeln!(out, "{}", "As".with_color(ctx.color),)?;

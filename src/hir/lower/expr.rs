@@ -67,6 +67,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 };
                 ExprKind::Unary { op, right }
             }
+            ast::ExprKind::Range { .. } => {
+                todo!("desugar range")
+            }
             ast::ExprKind::Dereference { expr } => {
                 let expr = self.lower_expr(expr).into_box();
                 ExprKind::Dereference { expr }
@@ -157,6 +160,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     member: member.value,
                     base,
                 }
+            }
+            ast::ExprKind::Index { base, index } => {
+                let base = self.lower_expr(base).into_box();
+                let index = self.lower_expr(index).into_box();
+                ExprKind::Index { base, index }
             }
             ast::ExprKind::Block(block) => {
                 let block = self.lower_block(block);

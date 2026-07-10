@@ -103,6 +103,10 @@ pub enum ExprKind {
         base: ExprId,
         index: usize,
     },
+    Index {
+        base: ExprId,
+        index: ExprId,
+    },
     Cast {
         source: ExprId,
         target_ty: Ty,

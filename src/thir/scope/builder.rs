@@ -158,6 +158,9 @@ impl ScopeTreeBuilder {
             ExprKind::MemberAccess { base, .. } => {
                 self.build_expr(base);
             }
+            ExprKind::Index { base, .. } => {
+                self.build_expr(base);
+            }
             ExprKind::StructInit { fields, .. } => {
                 for (_, field_expr) in fields {
                     self.build_expr(field_expr);

@@ -310,6 +310,11 @@ pub enum ExprKind {
         base: Box<Expr>,
         member: Symbol,
     },
+    /// Index expression: base[index]
+    Index {
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
     /// Type cast: expr as Type
     As {
         expr: Box<Expr>,

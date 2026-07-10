@@ -162,6 +162,12 @@ pub enum ExprKind {
     },
     /// A unary expression, e.g. `!true`, `-42`.
     Unary { operator: Token, right: Box<Expr> },
+    /// A range expression, e.g. `1..<2`, `1..=2`.
+    Range {
+        start: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+        kind: RangeKind,
+    },
 
     /// A reference expression, e.g. `&foo`, `&mut bar`.
     Reference {
@@ -179,6 +185,8 @@ pub enum ExprKind {
 
     /// A member access expression, e.g. `foo.bar`.
     MemberAccess { base: Box<Expr>, member: Ident },
+    /// Indexing into an array or tuple, e.g. `foo[1]`, `foo[1..2]`.
+    Index { base: Box<Expr>, index: Box<Expr> },
 
     /// An assignment expression, e.g. `foo = bar`, `foo += 1`.
     Assignment {
@@ -214,6 +222,12 @@ pub enum ExprKind {
     Break(Option<Box<Expr>>),
     /// A `return` expression, e.g. `return bar`.
     Return(Option<Box<Expr>>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RangeKind {
+    Inclusive,
+    Exclusive,
 }
 
 #[derive(Debug, Clone, Copy)]
