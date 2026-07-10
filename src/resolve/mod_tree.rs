@@ -5,7 +5,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ast, Item, ItemKind},
-    context::with_ctx,
+    context::{Ctx, with_ctx},
     diag_params,
     errors::builders,
     hashmap::FxHashMap,
@@ -29,9 +29,10 @@ pub struct ModuleNode {
 }
 
 pub fn build_module_tree(
-    asts: &[Ast],
-    file_paths: &[PathBuf],
-    entrypoint: &str,
+    ctx: &mut Ctx,
+    asts: &mut ThinVec<Ast>,
+    file_paths: &mut Vec<PathBuf>,
+    check_for_errors: impl Fn() -> Result<()>,
 ) -> Result<ModuleTree> {
     let file_index: FxHashMap<PathBuf, usize> = file_paths
         .iter()

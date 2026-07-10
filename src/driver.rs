@@ -1,17 +1,15 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use thin_vec::ThinVec;
+use thin_vec::thin_vec;
 
 use crate::ast::Ast;
 use crate::ast::validate::validate_ast;
 use crate::context::with_ctx_mut;
-use crate::diag;
-use crate::diag_params;
-use crate::errors::builders;
 use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
+use crate::resolve::ModuleTree;
 use crate::resolve::Resolver;
 use crate::resolve::build_module_tree;
 use crate::thir::lower_thir;
@@ -19,53 +17,39 @@ use crate::thir::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
 
 pub fn frontend_stage(
-    sources: &[(PathBuf, String)],
+    source_path: &PathBuf,
+    source: String,
     check_for_errors: impl Fn() -> Result<()>,
-) -> Result<ThinVec<Ast>> {
-    let mut asts = ThinVec::with_capacity(sources.len());
-    for (file_path, source_text) in sources {
-        let (tokens, module_id) = tokenize(source_text.clone(), file_path)?;
-        check_for_errors()?;
+) -> Result<Ast> {
+    let (tokens, module_id) = tokenize(source, source_path)?;
+    check_for_errors()?;
 
-        let ast = parse(tokens, file_path)?;
-        check_for_errors()?;
+    let mut ast = parse(tokens, source_path)?;
+    check_for_errors()?;
 
-        validate_ast(&ast, module_id);
-        check_for_errors()?;
-
-        asts.push(ast);
-    }
+    validate_ast(&ast, module_id);
+    check_for_errors()?;
 
     with_ctx_mut(|ctx| {
-        Resolver::assign_node_ids(ctx, &mut asts);
+        Resolver::assign_node_ids(ctx, &mut ast);
     });
 
-    Ok(asts)
+    Ok(ast)
 }
 
-pub fn compile_sources(
-    sources: Vec<(PathBuf, String)>,
-    entrypoint: &str,
+pub fn compile_source(
+    root_path: PathBuf,
+    root_source: String,
     check_for_errors: impl Fn() -> Result<()>,
 ) -> Result<()> {
-    let asts = frontend_stage(&sources, &check_for_errors)?;
+    let root_ast = frontend_stage(&root_path, root_source, &check_for_errors)?;
 
-    let paths: Vec<PathBuf> = sources.iter().map(|(p, _)| p.clone()).collect();
+    let mut asts = thin_vec![root_ast];
+    let mut paths = vec![root_path];
 
-    let module_tree = match build_module_tree(&asts, &paths, entrypoint) {
-        Ok(tree) => tree,
-        Err(e) => {
-            with_ctx_mut(|ctx| {
-                builders::emit(
-                    ctx,
-                    diag::FailedToBuildModuleTree,
-                    diag_params! { error = e },
-                );
-            });
-            check_for_errors()?;
-            anyhow::bail!("failed to build module tree");
-        }
-    };
+    let module_tree = with_ctx_mut(|ctx| -> Result<ModuleTree> {
+        build_module_tree(ctx, &mut asts, &mut paths, check_for_errors)
+    })?;
     check_for_errors()?;
 
     let resolver = with_ctx_mut(|ctx| {

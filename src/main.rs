@@ -29,7 +29,7 @@ use oxic_diag::include_diagnostics;
 
 use crate::cli::{Cli, ColorChoice};
 use crate::context::{Ctx, with_ctx_mut};
-use crate::driver::compile_sources;
+use crate::driver::compile_source;
 use crate::driver::frontend_stage;
 use crate::errors::builders;
 
@@ -83,8 +83,6 @@ fn build_files(cli: Cli) -> Result<()> {
         })
     };
 
-    let sources = vec![(cli.input.clone(), source_text)];
-
     if cli.print_ast {
         let use_color = match cli.color {
             ColorChoice::Always => true,
@@ -95,14 +93,12 @@ fn build_files(cli: Cli) -> Result<()> {
         };
         colored::control::set_override(use_color);
 
-        let asts = frontend_stage(&sources, check_for_errors)?;
+        let ast = frontend_stage(&cli.input, source_text, check_for_errors)?;
 
-        for ast in asts {
-            logln!("{}", ast.display(use_color)?);
-        }
+        logln!("{}", ast.display(use_color)?);
 
         return Ok(());
     }
 
-    compile_sources(sources, "main", check_for_errors)
+    compile_source(cli.input, source_text, check_for_errors)
 }
