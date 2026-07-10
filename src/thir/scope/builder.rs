@@ -158,6 +158,10 @@ impl ScopeTreeBuilder {
             ExprKind::MemberAccess { base, .. } => {
                 self.build_expr(base);
             }
+            ExprKind::Index { base, index } => {
+                self.build_expr(base);
+                self.build_expr(index);
+            }
             ExprKind::StructInit { fields, .. } => {
                 for (_, field_expr) in fields {
                     self.build_expr(field_expr);
@@ -171,8 +175,11 @@ impl ScopeTreeBuilder {
             ExprKind::Unary { right, .. } => {
                 self.build_expr(right);
             }
-            ExprKind::Postfix { left, .. } => {
-                self.build_expr(left);
+            ExprKind::Dereference { expr } => {
+                self.build_expr(expr);
+            }
+            ExprKind::Reference { expr, .. } => {
+                self.build_expr(expr);
             }
             ExprKind::Assign { target, value, .. } => {
                 self.build_expr(target);

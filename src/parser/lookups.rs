@@ -202,20 +202,6 @@ pub fn create_token_lookups() {
 
         // Logical
         led(
-            T::DotDotExcl,
-            BP::Logical,
-            parse_binary_expr,
-            &mut bp_lu,
-            &mut led_lu,
-        );
-        led(
-            T::DotDotIncl,
-            BP::Logical,
-            parse_binary_expr,
-            &mut bp_lu,
-            &mut led_lu,
-        );
-        led(
             T::AmpAmp,
             BP::Logical,
             parse_binary_expr,
@@ -226,6 +212,20 @@ pub fn create_token_lookups() {
             T::BarBar,
             BP::Logical,
             parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::DotDotExcl,
+            BP::Logical,
+            parse_range_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::DotDotIncl,
+            BP::Logical,
+            parse_range_expr,
             &mut bp_lu,
             &mut led_lu,
         );
@@ -330,11 +330,18 @@ pub fn create_token_lookups() {
         nud(T::OpenParen, parse_parenthesis_expr, &mut nud_lu);
         nud(T::OpenCurly, parse_block_expr, &mut nud_lu);
         nud(T::Dash, parse_unary_expr, &mut nud_lu);
-        nud(T::Amp, parse_unary_expr, &mut nud_lu);
         nud(T::At, parse_unary_expr, &mut nud_lu);
         nud(T::Bang, parse_unary_expr, &mut nud_lu);
+        nud(T::Amp, parse_reference_expr, &mut nud_lu);
 
         // Call & Member
+        led(
+            T::OpenBracket,
+            BP::Call,
+            parse_index_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
         led(
             T::OpenCurly,
             BP::Call,
@@ -350,13 +357,12 @@ pub fn create_token_lookups() {
             &mut led_lu,
         );
         led(
-            T::Question,
+            T::At,
             BP::Call,
-            parse_postfix_expr,
+            parse_dereference_expr,
             &mut bp_lu,
             &mut led_lu,
         );
-        led(T::At, BP::Call, parse_postfix_expr, &mut bp_lu, &mut led_lu);
         led(
             T::Dot,
             BP::Member,

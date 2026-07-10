@@ -356,7 +356,7 @@ impl Visitable for Expr {
                     body.visit(visitor);
                 }
                 ExprKind::Loop(b) => b.visit(visitor),
-                ExprKind::Symbol(_) => {
+                ExprKind::Path(_) => {
                     // Leaf
                 }
                 ExprKind::Binary {
@@ -367,11 +367,18 @@ impl Visitable for Expr {
                     left.visit(visitor);
                     right.visit(visitor);
                 }
-                ExprKind::Postfix { left, operator: _ } => {
-                    left.visit(visitor);
+                ExprKind::Dereference { expr } => {
+                    expr.visit(visitor);
+                }
+                ExprKind::Reference { expr, .. } => {
+                    expr.visit(visitor);
                 }
                 ExprKind::Unary { operator: _, right } => {
                     right.visit(visitor);
+                }
+                ExprKind::Range { start, end, .. } => {
+                    start.visit(visitor);
+                    end.visit(visitor);
                 }
                 ExprKind::Assignment {
                     assignee, value, ..
@@ -384,7 +391,7 @@ impl Visitable for Expr {
                         field.1.visit(visitor);
                     }
                 }
-                ExprKind::ArrayLiteral { contents } => {
+                ExprKind::Array { contents } => {
                     contents.visit(visitor);
                 }
                 ExprKind::FunctionCall { callee, parameters } => {
@@ -394,11 +401,15 @@ impl Visitable for Expr {
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit(visitor);
                 }
+                ExprKind::Index { base, index } => {
+                    base.visit(visitor);
+                    index.visit(visitor);
+                }
                 ExprKind::As { expr, ty } => {
                     expr.visit(visitor);
                     ty.visit(visitor);
                 }
-                ExprKind::TupleLiteral { elements } => {
+                ExprKind::Tuple { elements } => {
                     for element in elements {
                         element.visit(visitor);
                     }
@@ -437,7 +448,7 @@ impl Visitable for Expr {
                     body.visit_mut(visitor);
                 }
                 ExprKind::Loop(b) => b.visit_mut(visitor),
-                ExprKind::Symbol(_) => {
+                ExprKind::Path(_) => {
                     // Leaf
                 }
                 ExprKind::Binary {
@@ -448,11 +459,18 @@ impl Visitable for Expr {
                     left.visit_mut(visitor);
                     right.visit_mut(visitor);
                 }
-                ExprKind::Postfix { left, operator: _ } => {
-                    left.visit_mut(visitor);
+                ExprKind::Dereference { expr } => {
+                    expr.visit_mut(visitor);
+                }
+                ExprKind::Reference { expr, .. } => {
+                    expr.visit_mut(visitor);
                 }
                 ExprKind::Unary { operator: _, right } => {
                     right.visit_mut(visitor);
+                }
+                ExprKind::Range { start, end, .. } => {
+                    start.visit_mut(visitor);
+                    end.visit_mut(visitor);
                 }
                 ExprKind::Assignment {
                     assignee, value, ..
@@ -465,7 +483,7 @@ impl Visitable for Expr {
                         field.1.visit_mut(visitor);
                     }
                 }
-                ExprKind::ArrayLiteral { contents } => {
+                ExprKind::Array { contents } => {
                     contents.visit_mut(visitor);
                 }
                 ExprKind::FunctionCall { callee, parameters } => {
@@ -475,11 +493,15 @@ impl Visitable for Expr {
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit_mut(visitor);
                 }
+                ExprKind::Index { base, index } => {
+                    base.visit_mut(visitor);
+                    index.visit_mut(visitor);
+                }
                 ExprKind::As { expr, ty } => {
                     expr.visit_mut(visitor);
                     ty.visit_mut(visitor);
                 }
-                ExprKind::TupleLiteral { elements } => {
+                ExprKind::Tuple { elements } => {
                     for element in elements {
                         element.visit_mut(visitor);
                     }

@@ -1,0 +1,4 @@
+pub fn main() void {
+    let mut a = [1, 2, 3];
+    a[0] = 10;
+}

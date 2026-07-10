@@ -3,8 +3,8 @@ mod tests {
     use oxic::{
         ast::{
             AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
-            ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, Stmt, StmtKind,
-            Type, TypeKind, Visibility,
+            ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, RangeKind, Stmt,
+            StmtKind, Type, TypeKind, Visibility,
             visit::{VisitAction, Visitable, Visitor, VisitorMut},
         },
         context::with_ctx_mut,
@@ -127,19 +127,22 @@ mod tests {
                 ExprKind::If { .. } => "IfExpr",
                 ExprKind::While { .. } => "WhileExpr",
                 ExprKind::Loop(_) => "LoopExpr",
-                ExprKind::Symbol(_) => "SymbolExpr",
+                ExprKind::Path(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
-                ExprKind::Postfix { .. } => "PostfixExpr",
+                ExprKind::Dereference { .. } => "DereferenceExpr",
+                ExprKind::Reference { .. } => "ReferenceExpr",
                 ExprKind::Unary { .. } => "UnaryExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
-                ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
+                ExprKind::Array { .. } => "ArrayLiteralExpr",
                 ExprKind::FunctionCall { .. } => "FunctionCallExpr",
                 ExprKind::MemberAccess { .. } => "MemberAccessExpr",
                 ExprKind::As { .. } => "AsExpr",
-                ExprKind::TupleLiteral { .. } => "TupleLiteralExpr",
+                ExprKind::Tuple { .. } => "TupleLiteralExpr",
                 ExprKind::Break(_) => "BreakExpr",
                 ExprKind::Return(_) => "ReturnExpr",
+                ExprKind::Range { .. } => "RangeExpr",
+                ExprKind::Index { .. } => "IndexExpr",
             };
             *self.expr_counts.entry(kind_name).or_insert(0) += 1;
 
@@ -219,7 +222,7 @@ mod tests {
 
     fn dummy_expr_symbol(name: &str) -> Expr {
         Expr {
-            kind: ExprKind::Symbol(Path::from_ident(dummy_ident(name))),
+            kind: ExprKind::Path(Path::from_ident(dummy_ident(name))),
             span: dummy_span(),
             node_id: NodeId::default(),
         }
@@ -343,11 +346,30 @@ mod tests {
     }
 
     #[test]
-    fn test_postfix_expr_visited_once() {
+    fn test_range_expr_visited_once() {
         let expr = Expr {
-            kind: ExprKind::Postfix {
-                left: Box::new(dummy_expr_symbol("x")),
-                operator: dummy_token(TokenKind::Plus),
+            kind: ExprKind::Range {
+                start: Some(Box::new(dummy_expr_number(1))),
+                end: Some(Box::new(dummy_expr_number(5))),
+                kind: RangeKind::Inclusive,
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 3);
+        visitor.assert_visited("expr", "RangeExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 2);
+    }
+
+    #[test]
+    fn test_range_expr_no_start_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Range {
+                start: None,
+                end: Some(Box::new(dummy_expr_number(5))),
+                kind: RangeKind::Exclusive,
             },
             span: dummy_span(),
             node_id: NodeId::default(),
@@ -355,7 +377,58 @@ mod tests {
         let mut visitor = NodeCounterVisitor::new();
         expr.visit(&mut visitor);
         visitor.assert_visited("expr", "Expr", 2);
-        visitor.assert_visited("expr", "PostfixExpr", 1);
+        visitor.assert_visited("expr", "RangeExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 1);
+    }
+
+    #[test]
+    fn test_index_expr_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Index {
+                base: Box::new(dummy_expr_symbol("a")),
+                index: Box::new(dummy_expr_number(0)),
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 3);
+        visitor.assert_visited("expr", "IndexExpr", 1);
+        visitor.assert_visited("expr", "SymbolExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 1);
+    }
+
+    #[test]
+    fn test_dereference_expr_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Dereference {
+                expr: Box::new(dummy_expr_symbol("x")),
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 2);
+        visitor.assert_visited("expr", "DereferenceExpr", 1);
+        visitor.assert_visited("expr", "SymbolExpr", 1);
+    }
+
+    #[test]
+    fn test_reference_expr_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Reference {
+                expr: Box::new(dummy_expr_symbol("x")),
+                mutability: Mutability::Mutable,
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 2);
+        visitor.assert_visited("expr", "ReferenceExpr", 1);
         visitor.assert_visited("expr", "SymbolExpr", 1);
     }
 
@@ -436,7 +509,7 @@ mod tests {
     #[test]
     fn test_array_literal_expr() {
         let expr = Expr {
-            kind: ExprKind::ArrayLiteral {
+            kind: ExprKind::Array {
                 contents: thin_vec![
                     dummy_expr_number(1),
                     dummy_expr_number(2),
@@ -512,7 +585,7 @@ mod tests {
     #[test]
     fn test_tuple_literal_expr() {
         let expr = Expr {
-            kind: ExprKind::TupleLiteral {
+            kind: ExprKind::Tuple {
                 elements: thin_vec![
                     dummy_expr_number(1),
                     dummy_expr_number(2),
@@ -982,6 +1055,15 @@ mod tests {
                         span: dummy_span(),
                         node_id: NodeId::default(),
                     },
+                    Expr {
+                        kind: ExprKind::Range {
+                            start: Some(Box::new(dummy_expr_number(0))),
+                            end: Some(Box::new(dummy_expr_number(10))),
+                            kind: RangeKind::Inclusive,
+                        },
+                        span: dummy_span(),
+                        node_id: NodeId::default(),
+                    },
                 ],
             },
             span: dummy_span(),
@@ -996,8 +1078,9 @@ mod tests {
             ("expr", "StructInstantiationExpr", 1),
             ("expr", "AsExpr", 1),
             ("expr", "BinaryExpr", 1),
+            ("expr", "RangeExpr", 1),
             ("expr", "SymbolExpr", 2),
-            ("expr", "NumberExpr", 4),
+            ("expr", "NumberExpr", 6),
         ]);
     }
 
@@ -1356,19 +1439,22 @@ mod tests {
                 ExprKind::If { .. } => "IfExpr",
                 ExprKind::While { .. } => "WhileExpr",
                 ExprKind::Loop(_) => "LoopExpr",
-                ExprKind::Symbol(_) => "SymbolExpr",
+                ExprKind::Path(_) => "SymbolExpr",
                 ExprKind::Binary { .. } => "BinaryExpr",
-                ExprKind::Postfix { .. } => "PostfixExpr",
+                ExprKind::Dereference { .. } => "DereferenceExpr",
+                ExprKind::Reference { .. } => "ReferenceExpr",
                 ExprKind::Unary { .. } => "UnaryExpr",
                 ExprKind::Assignment { .. } => "AssignmentExpr",
                 ExprKind::StructInstantiation { .. } => "StructInstantiationExpr",
-                ExprKind::ArrayLiteral { .. } => "ArrayLiteralExpr",
+                ExprKind::Array { .. } => "ArrayLiteralExpr",
                 ExprKind::FunctionCall { .. } => "FunctionCallExpr",
                 ExprKind::MemberAccess { .. } => "MemberAccessExpr",
                 ExprKind::As { .. } => "AsExpr",
-                ExprKind::TupleLiteral { .. } => "TupleLiteralExpr",
+                ExprKind::Tuple { .. } => "TupleLiteralExpr",
                 ExprKind::Break(_) => "BreakExpr",
                 ExprKind::Return(_) => "ReturnExpr",
+                ExprKind::Range { .. } => "RangeExpr",
+                ExprKind::Index { .. } => "IndexExpr",
             };
             *self.expr_counts.entry(kind_name).or_insert(0) += 1;
 

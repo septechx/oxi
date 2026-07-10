@@ -21,7 +21,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
     fn lower_expr_kind(&mut self, expr: &ast::Expr) -> ExprKind {
         match &expr.kind {
-            ast::ExprKind::Symbol(path) => {
+            ast::ExprKind::Path(path) => {
                 let qpath = self.lower_qpath(path, expr.node_id);
                 ExprKind::Path(qpath)
             }
@@ -67,12 +67,19 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 };
                 ExprKind::Unary { op, right }
             }
-            ast::ExprKind::Postfix { left, operator } => {
-                let left = self.lower_expr(left).into_box();
-                let Some(op) = self.lower_operator(operator, "postfix") else {
-                    return ExprKind::Error;
-                };
-                ExprKind::Postfix { left, op }
+            ast::ExprKind::Range { .. } => {
+                todo!("desugar range")
+            }
+            ast::ExprKind::Dereference { expr } => {
+                let expr = self.lower_expr(expr).into_box();
+                ExprKind::Dereference { expr }
+            }
+            ast::ExprKind::Reference { expr, mutability } => {
+                let expr = self.lower_expr(expr).into_box();
+                ExprKind::Reference {
+                    expr,
+                    mutability: *mutability,
+                }
             }
             ast::ExprKind::Assignment {
                 assignee,
@@ -139,11 +146,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     .collect();
                 ExprKind::StructInit { def, fields }
             }
-            ast::ExprKind::ArrayLiteral { contents } => {
+            ast::ExprKind::Array { contents } => {
                 let contents = contents.iter().map(|expr| self.lower_expr(expr)).collect();
                 ExprKind::ArrayInit { contents }
             }
-            ast::ExprKind::TupleLiteral { elements } => {
+            ast::ExprKind::Tuple { elements } => {
                 let elements = elements.iter().map(|expr| self.lower_expr(expr)).collect();
                 ExprKind::TupleInit(elements)
             }
@@ -153,6 +160,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     member: member.value,
                     base,
                 }
+            }
+            ast::ExprKind::Index { base, index } => {
+                let base = self.lower_expr(base).into_box();
+                let index = self.lower_expr(index).into_box();
+                ExprKind::Index { base, index }
             }
             ast::ExprKind::Block(block) => {
                 let block = self.lower_block(block);

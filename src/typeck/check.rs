@@ -7,7 +7,7 @@ use crate::errors::builders;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
-    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
+    ItemKind, MaybeOwner, ModuleId, Node, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
 };
 use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
@@ -266,8 +266,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
-            ExprKind::Unary { op, right } => self.check_prefix(*op, right),
-            ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
+            ExprKind::Unary { op, right } => self.check_unary(*op, right),
+            ExprKind::Dereference { expr } => self.check_dereference(expr),
+            ExprKind::Reference { expr, mutability } => self.check_reference(expr, *mutability),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
             ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
             ExprKind::ArrayInit { contents } => self.check_array_init(contents, expr_span),
@@ -327,6 +328,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::MemberAccess { base, member } => {
                 self.check_member_access(*member, base, expr_span, hir_id)
             }
+            ExprKind::Index { base, index } => self.check_index(base, index, expr_span, hir_id),
             ExprKind::As { expr, ty } => {
                 self.check_expr(expr);
                 Ty::from_hir(self.icx, ty)
@@ -430,7 +432,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
-    fn check_prefix(&mut self, op: UnOp, right: &Expr) -> Ty {
+    fn check_unary(&mut self, op: UnOp, right: &Expr) -> Ty {
         let right_span = right.span;
         let right = self.check_expr(right);
         match op {
@@ -453,13 +455,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 resolved
             }
-            UnOp::Ref => Ty::Ptr(right.into_box(), Mutability::Constant),
         }
     }
 
-    fn check_postfix(&mut self, left: &Expr, _op: PosOp) -> Ty {
-        let span = left.span;
-        let left = self.check_expr(left);
+    fn check_reference(&mut self, expr: &Expr, mutability: Mutability) -> Ty {
+        let expr = self.check_expr(expr);
+        Ty::Ptr(expr.into_box(), mutability)
+    }
+
+    fn check_dereference(&mut self, expr: &Expr) -> Ty {
+        let span = expr.span;
+        let left = self.check_expr(expr);
         match left {
             Ty::Ptr(inner, _) => (*inner).clone(),
             _ => {
@@ -1019,6 +1025,33 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
         Ty::Error
+    }
+
+    fn check_index(&mut self, base: &Expr, index: &Expr, expr_span: Span, _hir_id: HirId) -> Ty {
+        let base_ty = self.check_expr(base);
+        let base = self.icx.resolve(&base_ty);
+        match base {
+            Ty::Slice(elem) | Ty::Array(elem, _) => {
+                let index_ty = self.check_expr(index);
+                let usize_ty = Ty::Prim(PrimTy::Uint(UintTy::Usize));
+                if let Err(err) = unify(self.icx, &usize_ty, &index_ty, index.span, self.module_id)
+                {
+                    self.report_type_error(err);
+                }
+                *elem.clone()
+            }
+            _ => {
+                self.check_expr(index);
+                builders::emit_at(
+                    self.ctx,
+                    expr_span,
+                    self.module_id,
+                    diag::CannotIndex,
+                    diag_params! { type = ty_display(&base, self.resolver, &self.ctx.interner) },
+                );
+                Ty::Error
+            }
+        }
     }
 
     fn report_type_error(&mut self, err: UnifyError) {

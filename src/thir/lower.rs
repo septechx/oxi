@@ -4,7 +4,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
 use crate::hashmap::FxHashMap;
-use crate::hir::{self, PosOp, PrimTy, QPath, UnOp};
+use crate::hir::{self, PrimTy, QPath, UnOp};
 use crate::hir::{BinOp, HirId};
 use crate::resolve::Res;
 use crate::span::Span;
@@ -176,7 +176,10 @@ impl<'a> ThirLowerer<'a> {
                 self.lower_assign(target, value, ty, span, hir_id)
             }
             hir::ExprKind::Unary { op, right } => self.lower_prefix(*op, right, ty, span, hir_id),
-            hir::ExprKind::Postfix { left, op } => self.lower_postfix(left, *op, ty, span, hir_id),
+            hir::ExprKind::Dereference { expr } => self.lower_dereference(expr, ty, span, hir_id),
+            hir::ExprKind::Reference { expr, mutability } => {
+                self.lower_reference(expr, *mutability, ty, span, hir_id)
+            }
             hir::ExprKind::Call { callee, params } => {
                 self.lower_call(callee, params, ty, span, hir_id)
             }
@@ -189,6 +192,7 @@ impl<'a> ThirLowerer<'a> {
             hir::ExprKind::Field { base, index, .. } => {
                 self.lower_field(base, *index, ty, span, hir_id)
             }
+            hir::ExprKind::Index { base, index } => self.lower_index(base, index, ty, span, hir_id),
             hir::ExprKind::StructInit { def, fields } => {
                 self.lower_struct_init(fields, *def, ty, span, hir_id)
             }
@@ -445,6 +449,27 @@ impl<'a> ThirLowerer<'a> {
         )
     }
 
+    fn lower_index(
+        &mut self,
+        base: &hir::Expr,
+        index: &hir::Expr,
+        ty: &Ty,
+        span: Span,
+        hir_id: HirId,
+    ) -> ExprId {
+        let base_id = self.lower_expr(base);
+        let index_id = self.lower_expr(index);
+        self.alloc_expr(
+            ExprKind::Index {
+                base: base_id,
+                index: index_id,
+            },
+            ty.clone(),
+            span,
+            hir_id,
+        )
+    }
+
     fn lower_method_call(
         &mut self,
         receiver: &hir::Expr,
@@ -494,16 +519,35 @@ impl<'a> ThirLowerer<'a> {
         self.alloc_expr(ExprKind::Call { callee, params }, ty.clone(), span, hir_id)
     }
 
-    fn lower_postfix(
+    fn lower_dereference(
         &mut self,
-        left: &hir::Expr,
-        _op: PosOp,
+        expr: &hir::Expr,
         ty: &Ty,
         span: Span,
         hir_id: HirId,
     ) -> ExprId {
-        let arg = self.lower_expr(left);
+        let arg = self.lower_expr(expr);
         self.alloc_expr(ExprKind::Deref { arg }, ty.clone(), span, hir_id)
+    }
+
+    fn lower_reference(
+        &mut self,
+        expr: &hir::Expr,
+        mutability: Mutability,
+        ty: &Ty,
+        span: Span,
+        hir_id: HirId,
+    ) -> ExprId {
+        let arg = self.lower_expr(expr);
+        self.alloc_expr(
+            ExprKind::Borrow {
+                arg,
+                kind: mutability,
+            },
+            ty.clone(),
+            span,
+            hir_id,
+        )
     }
 
     fn lower_prefix(
@@ -515,18 +559,7 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let arg = self.lower_expr(right);
-        match op {
-            UnOp::Ref => self.alloc_expr(
-                ExprKind::Borrow {
-                    kind: Mutability::Constant,
-                    arg,
-                },
-                ty.clone(),
-                span,
-                hir_id,
-            ),
-            op => self.alloc_expr(ExprKind::Unary { op, arg }, ty.clone(), span, hir_id),
-        }
+        self.alloc_expr(ExprKind::Unary { op, arg }, ty.clone(), span, hir_id)
     }
 
     fn lower_assign(

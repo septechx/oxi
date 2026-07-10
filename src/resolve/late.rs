@@ -361,7 +361,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
 
     fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
         match &expr.kind {
-            ExprKind::Symbol(path) => {
+            ExprKind::Path(path) => {
                 self.resolve_path(path, expr.node_id);
             }
             ExprKind::Literal(_) => {}
@@ -369,8 +369,13 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 left.visit(self);
                 right.visit(self);
             }
-            ExprKind::Postfix { left, .. } => left.visit(self),
+            ExprKind::Dereference { expr } => expr.visit(self),
+            ExprKind::Reference { expr, .. } => expr.visit(self),
             ExprKind::Unary { right, .. } => right.visit(self),
+            ExprKind::Range { start, end, .. } => {
+                start.visit(self);
+                end.visit(self);
+            }
             ExprKind::Assignment {
                 assignee, value, ..
             } => {
@@ -383,7 +388,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     expr.visit(self);
                 }
             }
-            ExprKind::ArrayLiteral { contents, .. } => {
+            ExprKind::Array { contents, .. } => {
                 for elem in contents {
                     elem.visit(self);
                 }
@@ -393,11 +398,15 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 parameters.visit(self);
             }
             ExprKind::MemberAccess { base, .. } => base.visit(self),
+            ExprKind::Index { base, index } => {
+                base.visit(self);
+                index.visit(self);
+            }
             ExprKind::As { expr, ty } => {
                 expr.visit(self);
                 ty.visit(self);
             }
-            ExprKind::TupleLiteral { elements } => {
+            ExprKind::Tuple { elements } => {
                 for elem in elements {
                     elem.visit(self);
                 }
