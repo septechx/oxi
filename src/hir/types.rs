@@ -296,10 +296,14 @@ pub enum ExprKind {
         op: UnOp,
         right: Box<Expr>,
     },
-    /// Postfix operation: left op
-    Postfix {
-        left: Box<Expr>,
-        op: PosOp,
+    /// Dereference expression: expr@
+    Dereference {
+        expr: Box<Expr>,
+    },
+    /// Reference expression: &expr
+    Reference {
+        expr: Box<Expr>,
+        mutability: Mutability,
     },
     /// Member access expression (unresolved)
     MemberAccess {
@@ -481,14 +485,12 @@ impl Display for BinOp {
 pub enum UnOp {
     Not,
     Neg,
-    Ref,
 }
 
 impl FromToken<UnOp> for UnOp {
     fn from_token(tk: &Token) -> Option<Self> {
         Some(match tk.kind {
             TokenKind::Dash => Self::Neg,
-            TokenKind::Amp => Self::Ref,
             TokenKind::Bang => Self::Not,
             _ => return None,
         })
@@ -500,22 +502,7 @@ impl Display for UnOp {
         match self {
             UnOp::Not => write!(f, "!"),
             UnOp::Neg => write!(f, "-"),
-            UnOp::Ref => write!(f, "&"),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PosOp {
-    Deref,
-}
-
-impl FromToken<PosOp> for PosOp {
-    fn from_token(tk: &Token) -> Option<Self> {
-        Some(match tk.kind {
-            TokenKind::At => Self::Deref,
-            _ => return None,
-        })
     }
 }
 

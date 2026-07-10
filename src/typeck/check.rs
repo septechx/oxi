@@ -7,7 +7,7 @@ use crate::errors::builders;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
-    ItemKind, MaybeOwner, ModuleId, Node, PosOp, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
+    ItemKind, MaybeOwner, ModuleId, Node, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
 };
 use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
@@ -267,7 +267,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
             ExprKind::Unary { op, right } => self.check_prefix(*op, right),
-            ExprKind::Postfix { left, op } => self.check_postfix(left, *op),
+            ExprKind::Dereference { expr } => self.check_dereference(expr),
+            ExprKind::Reference { expr, mutability } => self.check_reference(expr, *mutability),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
             ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
             ExprKind::ArrayInit { contents } => self.check_array_init(contents, expr_span),
@@ -453,13 +454,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
                 resolved
             }
-            UnOp::Ref => Ty::Ptr(right.into_box(), Mutability::Constant),
         }
     }
 
-    fn check_postfix(&mut self, left: &Expr, _op: PosOp) -> Ty {
-        let span = left.span;
-        let left = self.check_expr(left);
+    fn check_reference(&mut self, expr: &Expr, mutability: Mutability) -> Ty {
+        let expr = self.check_expr(expr);
+        Ty::Ptr(expr.into_box(), mutability)
+    }
+
+    fn check_dereference(&mut self, expr: &Expr) -> Ty {
+        let span = expr.span;
+        let left = self.check_expr(expr);
         match left {
             Ty::Ptr(inner, _) => (*inner).clone(),
             _ => {

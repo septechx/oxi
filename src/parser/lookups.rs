@@ -330,9 +330,9 @@ pub fn create_token_lookups() {
         nud(T::OpenParen, parse_parenthesis_expr, &mut nud_lu);
         nud(T::OpenCurly, parse_block_expr, &mut nud_lu);
         nud(T::Dash, parse_unary_expr, &mut nud_lu);
-        nud(T::Amp, parse_unary_expr, &mut nud_lu);
         nud(T::At, parse_unary_expr, &mut nud_lu);
         nud(T::Bang, parse_unary_expr, &mut nud_lu);
+        nud(T::Amp, parse_reference_expr, &mut nud_lu);
 
         // Call & Member
         led(
@@ -350,13 +350,12 @@ pub fn create_token_lookups() {
             &mut led_lu,
         );
         led(
-            T::Question,
+            T::At,
             BP::Call,
-            parse_postfix_expr,
+            parse_dereference_expr,
             &mut bp_lu,
             &mut led_lu,
         );
-        led(T::At, BP::Call, parse_postfix_expr, &mut bp_lu, &mut led_lu);
         led(
             T::Dot,
             BP::Member,

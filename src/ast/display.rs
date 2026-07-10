@@ -566,11 +566,11 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 )
             })?;
         }
-        ExprKind::Symbol(s) => {
+        ExprKind::Path(s) => {
             write!(
                 out,
                 "{} {}{}{}",
-                "Symbol".with_color(ctx.color),
+                "Path".with_color(ctx.color),
                 punct_with_color("\"", ctx.color),
                 format_path(s, false),
                 punct_with_color("\"", ctx.color)
@@ -686,18 +686,29 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             write!(out, "{}", expr_ctx.indent_str())?;
             write_expr(out, right, &expr_ctx)?;
         }
-        ExprKind::Postfix { left, operator } => {
-            writeln!(out, "{}", "Postfix".with_color(ctx.color),)?;
+        ExprKind::Dereference { expr } => {
+            writeln!(out, "{}", "Dereference".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
-            writeln!(out, "{}Left:", expr_ctx.indent_str())?;
+            writeln!(out, "{}Expr:", expr_ctx.indent_str())?;
             write!(out, "{}", expr_ctx.indent_str())?;
-            write_expr(out, left, &expr_ctx)?;
+            write_expr(out, expr, &expr_ctx)?;
+        }
+        ExprKind::Reference { expr, mutability } => {
+            writeln!(out, "{}", "Reference".with_color(ctx.color),)?;
+            let expr_ctx = ctx.indented();
+            writeln!(out, "{}Expr:", expr_ctx.indent_str())?;
+            write!(out, "{}", expr_ctx.indent_str())?;
+            write_expr(out, expr, &expr_ctx)?;
             writeln!(out)?;
             write!(
                 out,
-                "{}Operator: {}",
+                "{}Mutability: {}",
                 expr_ctx.indent_str(),
-                punct_with_color(&operator.value, ctx.color)
+                if *mutability == Mutability::Mutable {
+                    "mut".with_color(ctx.color)
+                } else {
+                    "const".with_color(ctx.color)
+                }
             )?;
         }
         ExprKind::Unary { operator, right } => {
@@ -761,8 +772,8 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
                 }
             }
         }
-        ExprKind::ArrayLiteral { contents } => {
-            writeln!(out, "{}", "ArrayLiteral".with_color(ctx.color),)?;
+        ExprKind::Array { contents } => {
+            writeln!(out, "{}", "Array".with_color(ctx.color),)?;
             let expr_ctx = ctx.indented();
             write!(out, "{}Contents:", expr_ctx.indent_str())?;
             if contents.is_empty() {
@@ -822,8 +833,8 @@ fn write_expr(out: &mut String, expr: &Expr, ctx: &DisplayContext) -> std::fmt::
             write!(out, "{}", expr_ctx.indent_str())?;
             write!(out, "{}", write_type(ty, &expr_ctx))?;
         }
-        ExprKind::TupleLiteral { elements } => {
-            write!(out, "{}", "TupleLiteral".with_color(ctx.color),)?;
+        ExprKind::Tuple { elements } => {
+            write!(out, "{}", "Tuple".with_color(ctx.color),)?;
             if elements.is_empty() {
                 write!(out, ": (empty)")?;
             } else {
@@ -913,6 +924,6 @@ fn write_import_tree(
 
 impl ExprKind {
     pub fn is_leaf(&self) -> bool {
-        matches!(self, ExprKind::Literal(_) | ExprKind::Symbol(_))
+        matches!(self, ExprKind::Literal(_) | ExprKind::Path(_))
     }
 }

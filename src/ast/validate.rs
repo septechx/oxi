@@ -10,7 +10,6 @@ use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
 use crate::hashmap::FxHashMap;
 use crate::hir::ModuleId;
-use crate::lexer::token::TokenKind;
 
 include_diagnostics!("diagnostics.toml");
 
@@ -140,11 +139,10 @@ impl AstValidator {
     }
 
     fn is_lvalue(expr: &Expr) -> bool {
-        match &expr.kind {
-            ExprKind::Symbol(_) | ExprKind::MemberAccess { .. } => true,
-            ExprKind::Postfix { operator, .. } if operator.kind == TokenKind::At => true,
-            _ => false,
-        }
+        matches!(
+            &expr.kind,
+            ExprKind::Path(_) | ExprKind::MemberAccess { .. } | ExprKind::Dereference { .. }
+        )
     }
 }
 

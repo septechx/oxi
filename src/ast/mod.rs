@@ -144,60 +144,75 @@ pub struct Expr {
 
 #[derive(Debug, Clone)]
 pub enum ExprKind {
+    /// A path expression, e.g. `foo::bar::baz`.
+    Path(Path),
+
+    /// A literal expression, e.g. `42`, `21.5', `true`, `'c'`, "hello".
     Literal(Literal),
-    Symbol(Path),
+    /// An array literal, e.g. `[1, 2, 3]`.
+    Array { contents: ThinVec<Expr> },
+    /// A tuple literal, e.g. `(1, 2, 3)`.
+    Tuple { elements: ThinVec<Expr> },
+
+    /// A binary expression, e.g. `1 + 2`.
     Binary {
         left: Box<Expr>,
         operator: Token,
         right: Box<Expr>,
     },
-    Postfix {
-        left: Box<Expr>,
-        operator: Token,
+    /// A unary expression, e.g. `!true`, `-42`.
+    Unary { operator: Token, right: Box<Expr> },
+
+    /// A reference expression, e.g. `&foo`, `&mut bar`.
+    Reference {
+        expr: Box<Expr>,
+        mutability: Mutability,
     },
-    Unary {
-        operator: Token,
-        right: Box<Expr>,
+    /// A dereference expression, e.g. `foo@`.
+    Dereference { expr: Box<Expr> },
+
+    /// A struct instantiation expression, e.g. `Foo { x: 1, y: 2 }`.
+    StructInstantiation {
+        path: Path,
+        fields: ThinVec<(Ident, Expr)>,
     },
+
+    /// A member access expression, e.g. `foo.bar`.
+    MemberAccess { base: Box<Expr>, member: Ident },
+
+    /// An assignment expression, e.g. `foo = bar`, `foo += 1`.
     Assignment {
         assignee: Box<Expr>,
         operator: Token,
         value: Box<Expr>,
     },
-    StructInstantiation {
-        path: Path,
-        fields: ThinVec<(Ident, Expr)>,
-    },
-    ArrayLiteral {
-        contents: ThinVec<Expr>,
-    },
+
+    /// A function call expression, e.g. `foo(1, 2, 3)`.
     FunctionCall {
         callee: Box<Expr>,
         parameters: ThinVec<Expr>,
     },
-    MemberAccess {
-        base: Box<Expr>,
-        member: Ident,
-    },
-    As {
-        expr: Box<Expr>,
-        ty: Type,
-    },
-    TupleLiteral {
-        elements: ThinVec<Expr>,
-    },
+
+    /// A cast expression, e.g. `foo as u32`.
+    As { expr: Box<Expr>, ty: Type },
+
+    /// A block expression, e.g. `{ ... }`.
     Block(Block),
+
+    /// An `if` expression, e.g. `if foo { ... } else { ... }`.
     If {
         condition: Box<Expr>,
         then_branch: Block,
         else_branch: Option<Box<Expr>>,
     },
-    While {
-        condition: Box<Expr>,
-        body: Block,
-    },
+    /// A `while` expression, e.g. `while foo { ... }`.
+    While { condition: Box<Expr>, body: Block },
+    /// A `loop` expression, e.g. `loop { ... }`.
     Loop(Block),
+
+    /// A `break` expression, e.g. `break foo`.
     Break(Option<Box<Expr>>),
+    /// A `return` expression, e.g. `return bar`.
     Return(Option<Box<Expr>>),
 }
 

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Block, Expr, ExprKind, Ident, Literal, NodeId, Path},
+    ast::{Block, Expr, ExprKind, Ident, Literal, Mutability, NodeId, Path},
     diag_params,
     errors::builders,
     lexer::token::TokenKind,
@@ -97,7 +97,7 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
             parser.backtrack(1);
             let path = parse_path(parser)?;
             Ok(Expr {
-                kind: ExprKind::Symbol(path.clone()),
+                kind: ExprKind::Path(path.clone()),
                 node_id: NodeId::default(),
                 span: path.span,
             })
@@ -132,14 +132,32 @@ pub fn parse_binary_expr(parser: &mut Parser, left: Expr, bp: BindingPower) -> R
     })
 }
 
-pub fn parse_postfix_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
+pub fn parse_dereference_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
     let operator = parser.advance();
-
-    let span = Span::new(left.span.start(), operator.span.end());
+    let span = Span::new(operator.span.start(), left.span.end());
     Ok(Expr {
-        kind: ExprKind::Postfix {
-            left: Box::new(left),
-            operator,
+        kind: ExprKind::Dereference {
+            expr: Box::new(left),
+        },
+        node_id: NodeId::default(),
+        span,
+    })
+}
+
+pub fn parse_reference_expr(parser: &mut Parser) -> Result<Expr> {
+    let operator = parser.advance();
+    let expr = parse_expr(parser, BindingPower::Unary)?;
+    let mutability = if parser.current_token().kind == TokenKind::Mut {
+        parser.advance();
+        Mutability::Mutable
+    } else {
+        Mutability::Constant
+    };
+    let span = Span::new(operator.span.start(), expr.span.end());
+    Ok(Expr {
+        kind: ExprKind::Reference {
+            expr: Box::new(expr),
+            mutability,
         },
         node_id: NodeId::default(),
         span,
@@ -187,7 +205,7 @@ pub fn parse_struct_instantiation_expr(
     _bp: BindingPower,
 ) -> Result<Expr> {
     let struct_path = match &left.kind {
-        ExprKind::Symbol(path) => path.clone(),
+        ExprKind::Path(path) => path.clone(),
         _ => bail!("Expected symbol for struct instantiation"),
     };
 
@@ -207,7 +225,7 @@ pub fn parse_struct_instantiation_expr(
             parse_expr(parser, BindingPower::Assignment)?
         } else {
             Expr {
-                kind: ExprKind::Symbol(Path::from_ident(property)),
+                kind: ExprKind::Path(Path::from_ident(property)),
                 node_id: NodeId::default(),
                 span: property.span,
             }
@@ -254,7 +272,7 @@ pub fn parse_array_literal_expr(parser: &mut Parser) -> Result<Expr> {
     let span = Span::new(start_token.span.start(), close_token.span.end());
 
     Ok(Expr {
-        kind: ExprKind::ArrayLiteral { contents },
+        kind: ExprKind::Array { contents },
         node_id: NodeId::default(),
         span,
     })
@@ -364,7 +382,7 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
         Ok(expr)
     } else {
         Ok(Expr {
-            kind: ExprKind::TupleLiteral { elements },
+            kind: ExprKind::Tuple { elements },
             node_id: NodeId::default(),
             span: Span::new(start_token.span.start(), end_span.end()),
         })

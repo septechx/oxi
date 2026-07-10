@@ -171,8 +171,11 @@ impl ScopeTreeBuilder {
             ExprKind::Unary { right, .. } => {
                 self.build_expr(right);
             }
-            ExprKind::Postfix { left, .. } => {
-                self.build_expr(left);
+            ExprKind::Dereference { expr } => {
+                self.build_expr(expr);
+            }
+            ExprKind::Reference { expr, .. } => {
+                self.build_expr(expr);
             }
             ExprKind::Assign { target, value, .. } => {
                 self.build_expr(target);
