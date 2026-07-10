@@ -147,13 +147,6 @@ impl AstValidator {
                 | ExprKind::Index { .. }
         )
     }
-
-    fn is_index_expr(expr: &Expr) -> bool {
-        matches!(
-            &expr.kind,
-            ExprKind::Range { .. } | ExprKind::Path(_) | ExprKind::Literal(_)
-        )
-    }
 }
 
 impl Visitor for AstValidator {
@@ -371,21 +364,6 @@ impl Visitor for AstValidator {
                 }
                 VisitAction::Continue
             }
-            ExprKind::Index { index, .. } => {
-                if !Self::is_index_expr(index) {
-                    with_ctx_mut(|ctx| {
-                        builders::emit_at(
-                            ctx,
-                            index.span,
-                            self.module_id,
-                            diag::InvalidIndexTarget,
-                            diag_params! {},
-                        );
-                    });
-                }
-                VisitAction::Continue
-            }
-
             _ => VisitAction::Continue,
         }
     }
