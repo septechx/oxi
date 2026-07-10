@@ -72,31 +72,18 @@ fn check_for_errors() -> Result<()> {
 }
 
 fn build_files(cli: Cli) -> Result<()> {
-    let entrypoint = match &cli.entrypoint {
-        Some(ep) => ep.clone(),
-        None if cli.input.len() == 1 => cli.input[0]
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("main")
-            .to_string(),
-        None => "main".to_string(),
+    let Ok(source_text) = fs::read_to_string(&cli.input) else {
+        with_ctx_mut(|ctx| {
+            builders::emit(
+                ctx,
+                diag::SourceFileNotFound,
+                diag_params! { file = cli.input.display() },
+            );
+            unreachable!()
+        })
     };
 
-    let mut sources = Vec::with_capacity(cli.input.len());
-    for file_path in &cli.input {
-        let source_text = match fs::read_to_string(file_path) {
-            Err(err) => with_ctx_mut(|ctx| {
-                builders::emit(
-                    ctx,
-                    diag::SourceFileNotFound,
-                    diag_params! { file = file_path.display(), error = err },
-                );
-                unreachable!()
-            }),
-            Ok(source_text) => source_text,
-        };
-        sources.push((file_path.clone(), source_text));
-    }
+    let sources = vec![(cli.input.clone(), source_text)];
 
     if cli.print_ast {
         let use_color = match cli.color {
@@ -117,5 +104,5 @@ fn build_files(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    compile_sources(sources, &entrypoint, check_for_errors)
+    compile_sources(sources, "main", check_for_errors)
 }

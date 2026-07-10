@@ -79,17 +79,10 @@ impl FromStr for EmitOption {
 #[clap(version, about, long_about = None, arg_required_else_help(true))]
 pub struct Cli {
     #[clap(required = true)]
-    pub input: Vec<PathBuf>,
+    pub input: PathBuf,
 
     #[clap(short, long)]
     pub output: Option<PathBuf>,
-
-    #[clap(
-        long,
-        help = "Qualified path of the module to use as the crate root",
-        visible_alias = "entry"
-    )]
-    pub entrypoint: Option<String>,
 
     #[clap(
         long,
