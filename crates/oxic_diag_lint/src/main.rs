@@ -25,8 +25,17 @@ fn main() {
     let mut found = vec![];
     let mut error = false;
     search(&mut found, path, &mut error);
+
+    let mut seen = HashMap::new();
     for diagnostics in found {
         for (key, diagnostic) in diagnostics.1 {
+            seen.entry(key.clone())
+                .and_modify(|previous: &mut PathBuf| {
+                    eprintln!("[{}]: Duplicate key: {}", diagnostics.0.display(), key);
+                    eprintln!("    Previously defined at: {}", previous.display());
+                    error = true;
+                })
+                .or_insert(diagnostics.0.clone());
             if !validate_key(&key) {
                 eprintln!("[{}]: Invalid key: {}", diagnostics.0.display(), key);
                 error = true;
@@ -66,7 +75,11 @@ fn search(found: &mut Vec<(PathBuf, Diagnostics)>, dir: PathBuf, error: &mut boo
             let contents = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("[{}]: Failed to read diagnostics file: {}", path.display(), e);
+                    eprintln!(
+                        "[{}]: Failed to read diagnostics file: {}",
+                        path.display(),
+                        e
+                    );
                     *error = true;
                     continue;
                 }
