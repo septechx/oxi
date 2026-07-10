@@ -382,6 +382,24 @@ mod tests {
     }
 
     #[test]
+    fn test_index_expr_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Index {
+                base: Box::new(dummy_expr_symbol("a")),
+                index: Box::new(dummy_expr_number(0)),
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 3);
+        visitor.assert_visited("expr", "IndexExpr", 1);
+        visitor.assert_visited("expr", "SymbolExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 1);
+    }
+
+    #[test]
     fn test_dereference_expr_visited_once() {
         let expr = Expr {
             kind: ExprKind::Dereference {

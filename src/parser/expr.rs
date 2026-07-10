@@ -154,7 +154,7 @@ pub fn parse_range_expr(parser: &mut Parser, left: Expr, bp: BindingPower) -> Re
 
 pub fn parse_dereference_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
     let operator = parser.advance();
-    let span = Span::new(operator.span.start(), left.span.end());
+    let span = Span::new(left.span.start(), operator.span.end());
     Ok(Expr {
         kind: ExprKind::Dereference {
             expr: Box::new(left),
