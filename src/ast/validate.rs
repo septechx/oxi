@@ -141,7 +141,10 @@ impl AstValidator {
     fn is_lvalue(expr: &Expr) -> bool {
         matches!(
             &expr.kind,
-            ExprKind::Path(_) | ExprKind::MemberAccess { .. } | ExprKind::Dereference { .. }
+            ExprKind::Path(_)
+                | ExprKind::MemberAccess { .. }
+                | ExprKind::Dereference { .. }
+                | ExprKind::Index { .. }
         )
     }
 

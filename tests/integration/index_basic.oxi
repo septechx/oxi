@@ -1,0 +1,6 @@
+pub fn main() void {
+    let a = [1, 2, 3];
+    let x = a[0];
+    let y = a[1];
+    let z = a[2];
+}

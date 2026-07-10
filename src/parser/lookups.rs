@@ -202,20 +202,6 @@ pub fn create_token_lookups() {
 
         // Logical
         led(
-            T::DotDotExcl,
-            BP::Logical,
-            parse_binary_expr,
-            &mut bp_lu,
-            &mut led_lu,
-        );
-        led(
-            T::DotDotIncl,
-            BP::Logical,
-            parse_binary_expr,
-            &mut bp_lu,
-            &mut led_lu,
-        );
-        led(
             T::AmpAmp,
             BP::Logical,
             parse_binary_expr,
@@ -226,6 +212,20 @@ pub fn create_token_lookups() {
             T::BarBar,
             BP::Logical,
             parse_binary_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::DotDotExcl,
+            BP::Logical,
+            parse_range_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
+        led(
+            T::DotDotIncl,
+            BP::Logical,
+            parse_range_expr,
             &mut bp_lu,
             &mut led_lu,
         );
@@ -335,6 +335,13 @@ pub fn create_token_lookups() {
         nud(T::Amp, parse_reference_expr, &mut nud_lu);
 
         // Call & Member
+        led(
+            T::OpenBracket,
+            BP::Call,
+            parse_index_expr,
+            &mut bp_lu,
+            &mut led_lu,
+        );
         led(
             T::OpenCurly,
             BP::Call,

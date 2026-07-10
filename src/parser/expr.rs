@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Block, Expr, ExprKind, Ident, Literal, Mutability, NodeId, Path},
+    ast::{Block, Expr, ExprKind, Ident, Literal, Mutability, NodeId, Path, RangeKind},
     diag_params,
     errors::builders,
     lexer::token::TokenKind,
@@ -132,6 +132,26 @@ pub fn parse_binary_expr(parser: &mut Parser, left: Expr, bp: BindingPower) -> R
     })
 }
 
+pub fn parse_range_expr(parser: &mut Parser, left: Expr, bp: BindingPower) -> Result<Expr> {
+    let operator = parser.advance();
+    let kind = match operator.kind {
+        TokenKind::DotDotIncl => RangeKind::Inclusive,
+        TokenKind::DotDotExcl => RangeKind::Exclusive,
+        _ => unreachable!(),
+    };
+    let right = parse_expr(parser, bp)?;
+    let span = Span::new(left.span.start(), right.span.end());
+    Ok(Expr {
+        kind: ExprKind::Range {
+            start: Some(Box::new(left)),
+            end: Some(Box::new(right)),
+            kind,
+        },
+        node_id: NodeId::default(),
+        span,
+    })
+}
+
 pub fn parse_dereference_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
     let operator = parser.advance();
     let span = Span::new(operator.span.start(), left.span.end());
@@ -245,6 +265,21 @@ pub fn parse_struct_instantiation_expr(
         kind: ExprKind::StructInstantiation {
             path: struct_path,
             fields: properties,
+        },
+        node_id: NodeId::default(),
+        span,
+    })
+}
+
+pub fn parse_index_expr(parser: &mut Parser, left: Expr, _bp: BindingPower) -> Result<Expr> {
+    parser.expect(TokenKind::OpenBracket)?;
+    let index = parse_expr(parser, BindingPower::Assignment)?;
+    let close_span = parser.expect(TokenKind::CloseBracket)?.span;
+    let span = Span::new(left.span.start(), close_span.end());
+    Ok(Expr {
+        kind: ExprKind::Index {
+            base: Box::new(left),
+            index: Box::new(index),
         },
         node_id: NodeId::default(),
         span,

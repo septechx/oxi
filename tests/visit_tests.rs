@@ -3,8 +3,8 @@ mod tests {
     use oxic::{
         ast::{
             AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
-            ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, Stmt, StmtKind,
-            Type, TypeKind, Visibility,
+            ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, RangeKind, Stmt,
+            StmtKind, Type, TypeKind, Visibility,
             visit::{VisitAction, Visitable, Visitor, VisitorMut},
         },
         context::with_ctx_mut,
@@ -141,6 +141,8 @@ mod tests {
                 ExprKind::Tuple { .. } => "TupleLiteralExpr",
                 ExprKind::Break(_) => "BreakExpr",
                 ExprKind::Return(_) => "ReturnExpr",
+                ExprKind::Range { .. } => "RangeExpr",
+                ExprKind::Index { .. } => "IndexExpr",
             };
             *self.expr_counts.entry(kind_name).or_insert(0) += 1;
 
@@ -341,6 +343,42 @@ mod tests {
         visitor.assert_visited("expr", "Expr", 3);
         visitor.assert_visited("expr", "BinaryExpr", 1);
         visitor.assert_visited("expr", "NumberExpr", 2);
+    }
+
+    #[test]
+    fn test_range_expr_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Range {
+                start: Some(Box::new(dummy_expr_number(1))),
+                end: Some(Box::new(dummy_expr_number(5))),
+                kind: RangeKind::Inclusive,
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 3);
+        visitor.assert_visited("expr", "RangeExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 2);
+    }
+
+    #[test]
+    fn test_range_expr_no_start_visited_once() {
+        let expr = Expr {
+            kind: ExprKind::Range {
+                start: None,
+                end: Some(Box::new(dummy_expr_number(5))),
+                kind: RangeKind::Exclusive,
+            },
+            span: dummy_span(),
+            node_id: NodeId::default(),
+        };
+        let mut visitor = NodeCounterVisitor::new();
+        expr.visit(&mut visitor);
+        visitor.assert_visited("expr", "Expr", 2);
+        visitor.assert_visited("expr", "RangeExpr", 1);
+        visitor.assert_visited("expr", "NumberExpr", 1);
     }
 
     #[test]
@@ -999,6 +1037,15 @@ mod tests {
                         span: dummy_span(),
                         node_id: NodeId::default(),
                     },
+                    Expr {
+                        kind: ExprKind::Range {
+                            start: Some(Box::new(dummy_expr_number(0))),
+                            end: Some(Box::new(dummy_expr_number(10))),
+                            kind: RangeKind::Inclusive,
+                        },
+                        span: dummy_span(),
+                        node_id: NodeId::default(),
+                    },
                 ],
             },
             span: dummy_span(),
@@ -1013,8 +1060,9 @@ mod tests {
             ("expr", "StructInstantiationExpr", 1),
             ("expr", "AsExpr", 1),
             ("expr", "BinaryExpr", 1),
+            ("expr", "RangeExpr", 1),
             ("expr", "SymbolExpr", 2),
-            ("expr", "NumberExpr", 4),
+            ("expr", "NumberExpr", 6),
         ]);
     }
 
@@ -1387,6 +1435,8 @@ mod tests {
                 ExprKind::Tuple { .. } => "TupleLiteralExpr",
                 ExprKind::Break(_) => "BreakExpr",
                 ExprKind::Return(_) => "ReturnExpr",
+                ExprKind::Range { .. } => "RangeExpr",
+                ExprKind::Index { .. } => "IndexExpr",
             };
             *self.expr_counts.entry(kind_name).or_insert(0) += 1;
 
