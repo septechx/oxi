@@ -469,8 +469,8 @@ pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
         .map(|s| {
             if let Some(params) = &s.generic_params {
                 format!(
-                    "{}<{}>",
-                    s.ident.value,
+                    "{}::<{}>",
+                    ctx.interner.lookup(s.ident.value),
                     params
                         .iter()
                         .map(|t| t.display(ctx))
