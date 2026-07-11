@@ -146,8 +146,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
         }
 
-        for err in icx.errors {
-            emit_unify_error(&err, self.resolver, self.ctx);
+        for err in &icx.errors {
+            emit_unify_error(err, self.resolver, self.ctx, &icx);
         }
     }
 

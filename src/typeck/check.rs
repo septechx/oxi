@@ -154,8 +154,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.member_res.extend(member_res);
         self.adjustments.extend(adjustments);
 
-        for err in icx.errors {
-            emit_unify_error(&err, self.resolver, self.ctx);
+        for err in &icx.errors {
+            emit_unify_error(err, self.resolver, self.ctx, &icx);
         }
     }
 }
@@ -802,6 +802,25 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             let struct_ty = Ty::Adt(def, Some(args));
             self.check_struct_fields(def, struct_ty, fields, span)
+        } else if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+            if param_hir_ids.is_empty() {
+                let struct_ty = Ty::Adt(def, None);
+                self.check_struct_fields(def, struct_ty, fields, span)
+            } else {
+                let args: ThinVec<Ty> = param_hir_ids
+                    .iter()
+                    .map(|&hir_id| {
+                        let &var = self
+                            .icx
+                            .hir_id_to_ty_var
+                            .get(&hir_id)
+                            .expect("generic var must be registered");
+                        Ty::Var(var)
+                    })
+                    .collect();
+                let struct_ty = Ty::Adt(def, Some(args));
+                self.check_struct_fields(def, struct_ty, fields, span)
+            }
         } else {
             let struct_ty = Ty::Adt(def, None);
             self.check_struct_fields(def, struct_ty, fields, span)
@@ -926,7 +945,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .map(|expr| self.check_expr(expr))
                         .unwrap_or_else(|| ty.clone());
                     if let Err(err) = unify(self.icx, &ty, &bound, init_span, self.module_id) {
-                        self.report_type_error(err);
+                        self.icx.errors.push(err);
                     }
                     let scope = self.icx.current_level();
                     let parent = scope.saturating_sub(1);
@@ -1182,11 +1201,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn report_type_error(&mut self, err: UnifyError) {
-        emit_unify_error(&err, self.resolver, self.ctx);
+        emit_unify_error(&err, self.resolver, self.ctx, self.icx);
     }
 }
 
-pub(super) fn emit_unify_error(err: &UnifyError, resolver: &ResolverOutputs, ctx: &mut Ctx) {
+pub(super) fn emit_unify_error(
+    err: &UnifyError,
+    resolver: &ResolverOutputs,
+    ctx: &mut Ctx,
+    icx: &InferCtx,
+) {
     match err {
         UnifyError::Mismatch {
             expected,
@@ -1194,16 +1218,35 @@ pub(super) fn emit_unify_error(err: &UnifyError, resolver: &ResolverOutputs, ctx
             span,
             module_id,
         } => {
-            builders::emit_at(
-                ctx,
-                *span,
-                *module_id,
-                diag::TypeMismatch,
-                diag_params! {
-                    expected = ty_display(expected, resolver, &ctx.interner),
-                    found = ty_display(found, resolver, &ctx.interner)
-                },
-            );
+            let expected = icx.resolve(expected);
+            let found = icx.resolve(found);
+            let expected_str = ty_display(&expected, resolver, &ctx.interner);
+            let found_str = ty_display(&found, resolver, &ctx.interner);
+            let info = generic_mismatch_info(&expected, &found, resolver, &ctx.interner);
+            if let Some(info) = info {
+                builders::emit_at_with_info(
+                    ctx,
+                    *span,
+                    *module_id,
+                    &info,
+                    diag::TypeMismatch,
+                    diag_params! {
+                        expected = expected_str,
+                        found = found_str
+                    },
+                );
+            } else {
+                builders::emit_at(
+                    ctx,
+                    *span,
+                    *module_id,
+                    diag::TypeMismatch,
+                    diag_params! {
+                        expected = expected_str,
+                        found = found_str
+                    },
+                );
+            }
         }
         UnifyError::OccursCheck {
             span, module_id, ..
@@ -1211,6 +1254,45 @@ pub(super) fn emit_unify_error(err: &UnifyError, resolver: &ResolverOutputs, ctx
             builders::emit_at(ctx, *span, *module_id, diag::RecursiveType, diag_params! {});
         }
     };
+}
+
+fn generic_mismatch_info(
+    expected: &Ty,
+    found: &Ty,
+    resolver: &ResolverOutputs,
+    interner: &Interner,
+) -> Option<String> {
+    match (expected, found) {
+        (Ty::Adt(d1, Some(g1)), Ty::Adt(d2, Some(g2))) if d1 == d2 && g1.len() != g2.len() => {
+            let name = resolver.defs[d1.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Struct#{}", d1.0));
+            Some(format!(
+                "struct `{name}` has {} generic parameter{}, but {} {} provided",
+                g1.len(),
+                if g1.len() == 1 { "" } else { "s" },
+                g2.len(),
+                if g2.len() == 1 { "was" } else { "were" },
+            ))
+        }
+        (Ty::Interface(d1, Some(g1)), Ty::Interface(d2, Some(g2)))
+            if d1 == d2 && g1.len() != g2.len() =>
+        {
+            let name = resolver.defs[d1.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Interface#{}", d1.0));
+            Some(format!(
+                "interface `{name}` has {} generic parameter{}, but {} {} provided",
+                g1.len(),
+                if g1.len() == 1 { "" } else { "s" },
+                g2.len(),
+                if g2.len() == 1 { "was" } else { "were" },
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> String {

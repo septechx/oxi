@@ -1,0 +1,10 @@
+// @expect-error type_mismatch
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn main() void {
+    let p: Pair::<i32, bool, void> = Pair { first: 1, second: true };
+}

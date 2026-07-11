@@ -1,0 +1,10 @@
+// @expect-error unexpected_parameters
+
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn main() void {
+    let p = Pair::<i32, bool, void> { first: 1, second: true };
+}

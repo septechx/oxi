@@ -3,5 +3,5 @@ struct Foo<T> {
 }
 
 fn main() void {
-    let x: Foo::<i32> = Foo { val: 42 };
+    let x: Foo::<isize> = Foo { val: 42 };
 }

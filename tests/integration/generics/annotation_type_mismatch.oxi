@@ -1,0 +1,9 @@
+// @expect-error type_mismatch
+
+struct Foo<T> {
+    val: T,
+}
+
+fn main() void {
+    let x: Foo::<i32> = Foo { val: true };
+}

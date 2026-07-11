@@ -26,4 +26,22 @@ fn add(a: u32, b: u32) u32 {
 }
 ```
 
-The tests (`tests/integration.rs`) contain more example code
+## Generics
+
+```text
+struct Foo<T> {
+    data: T,
+}
+
+fn identity<T>(x: T) T {
+    x
+}
+
+pub fn main() {
+    let x = identity::<usize>(42);
+    let data = identity(Foo { data: 42 });
+    let foo: Foo::<Foo::<usize> > = Foo::<Foo::<usize> > { data };
+}
+```
+
+The tests (`tests/integration/**/*.oxi`) contain more example code
