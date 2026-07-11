@@ -152,7 +152,7 @@ impl InferCtx {
             Ty::Tuple(elements) => {
                 Ty::Tuple(elements.iter().map(|ty| self.adjust(ty, bound)).collect())
             }
-            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+            Ty::Adt(def_id, generics) => Ty::Adt(
                 *def_id,
                 generics
                     .as_ref()
@@ -176,7 +176,7 @@ impl InferCtx {
                 ret: self.resolve(ret).into_box(),
             },
             Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| self.resolve(ty)).collect()),
-            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+            Ty::Adt(def_id, generics) => Ty::Adt(
                 *def_id,
                 generics
                     .as_ref()
@@ -207,7 +207,7 @@ impl InferCtx {
                     self.vars_in(element, out);
                 }
             }
-            Ty::Adt(_, generics) | Ty::Interface(_, generics) => {
+            Ty::Adt(_, generics) => {
                 if let Some(generics) = generics {
                     for ty in generics {
                         self.vars_in(&ty, out);
@@ -260,7 +260,7 @@ impl InferCtx {
                     .map(|ty| self.instantiate_with(ty, mapping))
                     .collect(),
             ),
-            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+            Ty::Adt(def_id, generics) => Ty::Adt(
                 *def_id,
                 generics.as_ref().map(|tys| {
                     tys.iter()

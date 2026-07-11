@@ -190,7 +190,7 @@ fn occurs(icx: &InferCtx, var: TyVarId, to: &Ty) -> bool {
             params.iter().any(|param| occurs(icx, var, param)) || occurs(icx, var, ret)
         }
         Ty::Tuple(elements) => elements.iter().any(|element| occurs(icx, var, element)),
-        Ty::Adt(_, generics) | Ty::Interface(_, generics) => {
+        Ty::Adt(_, generics) => {
             if let Some(generics) = generics {
                 generics.iter().any(|ty| occurs(icx, var, ty))
             } else {

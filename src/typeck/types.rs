@@ -15,7 +15,6 @@ pub enum Ty {
     Fn { params: ThinVec<Ty>, ret: Box<Ty> },
     Tuple(ThinVec<Ty>),
     Adt(DefId, Option<ThinVec<Ty>>),
-    Interface(DefId, Option<ThinVec<Ty>>),
     Never,
     Error,
 }

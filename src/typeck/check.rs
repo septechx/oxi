@@ -1294,21 +1294,6 @@ fn generic_mismatch_info(
                 if g2.len() == 1 { "was" } else { "were" },
             ))
         }
-        (Ty::Interface(d1, Some(g1)), Ty::Interface(d2, Some(g2)))
-            if d1 == d2 && g1.len() != g2.len() =>
-        {
-            let name = resolver.defs[d1.0 as usize]
-                .name
-                .map(|sym| interner.lookup(sym).to_string())
-                .unwrap_or_else(|| format!("Interface#{}", d1.0));
-            Some(format!(
-                "interface `{name}` has {} generic parameter{}, but {} {} provided",
-                g1.len(),
-                if g1.len() == 1 { "" } else { "s" },
-                g2.len(),
-                if g2.len() == 1 { "was" } else { "were" },
-            ))
-        }
         _ => None,
     }
 }
@@ -1351,17 +1336,6 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Struct#{}", d.0));
-            format!(
-                "{}{}",
-                name,
-                generics_to_string(generics.as_ref(), resolver, interner)
-            )
-        }
-        Ty::Interface(d, generics) => {
-            let name = resolver.defs[d.0 as usize]
-                .name
-                .map(|sym| interner.lookup(sym).to_string())
-                .unwrap_or_else(|| format!("Interface#{}", d.0));
             format!(
                 "{}{}",
                 name,
