@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use oxic::context::{with_ctx, with_ctx_mut};
-use oxic::driver::compile_sources;
+use oxic::driver::compile_source;
 use oxic::errors::ErrorLevel;
 
 static TEST_RUN_ID: AtomicUsize = AtomicUsize::new(0);
@@ -119,7 +119,7 @@ impl Drop for Test {
             panic!("Failed to create test directory: {}", e);
         }
 
-        let mut sources = Vec::new();
+        let mut root_source = None;
         for (filename, content) in &self.files {
             let file_path = test_dir.join(filename);
             if let Some(parent) = file_path.parent()
@@ -127,13 +127,14 @@ impl Drop for Test {
             {
                 panic!("Failed to create directory: {}", e);
             }
-            if let Err(e) = fs::write(&file_path, content) {
-                panic!("Failed to write source file {}: {}", filename, e);
+            fs::write(&file_path, content).unwrap();
+            if filename == "main.oxi" || filename.ends_with("/main.oxi") {
+                root_source = Some((file_path, content.clone()));
             }
-            sources.push((file_path, content.clone()));
         }
 
-        let res = compile_sources(sources, "main", || {
+        let root = root_source.expect("test must define main.oxi");
+        let res = compile_source(root.0, root.1, || {
             if self.should_abort() {
                 Err(anyhow::anyhow!("pipeline aborted"))
             } else {
