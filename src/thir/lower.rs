@@ -652,7 +652,7 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
                         .last()
                         .and_then(|seg| seg.generic_params.as_ref())
                         .as_ref()
-                        .map(|args| args.iter().map(|arg| hir_ty_to_ty(arg)).collect());
+                        .map(|args| args.iter().map(hir_ty_to_ty).collect());
                     Ty::Adt(*def_id, generics)
                 }
                 Res::PrimTy(prim) => Ty::Prim(*prim),

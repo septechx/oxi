@@ -388,7 +388,10 @@ impl Visitable for Expr {
                     assignee.visit(visitor);
                     value.visit(visitor);
                 }
-                ExprKind::StructInstantiation { path: _, fields } => {
+                ExprKind::StructInstantiation { path, fields } => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                     for field in fields {
                         field.1.visit(visitor);
                     }
@@ -482,7 +485,10 @@ impl Visitable for Expr {
                     assignee.visit_mut(visitor);
                     value.visit_mut(visitor);
                 }
-                ExprKind::StructInstantiation { path: _, fields } => {
+                ExprKind::StructInstantiation { path, fields } => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                     for field in fields {
                         field.1.visit_mut(visitor);
                     }
@@ -540,7 +546,11 @@ impl Visitable for Type {
     fn visit(&self, visitor: &mut impl Visitor) {
         match visitor.visit_type(self) {
             VisitAction::Continue => match &self.kind {
-                TypeKind::Symbol(_) => {}
+                TypeKind::Symbol(path) => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
+                }
                 TypeKind::Pointer(ty, _) => ty.visit(visitor),
                 TypeKind::Slice(ty) => ty.visit(visitor),
                 TypeKind::FixedArray(ty, _) => {
@@ -567,7 +577,11 @@ impl Visitable for Type {
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         match visitor.visit_type(self) {
             VisitAction::Continue => match &mut self.kind {
-                TypeKind::Symbol(_) => {}
+                TypeKind::Symbol(path) => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
+                }
                 TypeKind::Pointer(ty, _) => ty.visit_mut(visitor),
                 TypeKind::Slice(ty) => ty.visit_mut(visitor),
                 TypeKind::FixedArray(ty, _) => {

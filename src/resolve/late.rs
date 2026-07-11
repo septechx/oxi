@@ -124,6 +124,15 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             self.resolve_module_path(path)
         };
         self.resolver.res_map.insert(node_id, partial_res);
+
+        for segment in segments {
+            if let Some(generic_params) = &segment.generic_params {
+                for ty in generic_params {
+                    ty.visit(self);
+                }
+            }
+        }
+
         partial_res
     }
 

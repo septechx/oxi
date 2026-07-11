@@ -79,6 +79,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             match &info.nodes.nodes[0].node {
                 Node::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
+                        checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
                             && let Some(body) = info.nodes.body(body_id)
                         {
@@ -96,6 +97,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
+                    checker.register_if_generic(&fun.generic_params);
                     if let Some(body_id) = fun.body_id
                         && let Some(body) = info.nodes.body(body_id)
                     {
@@ -175,6 +177,15 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
 }
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
+    fn register_if_generic(&mut self, generic_params: &Option<ThinVec<hir::GenericParam>>) {
+        if let Some(params) = generic_params {
+            for param in params {
+                let ty_var = self.icx.next_ty_var();
+                self.icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
+            }
+        }
+    }
+
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
         let expected = Ty::from_hir(self.icx, ty);
         let body_ty = self.check_expr(&body.value);

@@ -98,12 +98,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let hir_id = self.next_hir_id();
         let kind = match &ty.kind {
             ast::TypeKind::Symbol(path) => {
-                let Some(res) = self.resolver.res_map.get(&ty.node_id) else {
-                    panic!(
-                        "map = {:?}; getting: {:?}",
-                        self.resolver.res_map, ty.node_id
-                    );
-                };
+                let res = self
+                    .resolver
+                    .res_map
+                    .get(&ty.node_id)
+                    .expect("path resolved");
                 match res.full_res() {
                     Some(Res::GenericParam(id)) => TyKind::GenericParam(
                         self.lookup_local(id).expect("local exists"),
