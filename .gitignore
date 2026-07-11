@@ -7,3 +7,4 @@ target/
 /.oxi/
 /x
 /x.rs
+/tarpaulin-report.html

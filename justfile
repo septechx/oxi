@@ -25,3 +25,7 @@ lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
     cargo fmt -- --check
     cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- src/
+
+coverage:
+    cargo tarpaulin --out Html
+    xdg-open tarpaulin-report.html

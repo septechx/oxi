@@ -83,27 +83,6 @@ pub fn unify(
                 Err(mismatch(a, b, span, module_id))
             }
         }
-        (Ty::Interface(d1, g1), Ty::Interface(d2, g2)) => {
-            if d1 == d2 {
-                if let Some(g1) = g1 {
-                    if let Some(g2) = g2 {
-                        if g1.len() != g2.len() {
-                            return Err(mismatch(a, b, span, module_id));
-                        }
-                        for (a, b) in g1.iter().zip(g2) {
-                            unify(icx, a, b, span, module_id)?;
-                        }
-                    } else {
-                        return Err(mismatch(a, b, span, module_id));
-                    }
-                } else if g2.is_some() {
-                    return Err(mismatch(a, b, span, module_id));
-                }
-                Ok(())
-            } else {
-                Err(mismatch(a, b, span, module_id))
-            }
-        }
         (Ty::Array(i1, n1), Ty::Array(i2, n2)) => {
             if n1 == n2 {
                 unify(icx, i1, i2, span, module_id)
