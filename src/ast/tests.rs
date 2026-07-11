@@ -1380,6 +1380,80 @@ fn test_impl_item() {
     visitor.assert_visited("type", "SymbolType", 1);
 }
 
+#[test]
+fn test_module_item() {
+    let item = Item {
+        kind: ItemKind::Module {
+            name: dummy_ident("my_module"),
+            body: Some(thin_vec![
+                Item {
+                    kind: ItemKind::Fn(Fn {
+                        name: dummy_ident("inner_fn"),
+                        parameters: ThinVec::new(),
+                        body: Some(Block {
+                            stmts: thin_vec![dummy_stmt_expr(dummy_expr_number(1))],
+                            span: dummy_span(),
+                        }),
+                        return_type: dummy_type_infer(),
+                        is_extern: false,
+                    }),
+                    span: dummy_span(),
+                    attributes: ThinVec::new(),
+                    visibility: Visibility::Private,
+                    node_id: NodeId::default(),
+                },
+                Item {
+                    kind: ItemKind::Const {
+                        name: dummy_ident("INNER_CONST"),
+                        value: dummy_expr_number(42),
+                        ty: dummy_type_symbol("u32"),
+                    },
+                    span: dummy_span(),
+                    attributes: ThinVec::new(),
+                    visibility: Visibility::Private,
+                    node_id: NodeId::default(),
+                },
+            ]),
+        },
+        span: dummy_span(),
+        attributes: ThinVec::new(),
+        visibility: Visibility::Private,
+        node_id: NodeId::default(),
+    };
+    let mut visitor = NodeCounterVisitor::new();
+    item.visit(&mut visitor);
+    visitor.assert_visited("item", "ModuleItem", 1);
+    visitor.assert_visited("item", "Item", 3);
+    visitor.assert_visited("item", "FnDeclItem", 1);
+    visitor.assert_visited("item", "ConstItem", 1);
+    visitor.assert_visited("expr", "Expr", 2);
+    visitor.assert_visited("expr", "NumberExpr", 2);
+    visitor.assert_visited("stmt", "Stmt", 1);
+    visitor.assert_visited("stmt", "ExprStmt", 1);
+    visitor.assert_visited("type", "Infer", 1);
+    visitor.assert_visited("type", "SymbolType", 1);
+}
+
+#[test]
+fn test_module_item_empty_body() {
+    let item = Item {
+        kind: ItemKind::Module {
+            name: dummy_ident("empty_mod"),
+            body: None,
+        },
+        span: dummy_span(),
+        attributes: ThinVec::new(),
+        visibility: Visibility::Private,
+        node_id: NodeId::default(),
+    };
+    let mut visitor = NodeCounterVisitor::new();
+    item.visit(&mut visitor);
+    visitor.assert_visited("item", "ModuleItem", 1);
+    visitor.assert_visited("item", "Item", 1);
+    visitor.assert_visited("stmt", "Stmt", 0);
+    visitor.assert_visited("expr", "Expr", 0);
+}
+
 // --- Mutable visitor regression tests ---
 
 pub struct MutationVisitor {
