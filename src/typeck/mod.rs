@@ -15,7 +15,7 @@ use oxic_diag::include_diagnostics;
 use crate::ast::Mutability;
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::{Crate, DefId, HirId, ModuleId};
+use crate::hir::{self, Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
 
@@ -165,8 +165,10 @@ pub struct CoherenceTable {
     pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning interface def id)
     pub method_to_interface: FxHashMap<DefId, DefId>,
-    /// maps (struct def id) -> (maps (field name) -> (type, index))
-    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (Ty, usize)>>,
+    /// maps (struct def id) -> (maps (field name) -> (HIR type, index))
+    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
+    /// maps (struct def id) -> (generic param hir ids)
+    pub struct_generic_params: FxHashMap<DefId, Vec<HirId>>,
 }
 
 impl CoherenceTable {

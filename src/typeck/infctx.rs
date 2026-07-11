@@ -236,7 +236,7 @@ impl InferCtx {
         self.instantiate_with(&scheme.body, &mapping)
     }
 
-    fn instantiate_with(&self, ty: &Ty, mapping: &FxHashMap<TyVarId, TyVarId>) -> Ty {
+    pub fn instantiate_with(&self, ty: &Ty, mapping: &FxHashMap<TyVarId, TyVarId>) -> Ty {
         match ty {
             Ty::Var(var) => match mapping.get(var) {
                 Some(&fresh) => Ty::Var(fresh),

@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
-use crate::hir::{AssocItemKind, DefId, FnDecl, ItemKind, MaybeOwner, Node, OwnerInfo};
+use crate::hir::{AssocItemKind, DefId, FnDecl, HirId, ItemKind, MaybeOwner, Node, OwnerInfo};
 use crate::interner::Symbol;
 use crate::typeck::Typeck;
 use crate::typeck::infctx::{InferCtx, TyVarId};
@@ -49,15 +49,25 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        if let Some(generic_params) = generic_params {
-                            for param in generic_params {
-                                let ty_var = icx.next_ty_var();
-                                icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                            }
-                        }
+                        let param_hir_ids: Vec<HirId> = generic_params
+                            .as_ref()
+                            .map(|params| {
+                                params
+                                    .iter()
+                                    .map(|param| {
+                                        let ty_var = icx.next_ty_var();
+                                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
+                                        param.hir_id
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        self.coherence
+                            .struct_generic_params
+                            .insert(def_id, param_hir_ids);
                         let entry = self.coherence.struct_fields.entry(def_id).or_default();
                         for (index, field) in fields.iter().enumerate() {
-                            entry.insert(field.name, (Ty::from_hir(&mut icx, &field.ty), index));
+                            entry.insert(field.name, (field.ty.clone(), index));
                         }
                     }
                     ItemKind::Interface {

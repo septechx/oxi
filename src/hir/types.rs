@@ -277,6 +277,7 @@ pub enum ExprKind {
     /// Struct literal: Struct { field: value, ... }
     StructInit {
         def: DefId,
+        generic_args: Option<ThinVec<Ty>>,
         fields: ThinVec<(Ident, Expr)>,
     },
     /// Array literal: [value1, value2, ... ]

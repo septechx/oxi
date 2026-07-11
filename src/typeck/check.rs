@@ -186,6 +186,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
+    fn register_if_generic_struct(&mut self, def: DefId) {
+        if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+            for &hir_id in param_hir_ids {
+                if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                    let ty_var = self.icx.next_ty_var();
+                    self.icx.hir_id_to_ty_var.insert(hir_id, ty_var);
+                }
+            }
+        }
+    }
+
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
         let expected = Ty::from_hir(self.icx, ty);
         let body_ty = self.check_expr(&body.value);
@@ -281,7 +292,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Dereference { expr } => self.check_dereference(expr),
             ExprKind::Reference { expr, mutability } => self.check_reference(expr, *mutability),
             ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
-            ExprKind::StructInit { def, fields } => self.check_struct_init(*def, fields, expr_span),
+            ExprKind::StructInit {
+                def,
+                generic_args,
+                fields,
+            } => self.check_struct_init(*def, generic_args, fields, expr_span),
             ExprKind::ArrayInit { contents } => self.check_array_init(contents, expr_span),
             ExprKind::TupleInit(elements) => {
                 Ty::Tuple(elements.iter().map(|expr| self.check_expr(expr)).collect())
@@ -365,10 +380,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         match qpath {
             QPath::Resolved(path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    match self.item_schemes.get(def_id) {
-                        Some(scheme) => self.icx.instantiate(scheme),
-                        None => Ty::Error,
-                    }
+                    let scheme = match self.item_schemes.get(def_id) {
+                        Some(scheme) => scheme.clone(),
+                        None => return Ty::Error,
+                    };
+                    let explicit_args = path
+                        .segments
+                        .last()
+                        .and_then(|seg| seg.generic_params.as_ref());
+                    self.instantiate_fn_scheme(&scheme, explicit_args, path.span)
                 }
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
@@ -378,6 +398,50 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 Res::Err => Ty::Error,
             },
             QPath::TypeRelative { .. } => Ty::Error,
+        }
+    }
+
+    fn instantiate_with_explicit_args(
+        &mut self,
+        scheme: &Scheme,
+        explicit_args: &ThinVec<hir::Ty>,
+        span: Span,
+    ) -> Ty {
+        if explicit_args.len() != scheme.vars.len() {
+            builders::emit_at(
+                self.ctx,
+                span,
+                self.module_id,
+                diag::UnexpectedParameters,
+                diag_params! {
+                    expected = scheme.vars.len(),
+                    s = if scheme.vars.len() == 1 { "" } else { "s" },
+                    found = explicit_args.len()
+                },
+            );
+            return Ty::Error;
+        }
+        let mut mapping = FxHashMap::default();
+        for &v in &scheme.vars {
+            mapping.insert(v, self.icx.next_ty_var());
+        }
+        for (arg_ty, &v) in explicit_args.iter().zip(&scheme.vars) {
+            let arg_ty = Ty::from_hir(self.icx, arg_ty);
+            let &fresh = mapping.get(&v).expect("fresh var exists");
+            unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id).or_push_err(self.icx);
+        }
+        self.icx.instantiate_with(&scheme.body, &mapping)
+    }
+
+    fn instantiate_fn_scheme(
+        &mut self,
+        scheme: &Scheme,
+        explicit_args: Option<&ThinVec<hir::Ty>>,
+        span: Span,
+    ) -> Ty {
+        match explicit_args {
+            Some(args) => self.instantiate_with_explicit_args(scheme, args, span),
+            None => self.icx.instantiate(scheme),
         }
     }
 
@@ -700,9 +764,57 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         None
     }
 
-    fn check_struct_init(&mut self, def: DefId, fields: &ThinVec<(Ident, Expr)>, span: Span) -> Ty {
-        // FIXME: Process generic params
-        let struct_ty = Ty::Adt(def, None);
+    fn check_struct_init(
+        &mut self,
+        def: DefId,
+        generic_args: &Option<ThinVec<hir::Ty>>,
+        fields: &ThinVec<(Ident, Expr)>,
+        span: Span,
+    ) -> Ty {
+        self.register_if_generic_struct(def);
+
+        if let Some(generic_args) = generic_args {
+            let args: ThinVec<Ty> = generic_args
+                .iter()
+                .map(|arg| Ty::from_hir(self.icx, arg))
+                .collect();
+            if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+                if args.len() != param_hir_ids.len() {
+                    builders::emit_at(
+                        self.ctx,
+                        span,
+                        self.module_id,
+                        diag::UnexpectedParameters,
+                        diag_params! {
+                            expected = param_hir_ids.len(),
+                            s = if param_hir_ids.len() == 1 { "" } else { "s" },
+                            found = args.len()
+                        },
+                    );
+                } else {
+                    for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
+                        if let Some(&var) = self.icx.hir_id_to_ty_var.get(hir_id) {
+                            unify(self.icx, &Ty::Var(var), arg, span, self.module_id)
+                                .or_push_err(self.icx);
+                        }
+                    }
+                }
+            }
+            let struct_ty = Ty::Adt(def, Some(args));
+            self.check_struct_fields(def, struct_ty, fields, span)
+        } else {
+            let struct_ty = Ty::Adt(def, None);
+            self.check_struct_fields(def, struct_ty, fields, span)
+        }
+    }
+
+    fn check_struct_fields(
+        &mut self,
+        def: DefId,
+        struct_ty: Ty,
+        fields: &ThinVec<(Ident, Expr)>,
+        span: Span,
+    ) -> Ty {
         let field_table = self
             .coherence
             .struct_fields
@@ -748,10 +860,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for (name, expr) in fields {
             let expr_span = expr.span;
             let expr = self.check_expr(expr);
-            if let Some((field_ty, _)) = field_table.get(&name.value)
-                && let Err(err) = unify(self.icx, field_ty, &expr, expr_span, self.module_id)
-            {
-                self.icx.errors.push(err);
+            if let Some((hir_field_ty, _)) = field_table.get(&name.value) {
+                let field_ty = Ty::from_hir(self.icx, hir_field_ty);
+                if let Err(err) = unify(self.icx, &field_ty, &expr, expr_span, self.module_id) {
+                    self.icx.errors.push(err);
+                }
             }
         }
 
@@ -944,11 +1057,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let recv_ty = self.icx.resolve(&recv_ty);
         if let Ty::Adt(struct_id, _) = &recv_ty
             && let Some(fields) = self.coherence.struct_fields.get(struct_id)
-            && let Some((field_ty, index)) = fields.get(&member)
+            && let Some((hir_field_ty, index)) = fields.get(&member)
         {
             self.member_res
                 .insert(hir_id, MemberRes::Field { index: *index });
-            return field_ty.clone();
+            return Ty::from_hir(self.icx, hir_field_ty);
         }
         match recv_ty {
             Ty::Adt(_, _) => {
@@ -971,11 +1084,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     .push(Adjustment::AutoDeref);
                 if let Ty::Adt(struct_id, _) = inner.as_ref()
                     && let Some(fields) = self.coherence.struct_fields.get(struct_id)
-                    && let Some((field_ty, index)) = fields.get(&member)
+                    && let Some((hir_field_ty, index)) = fields.get(&member)
                 {
                     self.member_res
                         .insert(hir_id, MemberRes::Field { index: *index });
-                    return field_ty.clone();
+                    return Ty::from_hir(self.icx, hir_field_ty);
                 }
                 if let Ty::Adt(_, _) = inner.as_ref() {
                     let field = self.ctx.interner.lookup(member).to_string();

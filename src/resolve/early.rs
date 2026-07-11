@@ -333,6 +333,9 @@ impl<'ctx> NodeIdAssigner<'ctx> {
     }
 
     fn assign_to_fn(&mut self, fun: &mut Fn) {
+        if let Some(generic_params) = &mut fun.generic_params {
+            self.assign_to_generic_params(generic_params);
+        }
         for arg in &mut fun.parameters {
             arg.2 = self.next_node_id();
         }
@@ -372,8 +375,15 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
                     self.assign_to_generic_params(generic_params);
                 }
             }
-            ItemKind::Interface { items, .. } => {
+            ItemKind::Interface {
+                items,
+                generic_params,
+                ..
+            } => {
                 self.assign_to_assoc_items(items);
+                if let Some(generic_params) = generic_params {
+                    self.assign_to_generic_params(generic_params);
+                }
             }
             _ => {}
         }

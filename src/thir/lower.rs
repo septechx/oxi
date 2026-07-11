@@ -193,7 +193,7 @@ impl<'a> ThirLowerer<'a> {
                 self.lower_field(base, *index, ty, span, hir_id)
             }
             hir::ExprKind::Index { base, index } => self.lower_index(base, index, ty, span, hir_id),
-            hir::ExprKind::StructInit { def, fields } => {
+            hir::ExprKind::StructInit { def, fields, .. } => {
                 self.lower_struct_init(fields, *def, ty, span, hir_id)
             }
             hir::ExprKind::ArrayInit { contents, .. } => {
@@ -660,6 +660,9 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
             },
             QPath::TypeRelative { .. } => Ty::Error,
         },
-        hir::TyKind::GenericParam(_, _) => todo!("Type checker should probably do this"),
+        hir::TyKind::GenericParam(_, _) => {
+            // FIXME: This shouldn't be an error
+            Ty::Error
+        }
     }
 }
