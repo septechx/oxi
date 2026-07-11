@@ -3,7 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
 use crate::ast::{
     AssocItem, AssocItemKind, Expr, ExprKind, Fn, Item, ItemKind, NodeId, Path, Stmt, StmtKind,
-    Type, TypeKind, idents_to_string,
+    Type, TypeKind, path_segments_to_string,
 };
 use crate::diag_params;
 use crate::errors::builders;
@@ -110,7 +110,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
     fn resolve_path(&mut self, path: &Path, node_id: NodeId) -> PartialRes {
         let segments = &path.segments;
         let partial_res = if segments.len() == 1 {
-            PartialRes::new(self.resolve_ident(path, segments[0].value))
+            PartialRes::new(self.resolve_ident(path, segments[0].ident.value))
         } else if let Some(partial_res) = self.defer_type_relative_path(path) {
             partial_res
         } else {
@@ -161,7 +161,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         let segments = &path.segments;
         let seg_count = segments.len();
 
-        let first_sym = segments[0].value;
+        let first_sym = segments[0].ident.value;
         if let Some(resolution) = self.resolver.current_module().resolutions.get(&first_sym) {
             let type_def = resolution.best_binding().def_id;
             if self.is_type_def(type_def) && seg_count >= 2 {
@@ -181,7 +181,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                 .ok()?;
             let type_resolution = self.resolver.modules[module_node_idx]
                 .resolutions
-                .get(&type_seg.value)?;
+                .get(&type_seg.ident.value)?;
             let type_def = type_resolution.best_binding().def_id;
             if !self.is_type_def(type_def) || prefix_len + 1 >= seg_count {
                 continue;
@@ -229,13 +229,18 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         };
 
         let last = &segments[segments.len() - 1];
-        let sym = last.value;
+        let sym = last.ident.value;
 
         if let Some(res) = self.resolver.modules[module_node_idx].resolutions.get(&sym) {
             return PartialRes::new(Res::Def(res.best_binding().def_id));
         }
 
-        let name = self.resolver.ctx.interner.lookup(last.value).to_string();
+        let name = self
+            .resolver
+            .ctx
+            .interner
+            .lookup(last.ident.value)
+            .to_string();
         builders::emit_at(
             self.resolver.ctx,
             last.span,
@@ -243,9 +248,9 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             diag::FailedToResolveInModule,
             diag_params! {
                 name = name,
-                module = idents_to_string(
+                module = path_segments_to_string(
                     &segments[..segments.len() - 1],
-                    &self.resolver.ctx.interner
+                    self.resolver.ctx
                 )
             },
         );

@@ -740,6 +740,7 @@ fn test_let_stmt_no_value() {
 fn test_struct_decl_item_empty() {
     let item = Item {
         kind: ItemKind::Struct {
+            generic_params: None,
             name: dummy_ident("Foo"),
             fields: ThinVec::new(),
             items: ThinVec::new(),
@@ -759,6 +760,7 @@ fn test_struct_decl_item_empty() {
 fn test_struct_decl_item_with_props() {
     let item = Item {
         kind: ItemKind::Struct {
+            generic_params: None,
             name: dummy_ident("Foo"),
             fields: thin_vec![
                 (
@@ -791,10 +793,12 @@ fn test_struct_decl_item_with_props() {
 fn test_struct_decl_item_with_methods() {
     let item = Item {
         kind: ItemKind::Struct {
+            generic_params: None,
             name: dummy_ident("Foo"),
             fields: ThinVec::new(),
             items: thin_vec![AssocItem {
                 kind: AssocItemKind::Fn(Fn {
+                    generic_params: None,
                     name: dummy_ident("bar"),
                     parameters: ThinVec::new(),
                     body: dummy_fn_body(),
@@ -823,9 +827,11 @@ fn test_struct_decl_item_with_methods() {
 fn test_interface_decl_item() {
     let item = Item {
         kind: ItemKind::Interface {
+            generic_params: None,
             name: dummy_ident("Foo"),
             items: thin_vec![AssocItem {
                 kind: AssocItemKind::Fn(Fn {
+                    generic_params: None,
                     name: dummy_ident("bar"),
                     parameters: ThinVec::new(),
                     body: None,
@@ -856,6 +862,7 @@ fn test_fn_decl_item() {
         name: "test".into(),
         items: thin_vec![Item {
             kind: ItemKind::Fn(Fn {
+                generic_params: None,
                 name: dummy_ident("foo"),
                 parameters: thin_vec![
                     (
@@ -1134,6 +1141,7 @@ fn test_comprehensive_all_item_and_statement_types() {
             },
             Item {
                 kind: ItemKind::Struct {
+                    generic_params: None,
                     name: dummy_ident("Foo"),
                     fields: thin_vec![(
                         dummy_ident("x"),
@@ -1142,6 +1150,7 @@ fn test_comprehensive_all_item_and_statement_types() {
                     )],
                     items: thin_vec![AssocItem {
                         kind: AssocItemKind::Fn(Fn {
+                            generic_params: None,
                             name: dummy_ident("method"),
                             parameters: ThinVec::new(),
                             body: Some(Block {
@@ -1163,9 +1172,11 @@ fn test_comprehensive_all_item_and_statement_types() {
             },
             Item {
                 kind: ItemKind::Interface {
+                    generic_params: None,
                     name: dummy_ident("Bar"),
                     items: thin_vec![AssocItem {
                         kind: AssocItemKind::Fn(Fn {
+                            generic_params: None,
                             name: dummy_ident("method"),
                             parameters: ThinVec::new(),
                             body: dummy_fn_body(),
@@ -1184,6 +1195,7 @@ fn test_comprehensive_all_item_and_statement_types() {
             },
             Item {
                 kind: ItemKind::Fn(Fn {
+                    generic_params: None,
                     name: dummy_ident("main"),
                     parameters: ThinVec::new(),
                     body: Some(Block {
@@ -1357,6 +1369,7 @@ fn test_impl_item() {
             interface: (Path::from_ident(dummy_ident("Bar")), NodeId::default()),
             items: thin_vec![AssocItem {
                 kind: AssocItemKind::Fn(Fn {
+                    generic_params: None,
                     name: dummy_ident("bar"),
                     parameters: ThinVec::new(),
                     body: dummy_fn_body(),
@@ -1388,6 +1401,7 @@ fn test_module_item() {
             body: Some(thin_vec![
                 Item {
                     kind: ItemKind::Fn(Fn {
+                        generic_params: None,
                         name: dummy_ident("inner_fn"),
                         parameters: ThinVec::new(),
                         body: Some(Block {
@@ -1560,6 +1574,7 @@ fn test_mutable_visitor_regression() {
             },
             Item {
                 kind: ItemKind::Fn(Fn {
+                    generic_params: None,
                     name: dummy_ident("main"),
                     parameters: thin_vec![(
                         dummy_ident("a"),

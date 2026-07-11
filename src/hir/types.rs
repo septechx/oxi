@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, Literal, Mutability, Visibility, idents_to_string};
+use crate::ast::{self, GenericParams, Ident, Literal, Mutability, Visibility};
 use crate::context::Ctx;
 use crate::hir::owner::HirId;
 use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
@@ -136,10 +136,12 @@ pub enum ItemKind {
         name: Symbol,
         fields: ThinVec<StructField>,
         items: ThinVec<DefId>,
+        generic_params: Option<GenericParams>,
     },
     Interface {
         name: Symbol,
         items: ThinVec<DefId>,
+        generic_params: Option<GenericParams>,
     },
     Impl {
         self_ty: Path,
@@ -193,6 +195,7 @@ pub struct FnSig {
 pub struct Fn {
     pub sig: FnSig,
     pub decl: FnDecl,
+    pub generic_params: Option<GenericParams>,
     pub body_id: Option<BodyId>,
 }
 
@@ -360,6 +363,48 @@ pub struct Ty {
     pub span: Span,
 }
 
+impl Ty {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        match &self.kind {
+            TyKind::Error => String::new(),
+            TyKind::PrimTy(prim_ty) => prim_ty.name_str().to_string(),
+            TyKind::Path(path) => path.display(ctx),
+            TyKind::Ptr(ty, mutability) => {
+                format!(
+                    "&{} {}",
+                    if *mutability == Mutability::Mutable {
+                        "mut"
+                    } else {
+                        ""
+                    },
+                    ty.display(ctx)
+                )
+            }
+            TyKind::Slice(ty) => format!("[{}]", ty.display(ctx)),
+            TyKind::Array(ty, size) => format!("[{}; {}]", ty.display(ctx), size),
+            TyKind::Fn { params, ret } => format!(
+                "({}) -> {}",
+                params
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                ret.display(ctx)
+            ),
+            TyKind::Tuple(types) => format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TyKind::Infer => "_".to_string(),
+            TyKind::Never => "!".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TyKind {
     Error,
@@ -388,14 +433,42 @@ pub enum TyKind {
 #[derive(Debug, Clone)]
 pub struct Path {
     pub res: Res<HirId>,
-    pub segments: ThinVec<Ident>,
+    pub segments: ThinVec<PathSegment>,
     pub span: Span,
 }
 
 impl Path {
     pub fn display(&self, ctx: &Ctx) -> String {
-        idents_to_string(&self.segments, &ctx.interner)
+        path_segments_to_string(&self.segments, ctx)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct PathSegment {
+    pub ident: Ident,
+    pub generic_params: Option<ThinVec<Ty>>,
+}
+
+pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
+    segments
+        .iter()
+        .map(|s| {
+            if let Some(params) = &s.generic_params {
+                format!(
+                    "{}<{}>",
+                    s.ident.value,
+                    params
+                        .iter()
+                        .map(|t| t.display(ctx))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                ctx.interner.lookup(s.ident.value).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 /// A path that may still have associated-item suffixes to resolve during type checking.
@@ -404,7 +477,21 @@ pub enum QPath {
     /// Fully resolved path
     Resolved(Path),
     /// Type-relative path: `T::Assoc`
-    TypeRelative { qself: Box<QPath>, segment: Ident },
+    TypeRelative {
+        qself: Box<QPath>,
+        segment: PathSegment,
+    },
+}
+
+impl QPath {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        match self {
+            QPath::Resolved(path) => path.display(ctx),
+            QPath::TypeRelative { qself, segment } => {
+                format!("{}::{}", qself.display(ctx), segment.ident.value)
+            }
+        }
+    }
 }
 
 pub trait FromToken<T> {

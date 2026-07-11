@@ -1,4 +1,4 @@
-use crate::ast::Ident;
+use crate::ast::PathSegment;
 use crate::interner::sym;
 use crate::resolve::Resolver;
 use crate::span::Span;
@@ -13,12 +13,12 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub(super) fn resolve_module_path(
         &self,
         from_node: usize,
-        segments: &[Ident],
+        segments: &[PathSegment],
     ) -> Result<usize, PathError> {
         let mut current = from_node;
 
         for seg in segments.iter() {
-            match seg.value {
+            match seg.ident.value {
                 sym::crate_ => current = 0,
                 sym::super_ => {
                     current = self.module_tree.nodes[current]
@@ -32,11 +32,11 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                         .iter()
                         .find(|&&child| {
                             self.module_tree.nodes[child].name
-                                == self.ctx.interner.lookup(seg.value)
+                                == self.ctx.interner.lookup(seg.ident.value)
                         })
                         .copied()
                         .ok_or(PathError::ModuleNotFound {
-                            name: self.ctx.interner.lookup(seg.value).to_string(),
+                            name: self.ctx.interner.lookup(seg.ident.value).to_string(),
                             span: seg.span,
                         })?;
                 }

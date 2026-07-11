@@ -53,7 +53,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                                 span: callee.span,
                             }
                             .into_box();
-                            (receiver, segment.value)
+                            (receiver, segment.ident.value)
                         }
                         _ => unreachable!(),
                     };

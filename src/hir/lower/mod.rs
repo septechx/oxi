@@ -47,19 +47,33 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
         let tail = &path.segments[start..];
         tail.iter()
-            .fold(QPath::Resolved(resolved), |qself, &segment| {
+            .fold(QPath::Resolved(resolved), |qself, segment| {
                 QPath::TypeRelative {
                     qself: Box::new(qself),
-                    segment,
+                    segment: self.lower_path_segment(segment),
                 }
             })
     }
 
-    fn lower_resolved_path(&self, path: &ast::Path, res: Res) -> Path {
+    fn lower_resolved_path(&mut self, path: &ast::Path, res: Res) -> Path {
         Path {
             res: self.lower_res(res),
-            segments: path.segments.clone(),
+            segments: path
+                .segments
+                .iter()
+                .map(|s| self.lower_path_segment(s))
+                .collect(),
             span: path.span,
+        }
+    }
+
+    fn lower_path_segment(&mut self, segment: &ast::PathSegment) -> PathSegment {
+        PathSegment {
+            ident: segment.ident,
+            generic_params: segment
+                .generic_params
+                .as_ref()
+                .map(|params| params.iter().map(|ty| self.lower_type(ty)).collect()),
         }
     }
 

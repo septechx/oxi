@@ -356,8 +356,10 @@ impl Visitable for Expr {
                     body.visit(visitor);
                 }
                 ExprKind::Loop(b) => b.visit(visitor),
-                ExprKind::Path(_) => {
-                    // Leaf
+                ExprKind::Path(path) => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                 }
                 ExprKind::Binary {
                     left,
@@ -448,8 +450,10 @@ impl Visitable for Expr {
                     body.visit_mut(visitor);
                 }
                 ExprKind::Loop(b) => b.visit_mut(visitor),
-                ExprKind::Path(_) => {
-                    // Leaf
+                ExprKind::Path(path) => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                 }
                 ExprKind::Binary {
                     left,

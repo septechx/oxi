@@ -64,10 +64,12 @@ pub enum ItemKind {
         name: Ident,
         fields: ThinVec<(Ident, Type, Visibility)>,
         items: ThinVec<AssocItem>,
+        generic_params: Option<GenericParams>,
     },
     Interface {
         name: Ident,
         items: ThinVec<AssocItem>,
+        generic_params: Option<GenericParams>,
     },
     Impl {
         self_ty: (Path, NodeId),
@@ -120,6 +122,7 @@ pub enum AssocItemKind {
 pub struct Fn {
     pub name: Ident,
     pub parameters: ThinVec<(Ident, Type, NodeId)>,
+    pub generic_params: Option<GenericParams>,
     pub body: Option<Block>,
     pub return_type: Type,
     pub is_extern: bool,
@@ -236,6 +239,46 @@ pub struct Type {
     pub span: Span,
 }
 
+impl Type {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        match &self.kind {
+            TypeKind::Symbol(path) => path.display(ctx),
+            TypeKind::Pointer(ty, mutability) => {
+                format!(
+                    "&{} {}",
+                    if *mutability == Mutability::Mutable {
+                        "mut"
+                    } else {
+                        ""
+                    },
+                    ty.display(ctx)
+                )
+            }
+            TypeKind::Slice(ty) => format!("[{}]", ty.display(ctx)),
+            TypeKind::FixedArray(ty, size) => format!("[{}; {}]", ty.display(ctx), size),
+            TypeKind::Function { params, ret } => format!(
+                "({}) -> {}",
+                params
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                ret.display(ctx)
+            ),
+            TypeKind::Tuple(types) => format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TypeKind::Infer => "_".to_string(),
+            TypeKind::Never => "!".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeKind {
     Symbol(Path),
@@ -290,18 +333,22 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub struct Path {
     pub span: Span,
-    pub segments: ThinVec<Ident>,
+    pub segments: ThinVec<PathSegment>,
 }
 
 impl Path {
     pub fn from_ident(id: Ident) -> Self {
         Path {
             span: id.span,
-            segments: thin_vec![id],
+            segments: thin_vec![PathSegment {
+                ident: id,
+                span: id.span,
+                generic_params: None
+            }],
         }
     }
 
-    pub fn last_ident(&self) -> Option<&Ident> {
+    pub fn last(&self) -> Option<&PathSegment> {
         self.segments.last()
     }
 
@@ -310,8 +357,48 @@ impl Path {
     }
 
     pub fn display(&self, ctx: &Ctx) -> String {
-        idents_to_string(&self.segments, &ctx.interner)
+        path_segments_to_string(&self.segments, ctx)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct PathSegment {
+    pub ident: Ident,
+    pub generic_params: Option<ThinVec<Type>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericParams {
+    pub params: ThinVec<GenericParam>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub name: Ident,
+}
+
+pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
+    segments
+        .iter()
+        .map(|s| {
+            if let Some(params) = &s.generic_params {
+                format!(
+                    "{}<{}>",
+                    s.ident.value,
+                    params
+                        .iter()
+                        .map(|t| t.display(ctx))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                ctx.interner.lookup(s.ident.value).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 pub fn idents_to_string(idents: &[Ident], interner: &Interner) -> String {
@@ -362,7 +449,7 @@ impl ImportTree {
     pub fn ident(&self) -> Option<Ident> {
         match &self.kind {
             ImportTreeKind::Simple(Some(rename)) => Some(*rename),
-            ImportTreeKind::Simple(None) => self.prefix.segments.last().cloned(),
+            ImportTreeKind::Simple(None) => self.prefix.segments.last().map(|seg| seg.ident),
             _ => None,
         }
     }

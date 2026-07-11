@@ -2,8 +2,8 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Path, Stmt, Type, Visibility, idents_to_string,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, ImportTree, ImportTreeKind, Item, ItemKind, NodeId,
+    Path, PathSegment, Stmt, Type, Visibility, path_segments_to_string,
 };
 use crate::context::Ctx;
 use crate::diag_params;
@@ -144,8 +144,8 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 let last_seg = pi.import_item.prefix.segments.last().expect("non-empty");
                 let module_prefix =
                     &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
-                let module_path = idents_to_string(module_prefix, &self.ctx.interner);
-                let name = self.ctx.interner.lookup(last_seg.value).to_string();
+                let module_path = path_segments_to_string(module_prefix, self.ctx);
+                let name = self.ctx.interner.lookup(last_seg.ident.value).to_string();
                 if module_path.is_empty() {
                     builders::emit_at(
                         self.ctx,
@@ -232,8 +232,8 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let local_sym = rename
             .as_ref()
             .map(|r| r.value)
-            .unwrap_or(unsafe { segments.last().unwrap_unchecked().value });
-        let target_sym = &segments[segments.len() - 1].value;
+            .unwrap_or(unsafe { segments.last().unwrap_unchecked().ident.value });
+        let target_sym = &segments[segments.len() - 1].ident.value;
 
         let current_module = pi.module.0 as usize;
 
@@ -283,7 +283,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     fn get_module_node_idx(
         &self,
         current_module: usize,
-        segments: &[Ident],
+        segments: &[PathSegment],
         pi: &PendingImport,
     ) -> Result<usize, CompilationError> {
         match self.resolve_module_path(current_module, segments) {

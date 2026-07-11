@@ -207,6 +207,7 @@ pub fn parse_struct_decl_item(
             name,
             fields,
             items,
+            generic_params: None,
         },
         node_id: NodeId::default(),
         attributes,
@@ -272,7 +273,11 @@ pub fn parse_interface_decl_item(
     };
 
     Ok(Item {
-        kind: ItemKind::Interface { items, name },
+        kind: ItemKind::Interface {
+            items,
+            name,
+            generic_params: None,
+        },
         node_id: NodeId::default(),
         attributes,
         span,
@@ -366,6 +371,7 @@ pub fn parse_fn_decl_item(
             name,
             return_type,
             is_extern: extern_mod.is_some(),
+            generic_params: None,
         }),
         node_id: NodeId::default(),
         attributes,

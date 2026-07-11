@@ -490,7 +490,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             ExprKind::Path(QPath::TypeRelative { qself, segment }) => self
                 .qpath_recv_ty(qself)
-                .map(|ty| (ty, segment.value, false, None)),
+                .map(|ty| (ty, segment.ident.value, false, None)),
             _ => None,
         } {
             return self.check_member_call(

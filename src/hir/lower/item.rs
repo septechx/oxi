@@ -1,6 +1,6 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, NodeId, Visibility};
+use crate::ast::{self, GenericParams, Ident, NodeId, Visibility};
 use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
@@ -20,11 +20,29 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     name,
                     fields,
                     items,
-                } => this.lower_struct(def_id, name, fields, items, item.span, item.visibility),
+                    generic_params,
+                } => this.lower_struct(
+                    def_id,
+                    name,
+                    fields,
+                    items,
+                    generic_params.as_ref(),
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
-                ast::ItemKind::Interface { name, items } => {
-                    this.lower_interface(def_id, name, items, item.span, item.visibility)
-                }
+                ast::ItemKind::Interface {
+                    name,
+                    items,
+                    generic_params,
+                } => this.lower_interface(
+                    def_id,
+                    name,
+                    items,
+                    generic_params.as_ref(),
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Impl {
                     self_ty,
                     interface,
@@ -156,6 +174,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         def_id: DefId,
         name: &'a Ident,
         items: &'a ThinVec<ast::AssocItem>,
+        generic_params: Option<&GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
@@ -182,6 +201,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Interface {
                             name: name.value,
+                            generic_params: generic_params.cloned(),
                             items,
                         },
                         span,
@@ -193,12 +213,14 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn lower_struct(
         &mut self,
         def_id: DefId,
         name: &'a Ident,
         fields: &'a ThinVec<(Ident, ast::Type, Visibility)>,
         items: &'a ThinVec<ast::AssocItem>,
+        generic_params: Option<&GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
@@ -234,6 +256,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Struct {
                             name: name.value,
+                            generic_params: generic_params.cloned(),
                             fields,
                             items,
                         },
@@ -330,6 +353,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 is_extern: f.is_extern,
             },
             decl: FnDecl { params, ret },
+            generic_params: f.generic_params.clone(),
             body_id,
         };
 
