@@ -110,7 +110,7 @@ pub fn tokenize(ctx: &mut Ctx, file: String, path: &Path) -> Result<(TokenStream
 
     let mut lexer = Lexer::new(file);
     let tokens = lexer.tokenize(module_id)?;
-    verify_tokens(&tokens);
+    verify_tokens(ctx, &tokens);
     Ok((tokens, module_id))
 }
 

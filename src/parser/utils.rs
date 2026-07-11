@@ -3,6 +3,7 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{Ident, Path, Stmt},
+    context::Ctx,
     diag_params,
     errors::builders,
     lexer::token::{Token, TokenKind},
@@ -10,16 +11,14 @@ use crate::{
     span::Span,
 };
 
-pub fn unexpected_token(token: Token, expected: impl std::fmt::Display) -> ! {
-    crate::with_ctx_mut(|ctx| {
-        builders::emit_at(
-            ctx,
-            token.span,
-            token.module_id,
-            diag::UnexpectedToken,
-            diag_params! { expected = expected, actual = token.kind },
-        );
-    });
+pub fn unexpected_token(ctx: &mut Ctx, token: Token, expected: impl std::fmt::Display) -> ! {
+    builders::emit_at(
+        ctx,
+        token.span,
+        token.module_id,
+        diag::UnexpectedToken,
+        diag_params! { expected = expected, actual = token.kind },
+    );
     unreachable!()
 }
 

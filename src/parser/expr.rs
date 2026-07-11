@@ -27,7 +27,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
     let nud_fn = nud_lu
         .get(&token.kind)
         .cloned()
-        .unwrap_or_else(|| unexpected_token(token.clone(), "start of expression"));
+        .unwrap_or_else(|| unexpected_token(parser.ctx, token.clone(), "start of expression"));
 
     let mut left = nud_fn(parser)?;
 
@@ -46,7 +46,7 @@ pub fn parse_expr(parser: &mut Parser, bp: BindingPower) -> Result<Expr> {
         let led_fn = led_lu
             .get(&token_kind.kind)
             .cloned()
-            .unwrap_or_else(|| unexpected_token(token_kind.clone(), "infix operator"));
+            .unwrap_or_else(|| unexpected_token(parser.ctx, token_kind.clone(), "infix operator"));
 
         left = led_fn(parser, left.clone(), current_bp)?;
         end_span = left.span;
@@ -79,6 +79,7 @@ pub fn parse_primary_expr(parser: &mut Parser) -> Result<Expr> {
         }
         TokenKind::StringLiteral => Ok(Expr {
             kind: ExprKind::Literal(Literal::String(process_string(
+                parser.ctx,
                 &value,
                 span,
                 token.module_id,
@@ -396,16 +397,14 @@ pub fn parse_parenthesis_expr(parser: &mut Parser) -> Result<Expr> {
             has_comma = true;
             parser.advance();
         } else if tok.kind != TokenKind::CloseParen {
-            crate::with_ctx_mut(|ctx| {
-                builders::emit_at(
-                    ctx,
-                    tok.span,
-                    tok.module_id,
-                    diag::ExpectedCommaOrClosingParen,
-                    diag_params! { actual = tok.kind },
-                );
-                unreachable!();
-            });
+            builders::emit_at(
+                parser.ctx,
+                tok.span,
+                tok.module_id,
+                diag::ExpectedCommaOrClosingParen,
+                diag_params! { actual = tok.kind },
+            );
+            unreachable!();
         }
     }
     let close_token = parser.expect(TokenKind::CloseParen)?;
