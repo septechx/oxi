@@ -1,6 +1,22 @@
-[file_not_referenced_by_mod]
-level = "Warning"
-message = "Provided file `{file}` is not referenced by any `mod` declaration"
+[module_file_not_found]
+level = "Error"
+message = "Module `{name}` not found in `{file}`, tried `{candidate1}` and `{candidate2}`"
+
+[module_file_read_error]
+level = "Error"
+message = "Failed to read module file `{file}`: {error}"
+
+[module_tokenize_error]
+level = "Error"
+message = "Failed to tokenize module file `{file}`"
+
+[module_parse_error]
+level = "Error"
+message = "Failed to parse module file `{file}`"
+
+[duplicate_module_declaration]
+level = "Error"
+message = "File `{file}` is referenced by multiple `mod` declarations"
 
 [item_not_found]
 level = "Error"

@@ -9,7 +9,6 @@ use crate::context::with_ctx_mut;
 use crate::hir::AstLoweringContext;
 use crate::lexer::tokenize;
 use crate::parser::parse;
-use crate::resolve::ModuleTree;
 use crate::resolve::Resolver;
 use crate::resolve::build_module_tree;
 use crate::thir::lower_thir;
@@ -21,10 +20,10 @@ pub fn frontend_stage(
     source: String,
     check_for_errors: impl Fn() -> Result<()>,
 ) -> Result<Ast> {
-    let (tokens, module_id) = tokenize(source, source_path)?;
+    let (tokens, module_id) = with_ctx_mut(|ctx| tokenize(ctx, source, source_path))?;
     check_for_errors()?;
 
-    let mut ast = parse(tokens, source_path)?;
+    let mut ast = with_ctx_mut(|ctx| parse(ctx, tokens, source_path))?;
     check_for_errors()?;
 
     validate_ast(&ast, module_id);
@@ -47,9 +46,7 @@ pub fn compile_source(
     let mut asts = thin_vec![root_ast];
     let mut paths = vec![root_path];
 
-    let module_tree = with_ctx_mut(|ctx| -> Result<ModuleTree> {
-        build_module_tree(ctx, &mut asts, &mut paths, check_for_errors)
-    })?;
+    let module_tree = with_ctx_mut(|ctx| build_module_tree(ctx, &mut asts, &mut paths))?;
     check_for_errors()?;
 
     let resolver = with_ctx_mut(|ctx| {
