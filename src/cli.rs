@@ -91,9 +91,6 @@ pub struct Cli {
     )]
     pub emit_ir: EmitOption,
 
-    #[clap(long, help = "Print AST")]
-    pub print_ast: bool,
-
     #[clap(
         long,
         help = "When to use colors [possible values: auto, always, never]",

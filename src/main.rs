@@ -30,7 +30,6 @@ use oxic_diag::include_diagnostics;
 use crate::cli::{Cli, ColorChoice};
 use crate::context::{Ctx, with_ctx_mut};
 use crate::driver::compile_source;
-use crate::driver::frontend_stage;
 use crate::errors::builders;
 
 include_diagnostics!("diagnostics.toml");
@@ -83,22 +82,12 @@ fn build_files(cli: Cli) -> Result<()> {
         })
     };
 
-    if cli.print_ast {
-        let use_color = match cli.color {
-            ColorChoice::Always => true,
-            ColorChoice::Never => false,
-            ColorChoice::Auto => {
-                std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err()
-            }
-        };
-        colored::control::set_override(use_color);
-
-        let ast = frontend_stage(&cli.input, source_text, check_for_errors)?;
-
-        logln!("{}", ast.display(use_color)?);
-
-        return Ok(());
-    }
+    let use_color = match cli.color {
+        ColorChoice::Always => true,
+        ColorChoice::Never => false,
+        ColorChoice::Auto => std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err(),
+    };
+    colored::control::set_override(use_color);
 
     compile_source(cli.input, source_text, check_for_errors)
 }

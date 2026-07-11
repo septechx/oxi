@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests;
 
-pub mod display;
 pub mod validate;
 pub mod visit;
 
@@ -33,18 +32,6 @@ impl Ast {
             name: path_to_mod(path).into(),
             items,
         }
-    }
-
-    pub fn display(&self, color: bool) -> Result<String, std::fmt::Error> {
-        let ctx = display::DisplayContext::new(color);
-        let mut output = String::new();
-        for (i, item) in self.items.iter().enumerate() {
-            if i > 0 {
-                output.push('\n');
-            }
-            display::write_item(&mut output, item, &ctx)?;
-        }
-        Ok(output)
     }
 }
 
