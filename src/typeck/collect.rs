@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
-use crate::hir::{AssocItemKind, DefId, FnDecl, HirId, ItemKind, MaybeOwner, Node, OwnerInfo};
+use crate::hir::{AssocItemKind, DefId, FnDecl, HirId, ItemKind, MaybeOwner, Node};
 use crate::interner::Symbol;
 use crate::typeck::Typeck;
 use crate::typeck::infctx::{InferCtx, TyVarId};
@@ -98,25 +98,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
                             }
                         }
-                        // FIXME: This is already done in Node::AssocItem processing, remove this
-                        let mut methods: Vec<(Symbol, DefId)> = Vec::new();
-                        for &item in items {
-                            if let Some(MaybeOwner::Owner(method_info)) = self.krate.owner(item)
-                                && let Node::AssocItem(_) = &method_info.nodes.nodes[0].node
-                                && let Some(name) = self.resolver.defs[item.0 as usize].name
-                            {
-                                let (ty, generic_params) =
-                                    self.fn_ty_for_owner(&mut icx, method_info);
-                                self.item_schemes.insert(
-                                    item,
-                                    Scheme {
-                                        vars: generic_params,
-                                        body: ty,
-                                    },
-                                );
-                                methods.push((name, item));
-                            }
-                        }
+                        let methods: Vec<(Symbol, DefId)> = items
+                            .iter()
+                            .filter_map(|&item| {
+                                self.resolver.defs[item.0 as usize]
+                                    .name
+                                    .map(|name| (name, item))
+                            })
+                            .collect();
                         self.coherence.register_interface(def_id, methods);
                     }
                     ItemKind::Impl { .. } | ItemKind::Module { .. } | ItemKind::Import(_) => {}
@@ -159,26 +148,5 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .collect();
         let ret = Ty::from_hir(icx, &decl.ret).into_box();
         Ty::Fn { params, ret }
-    }
-
-    fn fn_ty_for_owner(&self, icx: &mut InferCtx, info: &OwnerInfo) -> (Ty, ThinVec<TyVarId>) {
-        if let Node::AssocItem(assoc) = &info.nodes.nodes[0].node {
-            let AssocItemKind::Fn(fun) = &assoc.kind;
-            let generic_params = fun.generic_params.as_ref().map(|params| {
-                params
-                    .iter()
-                    .map(|param| {
-                        let ty_var = icx.next_ty_var();
-                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                        ty_var
-                    })
-                    .collect()
-            });
-            return (
-                self.fn_ty(icx, &fun.decl),
-                generic_params.unwrap_or_default(),
-            );
-        }
-        (Ty::Error, ThinVec::new())
     }
 }
