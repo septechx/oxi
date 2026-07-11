@@ -15,11 +15,8 @@ use crate::resolve::{Def, DefKind, NameBinding, NameResolution, PendingImport, R
 use crate::span::Span;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
-    pub fn assign_node_ids(ctx: &mut Ctx, asts: &mut ThinVec<Ast>) {
-        let mut ass = NodeIdAssigner::new(ctx);
-        for ast in asts.iter_mut() {
-            ast.visit_mut(&mut ass);
-        }
+    pub fn assign_node_ids(ctx: &mut Ctx, ast: &mut Ast) {
+        ast.visit_mut(&mut NodeIdAssigner::new(ctx));
     }
 
     /// Allocates a definition and registers its name resolution

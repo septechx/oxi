@@ -35,26 +35,23 @@ pub fn parse_item(parser: &mut Parser) -> Result<Item> {
         item_fn(parser, attributes, modifiers)
     } else {
         let tok = parser.current_token();
-        crate::with_ctx_mut(|ctx| {
-            builders::emit_at(
-                ctx,
-                tok.span,
-                tok.module_id,
-                diag::ExpectedTopLevel,
-                diag_params! { actual = tok.kind },
-            );
-        });
-
+        builders::emit_at(
+            parser.ctx,
+            tok.span,
+            tok.module_id,
+            diag::ExpectedTopLevel,
+            diag_params! { actual = tok.kind },
+        );
         unreachable!()
     }
 }
 
 pub fn parse_const_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    no_attributes!(&parser, &attributes);
+    no_attributes!(&mut parser, &attributes);
 
     let static_token = parser.advance();
 
@@ -66,7 +63,7 @@ pub fn parse_const_item(
     parser.expect(TokenKind::Equals)?;
     let value = parse_expr(parser, BindingPower::Assignment)?;
 
-    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
 
     let mut is_public = false;
 
@@ -96,7 +93,7 @@ pub fn parse_const_item(
 }
 
 pub fn parse_struct_decl_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
@@ -127,15 +124,13 @@ pub fn parse_struct_decl_item(
             let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
             if let ItemKind::Fn(fn_decl) = stmt.kind {
                 if fn_decl.body.is_none() {
-                    crate::with_ctx_mut(|ctx| {
-                        builders::emit_at(
-                            ctx,
-                            fn_decl.name.span,
-                            parser.current_token().module_id,
-                            diag::StructMethodMissingBody,
-                            diag_params! {},
-                        );
-                    });
+                    builders::emit_at(
+                        parser.ctx,
+                        fn_decl.name.span,
+                        parser.current_token().module_id,
+                        diag::StructMethodMissingBody,
+                        diag_params! {},
+                    );
                 }
                 items.push(AssocItem {
                     kind: AssocItemKind::Fn(Fn {
@@ -160,17 +155,15 @@ pub fn parse_struct_decl_item(
             }
 
             if fields.iter().any(|arg| arg.0.value == property_name.value) {
-                crate::with_ctx_mut(|ctx| {
-                    let field = ctx.interner.lookup(property_name.value).to_string();
-                    let strct = ctx.interner.lookup(name.value).to_string();
-                    builders::emit_at(
-                        ctx,
-                        property_name.span,
-                        parser.current_token().module_id,
-                        diag::FieldAlreadyDefined,
-                        diag_params! { field = field, struct = strct },
-                    );
-                });
+                let field = parser.ctx.interner.lookup(property_name.value).to_string();
+                let strct = parser.ctx.interner.lookup(name.value).to_string();
+                builders::emit_at(
+                    parser.ctx,
+                    property_name.span,
+                    parser.current_token().module_id,
+                    diag::FieldAlreadyDefined,
+                    diag_params! { field = field, struct = strct },
+                );
                 continue;
             }
 
@@ -185,12 +178,12 @@ pub fn parse_struct_decl_item(
             continue;
         }
 
-        unexpected_token(parser.current_token(), "struct field");
+        unexpected_token(parser.ctx, parser.current_token(), "struct field");
     }
 
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
 
-    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
 
     let mut is_public = false;
 
@@ -223,7 +216,7 @@ pub fn parse_struct_decl_item(
 }
 
 pub fn parse_interface_decl_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
@@ -240,15 +233,13 @@ pub fn parse_interface_decl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_some() {
-                crate::with_ctx_mut(|ctx| {
-                    builders::emit_at(
-                        ctx,
-                        stmt.span,
-                        parser.current_token().module_id,
-                        diag::InterfaceMethodHasBody,
-                        diag_params! {},
-                    );
-                });
+                builders::emit_at(
+                    parser.ctx,
+                    stmt.span,
+                    parser.current_token().module_id,
+                    diag::InterfaceMethodHasBody,
+                    diag_params! {},
+                );
             }
 
             items.push(AssocItem {
@@ -261,7 +252,7 @@ pub fn parse_interface_decl_item(
     }
     let end_span = parser.expect(TokenKind::CloseCurly)?.span;
 
-    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
 
     let mut is_public = false;
 
@@ -290,11 +281,11 @@ pub fn parse_interface_decl_item(
 }
 
 pub fn parse_fn_decl_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    let (pub_mod, extern_mod) = get_modifiers!(&parser, modifiers, [Pub, Extern]);
+    let (pub_mod, extern_mod) = get_modifiers!(&mut parser, modifiers, [Pub, Extern]);
 
     let mut start_span = parser.expect(TokenKind::Fn)?.span;
     if let Some(pub_mod) = pub_mod {
@@ -349,16 +340,14 @@ pub fn parse_fn_decl_item(
         }
         _ => {
             let tok = parser.current_token();
-            crate::with_ctx_mut(|ctx| {
-                builders::emit_at(
-                    ctx,
-                    tok.span,
-                    tok.module_id,
-                    diag::ExpectedTermOrBodyAfterSignature,
-                    diag_params! {},
-                );
-                unreachable!();
-            });
+            builders::emit_at(
+                parser.ctx,
+                tok.span,
+                tok.module_id,
+                diag::ExpectedTermOrBodyAfterSignature,
+                diag_params! {},
+            );
+            unreachable!();
         }
     }
 
@@ -386,12 +375,12 @@ pub fn parse_fn_decl_item(
 }
 
 pub fn parse_impl_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    no_attributes!(&parser, &attributes);
-    no_modifiers!(&parser, &modifiers);
+    no_attributes!(&mut parser, &attributes);
+    no_modifiers!(&mut parser, &modifiers);
 
     let start_span = parser.expect(TokenKind::Impl)?.span;
     let interface = parse_path(parser)?;
@@ -408,15 +397,13 @@ pub fn parse_impl_item(
         let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
         if let ItemKind::Fn(fn_decl) = stmt.kind {
             if fn_decl.body.is_none() {
-                crate::with_ctx_mut(|ctx| {
-                    builders::emit_at(
-                        ctx,
-                        fn_decl.name.span,
-                        parser.current_token().module_id,
-                        diag::ImplMethodMissingBody,
-                        diag_params! {},
-                    );
-                });
+                builders::emit_at(
+                    parser.ctx,
+                    fn_decl.name.span,
+                    parser.current_token().module_id,
+                    diag::ImplMethodMissingBody,
+                    diag_params! {},
+                );
             }
             items.push(AssocItem {
                 kind: AssocItemKind::Fn(fn_decl),
@@ -445,11 +432,11 @@ pub fn parse_impl_item(
 }
 
 pub fn parse_import_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
 
     let start_span = parser.expect(TokenKind::Import)?.span;
     let tree = parse_import_tree(parser)?;
@@ -473,11 +460,11 @@ pub fn parse_import_item(
 }
 
 pub fn parse_module_item(
-    parser: &mut Parser,
+    mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    let (pub_mod,) = get_modifiers!(&parser, modifiers, [Pub]);
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
 
     let start_span = parser.expect(TokenKind::Mod)?.span;
     let name = parser.expect_identifier()?;
@@ -600,15 +587,13 @@ fn parse_let_stmt(parser: &mut Parser) -> Result<Stmt> {
     let span = Span::new(let_token.span.start(), end_span.end());
 
     if assigned_value.is_none() && is_constant {
-        crate::with_ctx_mut(|ctx| {
-            builders::emit_at(
-                ctx,
-                span,
-                parser.current_token().module_id,
-                diag::ConstItemWithoutValue,
-                diag_params! {},
-            );
-        });
+        builders::emit_at(
+            parser.ctx,
+            span,
+            parser.current_token().module_id,
+            diag::ConstItemWithoutValue,
+            diag_params! {},
+        );
     }
 
     let mutability = if is_constant {

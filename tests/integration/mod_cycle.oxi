@@ -1,0 +1,4 @@
+// @auxiliary-module mod_cycle_helper
+// @expect-error duplicate_module_declaration
+
+mod mod_cycle_helper;

@@ -1,15 +1,19 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use thin_vec::ThinVec;
 
 use crate::{
+    ast::validate::validate_ast,
     ast::{Ast, Item, ItemKind},
-    context::with_ctx,
+    context::Ctx,
     diag_params,
     errors::builders,
     hashmap::FxHashMap,
-    resolve::diag,
+    lexer::tokenize,
+    parser::parse,
+    resolve::{Resolver, diag},
 };
 
 #[derive(Debug)]
@@ -29,30 +33,32 @@ pub struct ModuleNode {
 }
 
 pub fn build_module_tree(
-    asts: &[Ast],
-    file_paths: &[PathBuf],
-    entrypoint: &str,
+    ctx: &mut Ctx,
+    asts: &mut ThinVec<Ast>,
+    file_paths: &mut Vec<PathBuf>,
 ) -> Result<ModuleTree> {
-    let file_index: FxHashMap<PathBuf, usize> = file_paths
+    if file_paths.is_empty() {
+        return Ok(ModuleTree { nodes: Vec::new() });
+    }
+
+    let mut file_index: FxHashMap<PathBuf, usize> = file_paths
         .iter()
         .enumerate()
         .map(|(i, p)| (p.canonicalize().unwrap_or_else(|_| p.to_owned()), i))
         .collect();
 
-    let root_idx = file_paths
-        .iter()
-        .position(|path| path_matches_qualified(path, entrypoint))
-        .ok_or_else(|| anyhow!("Entrypoint not found"))?;
-    let root_name = entrypoint
-        .rsplit("::")
-        .next()
-        .unwrap_or(entrypoint)
+    let root_idx = 0;
+    let root_name = file_paths[root_idx]
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("root")
         .to_owned();
+
     let mut tree = ModuleTree { nodes: Vec::new() };
     tree.nodes.push(ModuleNode {
         ast_idx: Some(root_idx),
-        name: root_name,
-        qualified_name: entrypoint.to_owned(),
+        name: root_name.clone(),
+        qualified_name: root_name,
         parent: None,
         children: Vec::new(),
         inline_body: None,
@@ -61,49 +67,41 @@ pub fn build_module_tree(
     let mut claimed_files: FxHashMap<usize, usize> = FxHashMap::default();
     claimed_files.insert(root_idx, 0);
 
+    let root_items = asts[root_idx].items.clone();
+    let root_path = file_paths[root_idx].clone();
     process_ast_items(
+        ctx,
         asts,
         file_paths,
-        &file_index,
+        &mut file_index,
         &mut tree,
         0,
         &mut claimed_files,
-        &asts[root_idx].items,
-        &file_paths[root_idx],
-    )?;
-
-    for (ast_idx, _) in file_paths.iter().enumerate() {
-        if !claimed_files.contains_key(&ast_idx) {
-            crate::with_ctx_mut(|ctx| {
-                builders::emit(
-                    ctx,
-                    diag::FileNotReferencedByMod,
-                    diag_params! { file = file_paths[ast_idx].display() },
-                );
-            });
-        }
-    }
+        root_items,
+        &root_path,
+    );
 
     Ok(tree)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn process_ast_items(
-    asts: &[Ast],
-    file_paths: &[PathBuf],
-    file_index: &FxHashMap<PathBuf, usize>,
+    ctx: &mut Ctx,
+    asts: &mut ThinVec<Ast>,
+    file_paths: &mut Vec<PathBuf>,
+    file_index: &mut FxHashMap<PathBuf, usize>,
     tree: &mut ModuleTree,
     parent_idx: usize,
     claimed_files: &mut FxHashMap<usize, usize>,
-    items: &[Item],
+    items: ThinVec<Item>,
     declaring_path: &Path,
-) -> Result<()> {
-    for item in items {
+) {
+    for item in &items {
         let ItemKind::Module { name, body } = &item.kind else {
             continue;
         };
 
-        let mod_name = with_ctx(|ctx| ctx.interner.lookup(name.value).to_string());
+        let mod_name = ctx.interner.lookup(name.value).to_string();
         let parent_qualified = &tree.nodes[parent_idx].qualified_name;
         let qualified = if parent_qualified.is_empty() {
             mod_name.clone()
@@ -118,25 +116,92 @@ fn process_ast_items(
                 let candidate1 = declaring_dir.join(format!("{}.oxi", mod_name));
                 let candidate2 = declaring_dir.join(&mod_name).join("mod.oxi");
 
-                let target_idx = file_index
+                let target_idx = if let Some(&idx) = file_index
                     .get(&canonicalize_or(&candidate1))
                     .or_else(|| file_index.get(&canonicalize_or(&candidate2)))
-                    .copied()
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "`mod {mod_name}` declared in `{}` but no provided file matches \
-                             (tried `{}` and `{}`)",
-                            declaring_path.display(),
-                            candidate1.display(),
-                            candidate2.display()
-                        )
-                    })?;
+                {
+                    idx
+                } else {
+                    let found = if candidate1.exists() {
+                        &candidate1
+                    } else if candidate2.exists() {
+                        &candidate2
+                    } else {
+                        builders::emit(
+                            ctx,
+                            diag::ModuleFileNotFound,
+                            diag_params! {
+                                name = mod_name,
+                                file = declaring_path.display(),
+                                candidate1 = candidate1.display(),
+                                candidate2 = candidate2.display(),
+                            },
+                        );
+                        return;
+                    };
+
+                    let source = match fs::read_to_string(found) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            builders::emit(
+                                ctx,
+                                diag::ModuleFileReadError,
+                                diag_params! {
+                                    file = found.display(),
+                                    error = e.to_string(),
+                                },
+                            );
+                            return;
+                        }
+                    };
+
+                    let Ok((tokens, module_id)) = tokenize(ctx, source, found) else {
+                        builders::emit(
+                            ctx,
+                            diag::ModuleTokenizeError,
+                            diag_params! { file = found.display() },
+                        );
+                        return;
+                    };
+                    if ctx.errors.has_errors() {
+                        return;
+                    }
+
+                    let Ok(mut ast) = parse(ctx, tokens, found) else {
+                        builders::emit(
+                            ctx,
+                            diag::ModuleParseError,
+                            diag_params! { file = found.display() },
+                        );
+                        return;
+                    };
+                    if ctx.errors.has_errors() {
+                        return;
+                    }
+
+                    validate_ast(&ast, module_id);
+                    if ctx.errors.has_errors() {
+                        return;
+                    }
+
+                    Resolver::assign_node_ids(ctx, &mut ast);
+
+                    let idx = asts.len();
+                    let canonical = found.canonicalize().unwrap_or_else(|_| found.to_owned());
+                    file_index.insert(canonical, idx);
+                    asts.push(ast);
+                    file_paths.push(found.to_path_buf());
+
+                    idx
+                };
 
                 if claimed_files.contains_key(&target_idx) {
-                    return Err(anyhow!(
-                        "File `{}` is referenced by multiple `mod` declarations",
-                        file_paths[target_idx].display()
-                    ));
+                    builders::emit(
+                        ctx,
+                        diag::DuplicateModuleDeclaration,
+                        diag_params! { file = file_paths[target_idx].display() },
+                    );
+                    return;
                 }
                 claimed_files.insert(target_idx, tree.nodes.len());
 
@@ -150,20 +215,23 @@ fn process_ast_items(
                 });
 
                 let child_idx = tree.nodes.len() - 1;
+                let cloned_items = asts[target_idx].items.clone();
+                let child_path = file_paths[target_idx].clone();
                 process_ast_items(
+                    ctx,
                     asts,
                     file_paths,
                     file_index,
                     tree,
                     child_idx,
                     claimed_files,
-                    &asts[target_idx].items,
-                    &file_paths[target_idx],
-                )?;
+                    cloned_items,
+                    &child_path,
+                );
 
                 child_idx
             }
-            Some(items) => {
+            Some(inline_items) => {
                 let inline_declaring_path = declaring_path
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
@@ -176,20 +244,21 @@ fn process_ast_items(
                     qualified_name: qualified,
                     parent: Some(parent_idx),
                     children: Vec::new(),
-                    inline_body: Some(items.clone()),
+                    inline_body: Some(inline_items.clone()),
                 });
 
                 let child_idx = tree.nodes.len() - 1;
                 process_ast_items(
+                    ctx,
                     asts,
                     file_paths,
                     file_index,
                     tree,
                     child_idx,
                     claimed_files,
-                    items,
+                    inline_items.clone(),
                     &inline_declaring_path,
-                )?;
+                );
 
                 child_idx
             }
@@ -197,42 +266,8 @@ fn process_ast_items(
 
         tree.nodes[parent_idx].children.push(node_idx);
     }
-
-    Ok(())
 }
 
 fn canonicalize_or(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_owned())
-}
-
-fn path_matches_qualified(path: &Path, qualified: &str) -> bool {
-    let target: Vec<&str> = qualified.split("::").collect();
-    if target.is_empty() || target.iter().any(|s| s.is_empty()) {
-        return false;
-    }
-
-    let mut segments: Vec<String> = path
-        .components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .map(String::from)
-        .collect();
-
-    if let Some(last) = segments.last_mut()
-        && let Some(stem) = Path::new(last.as_str())
-            .file_stem()
-            .and_then(|s| s.to_str())
-    {
-        *last = stem.to_string();
-    }
-
-    if segments.last().map(String::as_str) == Some("mod") {
-        segments.pop();
-    }
-
-    if segments.len() < target.len() {
-        return false;
-    }
-
-    let suffix = &segments[segments.len() - target.len()..];
-    suffix.iter().zip(target.iter()).all(|(a, b)| a == b)
 }

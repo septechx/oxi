@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 pub mod display;
 pub mod validate;
 pub mod visit;

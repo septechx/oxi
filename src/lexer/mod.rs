@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 pub mod token;
 pub mod verify;
 
@@ -8,6 +11,7 @@ use parking_lot::Once;
 use regex::Regex;
 use thin_vec::ThinVec;
 
+use crate::context::Ctx;
 use crate::hir::ModuleId;
 use crate::lexer::token::{Token, TokenKind, TokenStream, lookup_reserved};
 use crate::lexer::verify::verify_tokens;
@@ -99,17 +103,14 @@ impl Lexer {
     }
 }
 
-pub fn tokenize(file: String, path: &Path) -> Result<(TokenStream, ModuleId)> {
+pub fn tokenize(ctx: &mut Ctx, file: String, path: &Path) -> Result<(TokenStream, ModuleId)> {
     initialize_regexes();
 
-    let module_id = crate::CTX.with(|ctx| {
-        let maps = &mut ctx.borrow_mut().source_maps;
-        maps.add_source(file.clone(), path.to_path_buf())
-    });
+    let module_id = ctx.source_maps.add_source(file.clone(), path.to_path_buf());
 
     let mut lexer = Lexer::new(file);
     let tokens = lexer.tokenize(module_id)?;
-    verify_tokens(&tokens);
+    verify_tokens(ctx, &tokens);
     Ok((tokens, module_id))
 }
 

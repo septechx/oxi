@@ -14,7 +14,7 @@ use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
 
 use crate::ast::{Ast, Ident, Item};
-use crate::context::with_ctx_mut;
+use crate::context::Ctx;
 use crate::diag_params;
 use crate::errors::builders;
 use crate::lexer::token::{Token, TokenKind, TokenStream};
@@ -24,16 +24,18 @@ use crate::parser::types::create_token_type_lookups;
 
 include_diagnostics!("diagnostics.toml");
 
-pub struct Parser {
+pub struct Parser<'ctx> {
+    ctx: &'ctx mut Ctx,
     tokens: ThinVec<Token>,
     pos: usize,
 }
 
-impl Parser {
-    pub fn new(tokens: TokenStream) -> Self {
+impl<'ctx> Parser<'ctx> {
+    pub fn new(ctx: &'ctx mut Ctx, tokens: TokenStream) -> Self {
         Parser {
             tokens: tokens.0,
             pos: 0,
+            ctx,
         }
     }
 
@@ -87,16 +89,14 @@ impl Parser {
         let token = self.current_token();
 
         if token.kind != expected_kind {
-            crate::with_ctx_mut(|ctx| {
-                builders::emit_at(
-                    ctx,
-                    token.span,
-                    token.module_id,
-                    diag::UnexpectedToken,
-                    diag_params! { expected = expected_kind, actual = token.kind },
-                );
-                unreachable!();
-            });
+            builders::emit_at(
+                self.ctx,
+                token.span,
+                token.module_id,
+                diag::UnexpectedToken,
+                diag_params! { expected = expected_kind, actual = token.kind },
+            );
+            unreachable!();
         }
 
         Ok(self.advance())
@@ -106,28 +106,27 @@ impl Parser {
         let token = self.current_token();
 
         if token.kind != TokenKind::Identifier {
-            with_ctx_mut(|ctx| {
-                builders::emit_at(
-                    ctx,
-                    token.span,
-                    token.module_id,
-                    diag::ExpectedIdentifier,
-                    diag_params! { actual = token.kind },
-                );
-            });
+            builders::emit_at(
+                self.ctx,
+                token.span,
+                token.module_id,
+                diag::ExpectedIdentifier,
+                diag_params! { actual = token.kind },
+            );
+            unreachable!();
         }
 
         self.advance();
-        with_ctx_mut(|ctx| Ident::from_token(ctx, token))
+        Ident::from_token(self.ctx, token)
     }
 }
 
-pub fn parse(tokens: TokenStream, path: &PathBuf) -> Result<Ast> {
+pub fn parse(ctx: &mut Ctx, tokens: TokenStream, path: &PathBuf) -> Result<Ast> {
     create_token_lookups();
     create_token_type_lookups();
 
     let mut items: ThinVec<Item> = ThinVec::new();
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(ctx, tokens);
 
     while parser.has_tokens() {
         items.push(parse_item(&mut parser)?);

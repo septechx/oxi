@@ -1,7 +1,3 @@
 [source_file_not_found]
 level = "Fatal"
 message = "Source file `{file}` not found: {error}"
-
-[failed_to_build_module_tree]
-level = "Fatal"
-message = "Failed to build module tree: {error}"

@@ -29,7 +29,7 @@ use oxic_diag::include_diagnostics;
 
 use crate::cli::{Cli, ColorChoice};
 use crate::context::{Ctx, with_ctx_mut};
-use crate::driver::compile_sources;
+use crate::driver::compile_source;
 use crate::driver::frontend_stage;
 use crate::errors::builders;
 
@@ -72,31 +72,16 @@ fn check_for_errors() -> Result<()> {
 }
 
 fn build_files(cli: Cli) -> Result<()> {
-    let entrypoint = match &cli.entrypoint {
-        Some(ep) => ep.clone(),
-        None if cli.input.len() == 1 => cli.input[0]
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("main")
-            .to_string(),
-        None => "main".to_string(),
+    let Ok(source_text) = fs::read_to_string(&cli.input) else {
+        with_ctx_mut(|ctx| {
+            builders::emit(
+                ctx,
+                diag::SourceFileNotFound,
+                diag_params! { file = cli.input.display() },
+            );
+            unreachable!()
+        })
     };
-
-    let mut sources = Vec::with_capacity(cli.input.len());
-    for file_path in &cli.input {
-        let source_text = match fs::read_to_string(file_path) {
-            Err(err) => with_ctx_mut(|ctx| {
-                builders::emit(
-                    ctx,
-                    diag::SourceFileNotFound,
-                    diag_params! { file = file_path.display(), error = err },
-                );
-                unreachable!()
-            }),
-            Ok(source_text) => source_text,
-        };
-        sources.push((file_path.clone(), source_text));
-    }
 
     if cli.print_ast {
         let use_color = match cli.color {
@@ -108,14 +93,12 @@ fn build_files(cli: Cli) -> Result<()> {
         };
         colored::control::set_override(use_color);
 
-        let asts = frontend_stage(&sources, check_for_errors)?;
+        let ast = frontend_stage(&cli.input, source_text, check_for_errors)?;
 
-        for ast in asts {
-            logln!("{}", ast.display(use_color)?);
-        }
+        logln!("{}", ast.display(use_color)?);
 
         return Ok(());
     }
 
-    compile_sources(sources, &entrypoint, check_for_errors)
+    compile_source(cli.input, source_text, check_for_errors)
 }
