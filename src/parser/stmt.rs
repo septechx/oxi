@@ -673,6 +673,7 @@ fn parse_generic_params(parser: &mut Parser) -> Result<GenericParams> {
         }
         params.push(GenericParam {
             name: parser.expect_identifier()?,
+            node_id: NodeId::default(),
         });
         if parser.current_token().kind == TokenKind::Comma {
             parser.advance();

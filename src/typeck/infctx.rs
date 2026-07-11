@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use crate::hashmap::{FxHashMap, FxHashSet};
-use crate::hir::ModuleId;
+use crate::hir::{HirId, ModuleId};
 use crate::span::Span;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
@@ -31,6 +31,7 @@ pub struct InferCtx {
     vars: Vec<TyVar>,
     levels: Vec<u32>,
     pub(super) errors: Vec<UnifyError>,
+    pub(super) hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
 }
 
 impl InferCtx {
@@ -151,7 +152,13 @@ impl InferCtx {
             Ty::Tuple(elements) => {
                 Ty::Tuple(elements.iter().map(|ty| self.adjust(ty, bound)).collect())
             }
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+                *def_id,
+                generics
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.adjust(ty, bound)).collect()),
+            ),
+            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
         }
     }
 
@@ -169,7 +176,13 @@ impl InferCtx {
                 ret: self.resolve(ret).into_box(),
             },
             Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| self.resolve(ty)).collect()),
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+                *def_id,
+                generics
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.resolve(ty)).collect()),
+            ),
+            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
         }
     }
 
@@ -194,7 +207,14 @@ impl InferCtx {
                     self.vars_in(element, out);
                 }
             }
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => {}
+            Ty::Adt(_, generics) | Ty::Interface(_, generics) => {
+                if let Some(generics) = generics {
+                    for ty in generics {
+                        self.vars_in(&ty, out);
+                    }
+                }
+            }
+            Ty::Prim(_) | Ty::Never | Ty::Error => {}
         }
     }
 
@@ -240,7 +260,15 @@ impl InferCtx {
                     .map(|ty| self.instantiate_with(ty, mapping))
                     .collect(),
             ),
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Adt(def_id, generics) | Ty::Interface(def_id, generics) => Ty::Adt(
+                *def_id,
+                generics.as_ref().map(|tys| {
+                    tys.iter()
+                        .map(|ty| self.instantiate_with(ty, mapping))
+                        .collect()
+                }),
+            ),
+            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
         }
     }
 

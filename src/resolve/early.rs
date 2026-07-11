@@ -2,8 +2,8 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Expr, Fn, ImportTree, ImportTreeKind, Item, ItemKind, NodeId,
-    Path, PathSegment, Stmt, Type, Visibility, path_segments_to_string,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, GenericParams, ImportTree, ImportTreeKind, Item,
+    ItemKind, NodeId, Path, PathSegment, Stmt, Type, Visibility, path_segments_to_string,
 };
 use crate::context::Ctx;
 use crate::diag_params;
@@ -337,6 +337,12 @@ impl<'ctx> NodeIdAssigner<'ctx> {
             arg.2 = self.next_node_id();
         }
     }
+
+    fn assign_to_generic_params(&mut self, generic_params: &mut GenericParams) {
+        for param in &mut generic_params.params {
+            param.node_id = self.next_node_id();
+        }
+    }
 }
 
 impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
@@ -356,8 +362,15 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
                 interface.1 = self.next_node_id();
                 self.assign_to_assoc_items(items);
             }
-            ItemKind::Struct { items, .. } => {
+            ItemKind::Struct {
+                items,
+                generic_params,
+                ..
+            } => {
                 self.assign_to_assoc_items(items);
+                if let Some(generic_params) = generic_params {
+                    self.assign_to_generic_params(generic_params);
+                }
             }
             ItemKind::Interface { items, .. } => {
                 self.assign_to_assoc_items(items);
@@ -439,6 +452,7 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                     item.visibility,
                     item.span,
                 );
+
                 for assoc in items {
                     self.register_struct_method(assoc, struct_def_id);
                 }

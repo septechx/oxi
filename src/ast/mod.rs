@@ -377,6 +377,7 @@ pub struct GenericParams {
 #[derive(Debug, Clone)]
 pub struct GenericParam {
     pub name: Ident,
+    pub node_id: NodeId,
 }
 
 pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {

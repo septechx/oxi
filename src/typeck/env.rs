@@ -88,7 +88,7 @@ mod tests {
         let mut env = ScopeEnv::new();
         let id = hir(0, 1);
         env.push();
-        env.insert(id, scheme(Ty::Adt(DefId(7))));
+        env.insert(id, scheme(Ty::Adt(DefId(7), None)));
         env.pop();
         assert!(env.get(&id).is_none());
     }

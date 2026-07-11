@@ -85,6 +85,13 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 
     fn resolve_fn(&mut self, fun: &Fn) {
         self.with_rib(RibKind::Item, |this| {
+            if let Some(generic_params) = &fun.generic_params {
+                for param in &generic_params.params {
+                    let sym = param.name.value;
+                    let rib = this.ribs.last_mut().expect("rib exists");
+                    rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                }
+            }
             for arg in &fun.parameters {
                 arg.1.visit(this);
 
@@ -308,18 +315,41 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
             ItemKind::Fn(fun) => {
                 self.resolve_fn(fun);
             }
-            ItemKind::Struct { fields, items, .. } => {
+            ItemKind::Struct {
+                fields,
+                items,
+                generic_params,
+                ..
+            } => {
                 self.with_rib(RibKind::Item, |this| {
                     this.inject_self_ty(item.node_id);
+                    if let Some(generic_params) = generic_params {
+                        for param in &generic_params.params {
+                            let sym = param.name.value;
+                            let rib = this.ribs.last_mut().expect("rib exists");
+                            rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                        }
+                    }
                     for field in fields {
                         field.1.visit(this);
                     }
                     this.resolve_assoc_items(items);
                 });
             }
-            ItemKind::Interface { items, .. } => {
+            ItemKind::Interface {
+                items,
+                generic_params,
+                ..
+            } => {
                 self.with_rib(RibKind::Item, |this| {
                     this.inject_self_ty(item.node_id);
+                    if let Some(generic_params) = generic_params {
+                        for param in &generic_params.params {
+                            let sym = param.name.value;
+                            let rib = this.ribs.last_mut().expect("rib exists");
+                            rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                        }
+                    }
                     this.resolve_assoc_items(items);
                 });
             }

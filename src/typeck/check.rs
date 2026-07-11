@@ -353,36 +353,38 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn check_path(&mut self, qpath: &QPath) -> Ty {
         match qpath {
             QPath::Resolved(path) => match &path.res {
-                Res::Def(def_id) => match self.item_schemes.get(def_id) {
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    match self.item_schemes.get(def_id) {
+                        Some(scheme) => self.icx.instantiate(scheme),
+                        None => Ty::Error,
+                    }
+                }
+                Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
                     None => Ty::Error,
                 },
-                Res::Local(id) => {
-                    if let Some(scheme) = self.env.get(id) {
-                        self.icx.instantiate(scheme)
-                    } else {
-                        Ty::Error
-                    }
-                }
                 Res::PrimTy(prim) => Ty::Prim(*prim),
-                Res::SelfTyAlias { alias_to } => Ty::Adt(*alias_to),
                 Res::Err => Ty::Error,
             },
             QPath::TypeRelative { .. } => Ty::Error,
         }
     }
 
-    fn qpath_recv_ty(&self, qpath: &QPath) -> Option<Ty> {
+    fn qpath_recv_ty(&mut self, qpath: &QPath) -> Option<Ty> {
         let base = match qpath {
             QPath::Resolved(path) => match &path.res {
-                Res::Def(def_id) => Ty::Adt(*def_id),
-                Res::SelfTyAlias { alias_to } => Ty::Adt(*alias_to),
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    match self.item_schemes.get(def_id) {
+                        Some(scheme) => self.icx.instantiate(scheme),
+                        None => Ty::Error,
+                    }
+                }
                 _ => return None,
             },
             QPath::TypeRelative { qself, .. } => return self.qpath_recv_ty(qself),
         };
         let base = self.icx.resolve(&base);
-        if matches!(base, Ty::Adt(_)) {
+        if matches!(base, Ty::Adt(_, _)) {
             Some(base)
         } else {
             None
@@ -664,7 +666,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
     fn resolve_method(&self, recv_ty: &Ty, member: Symbol) -> Option<(DefId, MethodKind)> {
         let recv_ty = self.icx.resolve(recv_ty);
-        let Ty::Adt(struct_id) = recv_ty else {
+        let Ty::Adt(struct_id, _) = recv_ty else {
             return None;
         };
 
@@ -688,7 +690,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn check_struct_init(&mut self, def: DefId, fields: &ThinVec<(Ident, Expr)>, span: Span) -> Ty {
-        let struct_ty = Ty::Adt(def);
+        // FIXME: Process generic params
+        let struct_ty = Ty::Adt(def, None);
         let field_table = self
             .coherence
             .struct_fields
@@ -928,7 +931,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
         let recv_ty = self.icx.resolve(&recv_ty);
-        if let Ty::Adt(struct_id) = &recv_ty
+        if let Ty::Adt(struct_id, _) = &recv_ty
             && let Some(fields) = self.coherence.struct_fields.get(struct_id)
             && let Some((field_ty, index)) = fields.get(&member)
         {
@@ -937,7 +940,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return field_ty.clone();
         }
         match recv_ty {
-            Ty::Adt(_) => {
+            Ty::Adt(_, _) => {
                 let field = self.ctx.interner.lookup(member).to_string();
                 builders::emit_at(
                     self.ctx,
@@ -955,7 +958,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     .entry(base.hir_id)
                     .or_default()
                     .push(Adjustment::AutoDeref);
-                if let Ty::Adt(struct_id) = inner.as_ref()
+                if let Ty::Adt(struct_id, _) = inner.as_ref()
                     && let Some(fields) = self.coherence.struct_fields.get(struct_id)
                     && let Some((field_ty, index)) = fields.get(&member)
                 {
@@ -963,7 +966,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .insert(hir_id, MemberRes::Field { index: *index });
                     return field_ty.clone();
                 }
-                if let Ty::Adt(_) = inner.as_ref() {
+                if let Ty::Adt(_, _) = inner.as_ref() {
                     let field = self.ctx.interner.lookup(member).to_string();
                     builders::emit_at(
                         self.ctx,
@@ -1088,7 +1091,7 @@ pub(super) fn emit_unify_error(err: &UnifyError, resolver: &ResolverOutputs, ctx
 
 fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> String {
     match ty {
-        Ty::Var(_) => "<var>".to_string(),
+        Ty::Var(id) => format!("Var#{}", id),
         Ty::Prim(p) => p.name_str().to_string(),
         Ty::Ptr(inner, m) => format!(
             "&{}{}",
@@ -1119,15 +1122,48 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 .collect();
             format!("({})", es.join(", "))
         }
-        Ty::Adt(d) => resolver.defs[d.0 as usize]
+        Ty::Adt(d, generics) => resolver.defs[d.0 as usize]
             .name
             .map(|sym| interner.lookup(sym).to_string())
-            .unwrap_or_else(|| format!("Struct#{}", d.0)),
-        Ty::Interface(d) => resolver.defs[d.0 as usize]
+            .unwrap_or_else(|| {
+                format!(
+                    "Struct#{}{}",
+                    d.0,
+                    generics_to_string(generics.as_ref(), resolver, interner)
+                )
+            }),
+        Ty::Interface(d, generics) => resolver.defs[d.0 as usize]
             .name
             .map(|sym| interner.lookup(sym).to_string())
-            .unwrap_or_else(|| format!("Interface#{}", d.0)),
+            .unwrap_or_else(|| {
+                format!(
+                    "Interface#{}{}",
+                    d.0,
+                    generics_to_string(generics.as_ref(), resolver, interner)
+                )
+            }),
         Ty::Never => "!".to_string(),
         Ty::Error => "<error>".to_string(),
     }
+}
+
+fn generics_to_string(
+    generics: Option<&ThinVec<Ty>>,
+    resolver: &ResolverOutputs,
+    interner: &Interner,
+) -> String {
+    if generics.is_none() {
+        return String::new();
+    }
+    let generics = generics.expect("generics exists");
+    let mut s = String::new();
+    s.push('<');
+    for (i, ty_var) in generics.iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        s.push_str(&ty_display(ty_var, resolver, interner));
+    }
+    s.push('>');
+    s
 }

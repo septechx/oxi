@@ -1,6 +1,6 @@
 use thin_vec::ThinVec;
 
-use crate::ast::{self, GenericParams, Ident, NodeId, Visibility};
+use crate::ast::{self, Ident, NodeId, Visibility};
 use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
@@ -174,12 +174,27 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         def_id: DefId,
         name: &'a Ident,
         items: &'a ThinVec<ast::AssocItem>,
-        generic_params: Option<&GenericParams>,
+        generic_params: Option<&ast::GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
+
+        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
+            params
+                .iter()
+                .map(|ast::GenericParam { name, node_id }| {
+                    let param_hir_id = self.next_hir_id();
+                    self.register_local(*node_id, param_hir_id);
+                    GenericParam {
+                        hir_id: param_hir_id,
+                        name: name.value,
+                        span: name.span,
+                    }
+                })
+                .collect()
+        });
 
         let items: ThinVec<DefId> = items
             .iter()
@@ -201,7 +216,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Interface {
                             name: name.value,
-                            generic_params: generic_params.cloned(),
+                            generic_params,
                             items,
                         },
                         span,
@@ -220,12 +235,27 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         name: &'a Ident,
         fields: &'a ThinVec<(Ident, ast::Type, Visibility)>,
         items: &'a ThinVec<ast::AssocItem>,
-        generic_params: Option<&GenericParams>,
+        generic_params: Option<&ast::GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
+
+        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
+            params
+                .iter()
+                .map(|ast::GenericParam { name, node_id }| {
+                    let param_hir_id = self.next_hir_id();
+                    self.register_local(*node_id, param_hir_id);
+                    GenericParam {
+                        hir_id: param_hir_id,
+                        name: name.value,
+                        span: name.span,
+                    }
+                })
+                .collect()
+        });
 
         let fields: ThinVec<StructField> = fields
             .iter()
@@ -256,7 +286,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Struct {
                             name: name.value,
-                            generic_params: generic_params.cloned(),
+                            generic_params,
                             fields,
                             items,
                         },
@@ -324,6 +354,24 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
 
+        let generic_params =
+            f.generic_params
+                .as_ref()
+                .map(|ast::GenericParams { params, .. }| {
+                    params
+                        .iter()
+                        .map(|ast::GenericParam { name, node_id }| {
+                            let param_hir_id = self.next_hir_id();
+                            self.register_local(*node_id, param_hir_id);
+                            GenericParam {
+                                hir_id: param_hir_id,
+                                name: name.value,
+                                span: name.span,
+                            }
+                        })
+                        .collect()
+                });
+
         let params: ThinVec<Param> = f
             .parameters
             .iter()
@@ -353,7 +401,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 is_extern: f.is_extern,
             },
             decl: FnDecl { params, ret },
-            generic_params: f.generic_params.clone(),
+            generic_params,
             body_id,
         };
 

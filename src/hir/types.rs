@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use thin_vec::ThinVec;
 
-use crate::ast::{self, GenericParams, Ident, Literal, Mutability, Visibility};
+use crate::ast::{self, Ident, Literal, Mutability, Visibility};
 use crate::context::Ctx;
 use crate::hir::owner::HirId;
 use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
@@ -75,6 +75,8 @@ pub enum Node {
     Param(Box<Param>),
     /// A local variable binding
     Local(Box<Local>),
+    /// A generic type parameter
+    GenericParam(Box<GenericParam>),
     /// The crate root
     Crate,
     Err(Span),
@@ -91,6 +93,7 @@ impl Node {
             Node::Block(block) => Some(block.span),
             Node::Param(param) => Some(param.span),
             Node::Local(local) => Some(local.span),
+            Node::GenericParam(param) => Some(param.span),
             Node::Crate => None,
             Node::Err(span) => Some(*span),
         }
@@ -136,12 +139,12 @@ pub enum ItemKind {
         name: Symbol,
         fields: ThinVec<StructField>,
         items: ThinVec<DefId>,
-        generic_params: Option<GenericParams>,
+        generic_params: Option<ThinVec<GenericParam>>,
     },
     Interface {
         name: Symbol,
         items: ThinVec<DefId>,
-        generic_params: Option<GenericParams>,
+        generic_params: Option<ThinVec<GenericParam>>,
     },
     Impl {
         self_ty: Path,
@@ -195,7 +198,7 @@ pub struct FnSig {
 pub struct Fn {
     pub sig: FnSig,
     pub decl: FnDecl,
-    pub generic_params: Option<GenericParams>,
+    pub generic_params: Option<ThinVec<GenericParam>>,
     pub body_id: Option<BodyId>,
 }
 
@@ -204,6 +207,13 @@ pub struct Param {
     pub hir_id: HirId,
     pub name: Symbol,
     pub ty: Ty,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub hir_id: HirId,
+    pub name: Symbol,
     pub span: Span,
 }
 
@@ -369,6 +379,7 @@ impl Ty {
             TyKind::Error => String::new(),
             TyKind::PrimTy(prim_ty) => prim_ty.name_str().to_string(),
             TyKind::Path(path) => path.display(ctx),
+            TyKind::GenericParam(_, name) => ctx.interner.lookup(*name).to_string(),
             TyKind::Ptr(ty, mutability) => {
                 format!(
                     "&{} {}",
@@ -411,6 +422,8 @@ pub enum TyKind {
     PrimTy(PrimTy),
     /// A named type
     Path(QPath),
+    /// A generic type parameter
+    GenericParam(HirId, Symbol),
     /// Pointer type: &T or &mut T
     Ptr(Box<Ty>, Mutability),
     /// Slice type: [T]

@@ -14,8 +14,8 @@ pub enum Ty {
     Array(Box<Ty>, usize),
     Fn { params: ThinVec<Ty>, ret: Box<Ty> },
     Tuple(ThinVec<Ty>),
-    Adt(DefId),
-    Interface(DefId),
+    Adt(DefId, Option<ThinVec<Ty>>),
+    Interface(DefId, Option<ThinVec<Ty>>),
     Never,
     Error,
 }
@@ -48,17 +48,39 @@ impl Ty {
                     Res::Def(def_id) => {
                         // We don't know if it's a struct or interface. Tag it as Adt
                         // and fix it downstream
-                        Ty::Adt(def_id)
+                        let generic_params = path
+                            .segments
+                            .last()
+                            .expect("path has segments")
+                            .generic_params
+                            .as_ref()
+                            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect());
+                        Ty::Adt(def_id, generic_params)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
                     Res::SelfTyAlias { alias_to } => {
                         // Same as Res::Def
-                        Ty::Adt(alias_to)
+                        let generic_params = path
+                            .segments
+                            .last()
+                            .expect("path has segments")
+                            .generic_params
+                            .as_ref()
+                            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect());
+                        Ty::Adt(alias_to, generic_params)
+                    }
+                    Res::GenericParam(hir_id) => {
+                        let ty_var = icx.hir_id_to_ty_var.get(&hir_id).expect("hir id exists");
+                        Ty::Var(*ty_var)
                     }
                     Res::Local(_) | Res::Err => Ty::Error,
                 },
                 QPath::TypeRelative { .. } => Ty::Error,
             },
+            TyKind::GenericParam(hir_id, _) => {
+                let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
+                Ty::Var(*ty_var)
+            }
         }
     }
 

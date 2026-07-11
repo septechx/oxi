@@ -646,12 +646,20 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
         hir::TyKind::Tuple(elements) => Ty::Tuple(elements.iter().map(hir_ty_to_ty).collect()),
         hir::TyKind::Path(qpath) => match qpath {
             QPath::Resolved(path) => match &path.res {
-                Res::Def(def_id) => Ty::Adt(*def_id),
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    let generics = path
+                        .segments
+                        .last()
+                        .and_then(|seg| seg.generic_params.as_ref())
+                        .as_ref()
+                        .map(|args| args.iter().map(|arg| hir_ty_to_ty(arg)).collect());
+                    Ty::Adt(*def_id, generics)
+                }
                 Res::PrimTy(prim) => Ty::Prim(*prim),
-                Res::SelfTyAlias { alias_to } => Ty::Adt(*alias_to),
                 _ => Ty::Error,
             },
             QPath::TypeRelative { .. } => Ty::Error,
         },
+        hir::TyKind::GenericParam(_, _) => todo!("Type checker should probably do this"),
     }
 }

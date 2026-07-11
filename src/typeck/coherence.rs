@@ -181,9 +181,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
 fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {
     match ty {
-        Ty::Var(_) | Ty::Prim(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
-        Ty::Adt(d) if *d == from => Ty::Adt(to),
-        Ty::Adt(d) => Ty::Adt(*d),
+        Ty::Var(_) | Ty::Prim(_) | Ty::Interface(_, _) | Ty::Never | Ty::Error => ty.clone(),
+        Ty::Adt(d, generics) if *d == from => Ty::Adt(to, generics.clone()),
+        Ty::Adt(d, generics) => Ty::Adt(*d, generics.clone()),
         Ty::Ptr(inner, m) => Ty::Ptr(substitute_self(inner, from, to).into_box(), *m),
         Ty::Slice(inner) => Ty::Slice(substitute_self(inner, from, to).into_box()),
         Ty::Array(inner, n) => Ty::Array(substitute_self(inner, from, to).into_box(), *n),
