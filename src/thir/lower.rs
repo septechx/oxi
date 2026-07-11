@@ -24,7 +24,7 @@ pub fn lower_body(
         lowerer.locals.insert(param.hir_id, local_var);
         lowerer.params.push(Param {
             name: param.name,
-            ty: hir_ty_to_ty(&param.ty),
+            ty: hir_ty_to_ty(&param.ty, &typeck.node_types),
             hir_id: param.hir_id,
             local_var,
         });
@@ -222,7 +222,7 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let source = self.lower_expr(expr);
-        let target_ty = hir_ty_to_ty(target);
+        let target_ty = hir_ty_to_ty(target, &self.typeck.node_types);
         self.alloc_expr(
             ExprKind::Cast {
                 source,
@@ -344,7 +344,7 @@ impl<'a> ThirLowerer<'a> {
                             .cloned()
                             .unwrap_or(Ty::Error)
                     } else {
-                        hir_ty_to_ty(ty)
+                        hir_ty_to_ty(ty, &self.typeck.node_types)
                     };
                     let remainder_scope = self
                         .scope_tree
@@ -631,19 +631,26 @@ impl<'a> ThirLowerer<'a> {
     }
 }
 
-fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
+fn hir_ty_to_ty(hir_ty: &hir::Ty, node_types: &FxHashMap<HirId, Ty>) -> Ty {
     match &hir_ty.kind {
         hir::TyKind::Error | hir::TyKind::Infer => Ty::Error,
         hir::TyKind::Never => Ty::Never,
         hir::TyKind::PrimTy(prim) => Ty::Prim(*prim),
-        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner).into_box(), *m),
-        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner).into_box()),
-        hir::TyKind::Array(inner, size) => Ty::Array(hir_ty_to_ty(inner).into_box(), *size),
+        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner, node_types).into_box(), *m),
+        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner, node_types).into_box()),
+        hir::TyKind::Array(inner, size) => {
+            Ty::Array(hir_ty_to_ty(inner, node_types).into_box(), *size)
+        }
         hir::TyKind::Fn { params, ret } => Ty::Fn {
-            params: params.iter().map(hir_ty_to_ty).collect(),
-            ret: hir_ty_to_ty(ret).into_box(),
+            params: params.iter().map(|p| hir_ty_to_ty(p, node_types)).collect(),
+            ret: hir_ty_to_ty(ret, node_types).into_box(),
         },
-        hir::TyKind::Tuple(elements) => Ty::Tuple(elements.iter().map(hir_ty_to_ty).collect()),
+        hir::TyKind::Tuple(elements) => Ty::Tuple(
+            elements
+                .iter()
+                .map(|e| hir_ty_to_ty(e, node_types))
+                .collect(),
+        ),
         hir::TyKind::Path(qpath) => match qpath {
             QPath::Resolved(path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
@@ -652,7 +659,11 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
                         .last()
                         .and_then(|seg| seg.generic_params.as_ref())
                         .as_ref()
-                        .map(|args| args.iter().map(hir_ty_to_ty).collect());
+                        .map(|args| {
+                            args.iter()
+                                .map(|arg| hir_ty_to_ty(arg, node_types))
+                                .collect()
+                        });
                     Ty::Adt(*def_id, generics)
                 }
                 Res::PrimTy(prim) => Ty::Prim(*prim),
@@ -660,9 +671,8 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
             },
             QPath::TypeRelative { .. } => Ty::Error,
         },
-        hir::TyKind::GenericParam(_, _) => {
-            // FIXME: This shouldn't be an error
-            Ty::Error
+        hir::TyKind::GenericParam(hir_id, _) => {
+            node_types.get(hir_id).cloned().unwrap_or(Ty::Error)
         }
     }
 }

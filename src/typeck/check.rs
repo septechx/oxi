@@ -199,6 +199,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
         let expected = Ty::from_hir(self.icx, ty);
+        self.node_types.insert(ty.hir_id, expected.clone());
         let body_ty = self.check_expr(&body.value);
         if let Err(err) = unify(
             self.icx,
@@ -215,11 +216,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         self.env.push();
         for param in &decl.params {
             let param_ty = Ty::from_hir(self.icx, &param.ty);
+            self.node_types.insert(param.ty.hir_id, param_ty.clone());
             let scheme = Scheme::monomorphic(param_ty);
             self.local_schemes.insert(param.hir_id, scheme.clone());
             self.env.insert(param.hir_id, scheme);
         }
         let expected = Ty::from_hir(self.icx, &decl.ret);
+        self.node_types.insert(decl.ret.hir_id, expected.clone());
         self.check_expr(&body.value);
         self.check_return_values(&body.value, &expected, body.value.span);
         if let Some(body_ty) = self.node_types.get(&body.value.hir_id).cloned()
@@ -357,7 +360,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Index { base, index } => self.check_index(base, index, expr_span, hir_id),
             ExprKind::As { expr, ty } => {
                 self.check_expr(expr);
-                Ty::from_hir(self.icx, ty)
+                let target_ty = Ty::from_hir(self.icx, ty);
+                self.node_types.insert(ty.hir_id, target_ty.clone());
+                target_ty
             }
             ExprKind::MethodCall { .. } | ExprKind::Field { .. } => {
                 // MethodCall and Field cannot exist yet
@@ -425,8 +430,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for &v in &scheme.vars {
             mapping.insert(v, self.icx.next_ty_var());
         }
-        for (arg_ty, &v) in explicit_args.iter().zip(&scheme.vars) {
-            let arg_ty = Ty::from_hir(self.icx, arg_ty);
+        for (hir_arg_ty, &v) in explicit_args.iter().zip(&scheme.vars) {
+            let arg_ty = Ty::from_hir(self.icx, hir_arg_ty);
+            self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
             unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id).or_push_err(self.icx);
         }
@@ -776,7 +782,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         if let Some(generic_args) = generic_args {
             let args: ThinVec<Ty> = generic_args
                 .iter()
-                .map(|arg| Ty::from_hir(self.icx, arg))
+                .map(|arg| {
+                    let arg_ty = Ty::from_hir(self.icx, arg);
+                    self.node_types.insert(arg.hir_id, arg_ty.clone());
+                    arg_ty
+                })
                 .collect();
             if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
                 if args.len() != param_hir_ids.len() {
@@ -922,7 +932,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for stmt in &block.stmts {
             if diverged {
                 match &stmt.kind {
-                    StmtKind::Let { init, .. } => {
+                    StmtKind::Let {
+                        ty: hir_ty, init, ..
+                    } => {
+                        let ty = Ty::from_hir(self.icx, hir_ty);
+                        self.node_types.insert(hir_ty.hir_id, ty);
                         if let Some(init) = init {
                             self.check_expr(init);
                         }
@@ -935,9 +949,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             match &stmt.kind {
                 StmtKind::Let {
-                    ty, init, local, ..
+                    ty: hir_ty,
+                    init,
+                    local,
+                    ..
                 } => {
-                    let ty = Ty::from_hir(self.icx, ty);
+                    let ty = Ty::from_hir(self.icx, hir_ty);
+                    self.node_types.insert(hir_ty.hir_id, ty.clone());
                     self.icx.push_level();
                     let init_span = init.as_ref().map(|e| e.span).unwrap_or(stmt.span);
                     let bound = init
