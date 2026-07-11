@@ -3,8 +3,9 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{
-        AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
-        Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
+        AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, GenericParam, GenericParams, Ident,
+        ImportTree, ImportTreeKind, Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type,
+        TypeKind, Visibility,
     },
     diag_params,
     errors::builders,
@@ -101,6 +102,12 @@ pub fn parse_struct_decl_item(
     let mut fields: ThinVec<(Ident, Type, Visibility)> = ThinVec::new();
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     let name = parser.expect_identifier()?;
+
+    let generic_params = if parser.current_token().kind == TokenKind::Less {
+        Some(parse_generic_params(parser)?)
+    } else {
+        None
+    };
 
     parser.expect(TokenKind::OpenCurly)?;
 
@@ -207,7 +214,7 @@ pub fn parse_struct_decl_item(
             name,
             fields,
             items,
-            generic_params: None,
+            generic_params,
         },
         node_id: NodeId::default(),
         attributes,
@@ -223,6 +230,12 @@ pub fn parse_interface_decl_item(
 ) -> Result<Item> {
     let interface_token = parser.expect(TokenKind::Interface)?;
     let name = parser.expect_identifier()?;
+
+    let generic_params = if parser.current_token().kind == TokenKind::Less {
+        Some(parse_generic_params(parser)?)
+    } else {
+        None
+    };
 
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     parser.expect(TokenKind::OpenCurly)?;
@@ -276,7 +289,7 @@ pub fn parse_interface_decl_item(
         kind: ItemKind::Interface {
             items,
             name,
-            generic_params: None,
+            generic_params,
         },
         node_id: NodeId::default(),
         attributes,
@@ -300,6 +313,12 @@ pub fn parse_fn_decl_item(
     }
 
     let name = parser.expect_identifier()?;
+
+    let generic_params = if parser.current_token().kind == TokenKind::Less {
+        Some(parse_generic_params(parser)?)
+    } else {
+        None
+    };
 
     parser.expect(TokenKind::OpenParen)?;
     let mut parameters: ThinVec<(Ident, Type, NodeId)> = ThinVec::new();
@@ -371,7 +390,7 @@ pub fn parse_fn_decl_item(
             name,
             return_type,
             is_extern: extern_mod.is_some(),
-            generic_params: None,
+            generic_params,
         }),
         node_id: NodeId::default(),
         attributes,
@@ -642,5 +661,26 @@ fn parse_expr_stmt(parser: &mut Parser) -> Result<Stmt> {
         kind,
         span,
         node_id: NodeId::default(),
+    })
+}
+
+fn parse_generic_params(parser: &mut Parser) -> Result<GenericParams> {
+    let start_span = parser.expect(TokenKind::Less)?.span;
+    let mut params = ThinVec::new();
+    loop {
+        if parser.current_token().kind == TokenKind::More {
+            break;
+        }
+        params.push(GenericParam {
+            name: parser.expect_identifier()?,
+        });
+        if parser.current_token().kind == TokenKind::Comma {
+            parser.advance();
+        }
+    }
+    let end_span = parser.expect(TokenKind::More)?.span;
+    Ok(GenericParams {
+        params,
+        span: Span::new(start_span.start(), end_span.end()),
     })
 }
