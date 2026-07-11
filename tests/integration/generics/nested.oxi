@@ -1,0 +1,14 @@
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+struct Wrapper<T> {
+    inner: T
+}
+
+fn main() void {
+    let w: Wrapper::<Pair::<i32, bool, void> > = Wrapper {
+        inner: Pair { first: 1, second: true }
+    };
+}

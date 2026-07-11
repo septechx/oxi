@@ -370,13 +370,22 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
                 self.resolve_path(&interface.0, interface.1);
 
-                if let Some(Res::Def(struct_def_id)) = self_ty_res.full_res() {
-                    self.register_impl_methods(struct_def_id, items);
-                    self.with_rib(RibKind::Item, |this| {
-                        this.inject_self_ty_from_def_id(struct_def_id);
-                        this.resolve_assoc_items(items);
-                    });
-                }
+                self.with_rib(RibKind::Item, |this| {
+                    let self_sym = this.resolver.ctx.interner.intern("Self");
+                    let rib = this.ribs.last_mut().expect("rib exists");
+                    match self_ty_res.full_res() {
+                        Some(Res::Def(def_id)) => {
+                            rib.bindings
+                                .insert(self_sym, Res::SelfTyAlias { alias_to: def_id });
+                            this.register_impl_methods(def_id, items);
+                        }
+                        Some(res) => {
+                            rib.bindings.insert(self_sym, res);
+                        }
+                        None => {}
+                    }
+                    this.resolve_assoc_items(items);
+                });
             }
         }
 

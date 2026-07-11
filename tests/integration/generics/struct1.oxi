@@ -1,0 +1,7 @@
+struct Foo<T> { 
+    val: T,
+}
+
+fn main() void {
+    let x: Foo::<i32> = Foo { val: 42 };
+}

@@ -1246,26 +1246,28 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 .collect();
             format!("({})", es.join(", "))
         }
-        Ty::Adt(d, generics) => resolver.defs[d.0 as usize]
-            .name
-            .map(|sym| interner.lookup(sym).to_string())
-            .unwrap_or_else(|| {
-                format!(
-                    "Struct#{}{}",
-                    d.0,
-                    generics_to_string(generics.as_ref(), resolver, interner)
-                )
-            }),
-        Ty::Interface(d, generics) => resolver.defs[d.0 as usize]
-            .name
-            .map(|sym| interner.lookup(sym).to_string())
-            .unwrap_or_else(|| {
-                format!(
-                    "Interface#{}{}",
-                    d.0,
-                    generics_to_string(generics.as_ref(), resolver, interner)
-                )
-            }),
+        Ty::Adt(d, generics) => {
+            let name = resolver.defs[d.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Struct#{}", d.0));
+            format!(
+                "{}{}",
+                name,
+                generics_to_string(generics.as_ref(), resolver, interner)
+            )
+        }
+        Ty::Interface(d, generics) => {
+            let name = resolver.defs[d.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Interface#{}", d.0));
+            format!(
+                "{}{}",
+                name,
+                generics_to_string(generics.as_ref(), resolver, interner)
+            )
+        }
         Ty::Never => "!".to_string(),
         Ty::Error => "<error>".to_string(),
     }
@@ -1281,7 +1283,7 @@ fn generics_to_string(
     }
     let generics = generics.expect("generics exists");
     let mut s = String::new();
-    s.push('<');
+    s.push_str("::<");
     for (i, ty_var) in generics.iter().enumerate() {
         if i > 0 {
             s.push_str(", ");
