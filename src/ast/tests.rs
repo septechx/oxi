@@ -14,14 +14,14 @@ use crate::{
 use thin_vec::{ThinVec, thin_vec};
 
 // Since this is only used for testing, using a string instead of an enum is fine.
-pub struct NodeCounterVisitor {
-    item_counts: FxHashMap<&'static str, usize>,
-    stmt_counts: FxHashMap<&'static str, usize>,
-    expr_counts: FxHashMap<&'static str, usize>,
-    type_counts: FxHashMap<&'static str, usize>,
+pub struct NodeCounts {
+    pub item_counts: FxHashMap<&'static str, usize>,
+    pub stmt_counts: FxHashMap<&'static str, usize>,
+    pub expr_counts: FxHashMap<&'static str, usize>,
+    pub type_counts: FxHashMap<&'static str, usize>,
 }
 
-impl NodeCounterVisitor {
+impl NodeCounts {
     pub fn new() -> Self {
         Self {
             item_counts: FxHashMap::default(),
@@ -29,6 +29,48 @@ impl NodeCounterVisitor {
             expr_counts: FxHashMap::default(),
             type_counts: FxHashMap::default(),
         }
+    }
+
+    pub fn record_item(&mut self, item: &Item) {
+        *self.item_counts.entry("Item").or_insert(0) += 1;
+
+        let kind_name = match &item.kind {
+            ItemKind::Const { .. } => "ConstItem",
+            ItemKind::Struct { .. } => "StructDeclItem",
+            ItemKind::Interface { .. } => "InterfaceDeclItem",
+            ItemKind::Impl { .. } => "ImplItem",
+            ItemKind::Fn(_) => "FnDeclItem",
+            ItemKind::Import(_) => "ImportItem",
+            ItemKind::Module { .. } => "ModuleItem",
+        };
+        *self.item_counts.entry(kind_name).or_insert(0) += 1;
+    }
+
+    pub fn record_stmt(&mut self, stmt: &Stmt) {
+        *self.stmt_counts.entry("Stmt").or_insert(0) += 1;
+
+        let kind_name = match &stmt.kind {
+            StmtKind::Expr(_) => "ExprStmt",
+            StmtKind::Let { .. } => "LetStmt",
+            StmtKind::Semi(_) => "SemiStmt",
+        };
+        *self.stmt_counts.entry(kind_name).or_insert(0) += 1;
+    }
+
+    pub fn record_type(&mut self, ty: &Type) {
+        *self.type_counts.entry("Type").or_insert(0) += 1;
+
+        let kind_name = match &ty.kind {
+            TypeKind::Symbol(_) => "SymbolType",
+            TypeKind::Pointer(..) => "PointerType",
+            TypeKind::Slice(_) => "SliceType",
+            TypeKind::FixedArray(..) => "FixedArrayType",
+            TypeKind::Function { .. } => "FunctionType",
+            TypeKind::Tuple(_) => "TupleType",
+            TypeKind::Infer => "Infer",
+            TypeKind::Never => "Never",
+        };
+        *self.type_counts.entry(kind_name).or_insert(0) += 1;
     }
 
     pub fn assert_visited(&self, category: &str, name: &str, count: usize) {
@@ -77,43 +119,48 @@ impl NodeCounterVisitor {
     }
 }
 
+pub struct NodeCounterVisitor {
+    counts: NodeCounts,
+}
+
+impl NodeCounterVisitor {
+    pub fn new() -> Self {
+        Self {
+            counts: NodeCounts::new(),
+        }
+    }
+
+    pub fn assert_visited(&self, category: &str, name: &str, count: usize) {
+        self.counts.assert_visited(category, name, count);
+    }
+
+    pub fn assert_all_visited(&self, expectations: &[(&'static str, &'static str, usize)]) {
+        self.counts.assert_all_visited(expectations);
+    }
+
+    #[allow(dead_code)]
+    pub fn report(&self) {
+        self.counts.report();
+    }
+}
+
 impl Visitor for NodeCounterVisitor {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
-        *self.item_counts.entry("Item").or_insert(0) += 1;
-
-        let kind_name = match &item.kind {
-            ItemKind::Const { .. } => "ConstItem",
-            ItemKind::Struct { .. } => "StructDeclItem",
-            ItemKind::Interface { .. } => "InterfaceDeclItem",
-            ItemKind::Impl { .. } => "ImplItem",
-            ItemKind::Fn(_) => "FnDeclItem",
-            ItemKind::Import(_) => "ImportItem",
-            ItemKind::Module { .. } => "ModuleItem",
-        };
-        *self.item_counts.entry(kind_name).or_insert(0) += 1;
-
+        self.counts.record_item(item);
         VisitAction::Continue
     }
 
     fn visit_stmt(&mut self, stmt: &Stmt) -> VisitAction {
-        *self.stmt_counts.entry("Stmt").or_insert(0) += 1;
-
-        let kind_name = match &stmt.kind {
-            StmtKind::Expr(_) => "ExprStmt",
-            StmtKind::Let { .. } => "LetStmt",
-            StmtKind::Semi(_) => "SemiStmt",
-        };
-        *self.stmt_counts.entry(kind_name).or_insert(0) += 1;
-
+        self.counts.record_stmt(stmt);
         VisitAction::Continue
     }
 
     fn visit_expr(&mut self, expr: &Expr) -> VisitAction {
-        *self.expr_counts.entry("Expr").or_insert(0) += 1;
+        *self.counts.expr_counts.entry("Expr").or_insert(0) += 1;
 
         let kind_name = match &expr.kind {
             ExprKind::Literal(l) => {
-                *self.expr_counts.entry("Literal").or_insert(0) += 1;
+                *self.counts.expr_counts.entry("Literal").or_insert(0) += 1;
                 match l {
                     Literal::Integer(_) | Literal::Float(_) => "NumberExpr",
                     Literal::String(_) => "StringExpr",
@@ -142,26 +189,13 @@ impl Visitor for NodeCounterVisitor {
             ExprKind::Range { .. } => "RangeExpr",
             ExprKind::Index { .. } => "IndexExpr",
         };
-        *self.expr_counts.entry(kind_name).or_insert(0) += 1;
+        *self.counts.expr_counts.entry(kind_name).or_insert(0) += 1;
 
         VisitAction::Continue
     }
 
     fn visit_type(&mut self, ty: &Type) -> VisitAction {
-        *self.type_counts.entry("Type").or_insert(0) += 1;
-
-        let kind_name = match &ty.kind {
-            TypeKind::Symbol(_) => "SymbolType",
-            TypeKind::Pointer(..) => "PointerType",
-            TypeKind::Slice(_) => "SliceType",
-            TypeKind::FixedArray(..) => "FixedArrayType",
-            TypeKind::Function { .. } => "FunctionType",
-            TypeKind::Tuple(_) => "TupleType",
-            TypeKind::Infer => "Infer",
-            TypeKind::Never => "Never",
-        };
-        *self.type_counts.entry(kind_name).or_insert(0) += 1;
-
+        self.counts.record_type(ty);
         VisitAction::Continue
     }
 }
@@ -1349,71 +1383,36 @@ fn test_impl_item() {
 // --- Mutable visitor regression tests ---
 
 pub struct MutationVisitor {
-    item_counts: FxHashMap<&'static str, usize>,
-    stmt_counts: FxHashMap<&'static str, usize>,
-    expr_counts: FxHashMap<&'static str, usize>,
-    type_counts: FxHashMap<&'static str, usize>,
-    seen_integers: Vec<i64>,
+    counts: NodeCounts,
+    pub seen_integers: Vec<i64>,
 }
 
 impl MutationVisitor {
     pub fn new() -> Self {
         Self {
-            item_counts: FxHashMap::default(),
-            stmt_counts: FxHashMap::default(),
-            expr_counts: FxHashMap::default(),
-            type_counts: FxHashMap::default(),
+            counts: NodeCounts::new(),
             seen_integers: Vec::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn assert_visited(&self, category: &str, name: &str, count: usize) {
-        let counts = match category {
-            "item" => &self.item_counts,
-            "stmt" => &self.stmt_counts,
-            "expr" => &self.expr_counts,
-            "type" => &self.type_counts,
-            _ => panic!("Invalid category: {}", category),
-        };
-        let actual = counts.get(name).copied().unwrap_or(0);
-        assert_eq!(
-            actual, count,
-            "Expected {} {} visits, got {}",
-            count, name, actual
-        );
+        self.counts.assert_visited(category, name, count);
     }
 
     pub fn assert_all_visited(&self, expectations: &[(&'static str, &'static str, usize)]) {
-        for &(category, name, count) in expectations {
-            self.assert_visited(category, name, count);
-        }
+        self.counts.assert_all_visited(expectations);
     }
 }
 
 impl VisitorMut for MutationVisitor {
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
-        *self.item_counts.entry("Item").or_insert(0) += 1;
-        let kind_name = match &item.kind {
-            ItemKind::Const { .. } => "ConstItem",
-            ItemKind::Struct { .. } => "StructDeclItem",
-            ItemKind::Interface { .. } => "InterfaceDeclItem",
-            ItemKind::Impl { .. } => "ImplItem",
-            ItemKind::Fn(_) => "FnDeclItem",
-            ItemKind::Import(_) => "ImportItem",
-            ItemKind::Module { .. } => "ModuleItem",
-        };
-        *self.item_counts.entry(kind_name).or_insert(0) += 1;
+        self.counts.record_item(item);
         VisitAction::Continue
     }
 
     fn visit_stmt(&mut self, stmt: &mut Stmt) -> VisitAction {
-        *self.stmt_counts.entry("Stmt").or_insert(0) += 1;
-        let kind_name = match &stmt.kind {
-            StmtKind::Expr(_) => "ExprStmt",
-            StmtKind::Let { .. } => "LetStmt",
-            StmtKind::Semi(_) => "SemiStmt",
-        };
-        *self.stmt_counts.entry(kind_name).or_insert(0) += 1;
+        self.counts.record_stmt(stmt);
         VisitAction::Continue
     }
 
@@ -1422,10 +1421,10 @@ impl VisitorMut for MutationVisitor {
             self.seen_integers.push(*val);
         }
 
-        *self.expr_counts.entry("Expr").or_insert(0) += 1;
+        *self.counts.expr_counts.entry("Expr").or_insert(0) += 1;
         let kind_name = match &expr.kind {
             ExprKind::Literal(l) => {
-                *self.expr_counts.entry("Literal").or_insert(0) += 1;
+                *self.counts.expr_counts.entry("Literal").or_insert(0) += 1;
                 match l {
                     Literal::Integer(_) | Literal::Float(_) => "NumberExpr",
                     Literal::String(_) => "StringExpr",
@@ -1454,7 +1453,7 @@ impl VisitorMut for MutationVisitor {
             ExprKind::Range { .. } => "RangeExpr",
             ExprKind::Index { .. } => "IndexExpr",
         };
-        *self.expr_counts.entry(kind_name).or_insert(0) += 1;
+        *self.counts.expr_counts.entry(kind_name).or_insert(0) += 1;
 
         if let ExprKind::Literal(Literal::Integer(val)) = &mut expr.kind {
             *val += 1;
@@ -1464,18 +1463,7 @@ impl VisitorMut for MutationVisitor {
     }
 
     fn visit_type(&mut self, ty: &mut Type) -> VisitAction {
-        *self.type_counts.entry("Type").or_insert(0) += 1;
-        let kind_name = match &ty.kind {
-            TypeKind::Symbol(_) => "SymbolType",
-            TypeKind::Pointer(..) => "PointerType",
-            TypeKind::Slice(_) => "SliceType",
-            TypeKind::FixedArray(..) => "FixedArrayType",
-            TypeKind::Function { .. } => "FunctionType",
-            TypeKind::Tuple(_) => "TupleType",
-            TypeKind::Infer => "Infer",
-            TypeKind::Never => "Never",
-        };
-        *self.type_counts.entry(kind_name).or_insert(0) += 1;
+        self.counts.record_type(ty);
         VisitAction::Continue
     }
 }
