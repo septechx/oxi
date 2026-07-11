@@ -15,12 +15,12 @@ parking_lot = "0.12.5"
 rand = "0.8.6"
 thin-vec = "0.2.18"
 
-oxic_diag = { path = "crates/oxic_diag" }
+oxic_diag = { path = "crates/oxic_diag", features = ["nightly"] }
 
 [dev-dependencies]
 cargo-husky = { version = "1.5.0", default-features = false, features = ["user-hooks"] }
 
-oxic_test = { path = "crates/oxic_test" }
+oxic_test = { path = "crates/oxic_test", features = ["nightly"] }
 
 [build-dependencies]
 cc = "1.2.65"

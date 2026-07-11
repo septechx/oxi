@@ -11,3 +11,6 @@ syn = { version = "2.0.18", features = ["full"] }
 quote = "1.0.46"
 proc-macro2 = "1.0.106"
 anyhow = "1.0.103"
+
+[features]
+nightly = []

@@ -1,5 +1,3 @@
-use std::assert_matches;
-
 use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
@@ -273,10 +271,10 @@ impl<'a> ThirLowerer<'a> {
         let cond_id = self.lower_expr(cond);
         let then_id = self.lower_block_expr(then_branch);
         let else_id = else_branch.map(|expr| {
-            assert_matches!(
+            assert!(matches!(
                 expr.kind,
                 hir::ExprKind::Block(_) | hir::ExprKind::If { .. }
-            );
+            ));
             self.lower_expr(expr)
         });
         self.alloc_expr(
