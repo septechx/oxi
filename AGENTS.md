@@ -37,10 +37,32 @@ fn identity<T>(x: T) T {
     x
 }
 
-pub fn main() {
+pub fn main() void {
     let x = identity::<usize>(42);
     let data = identity(Foo { data: 42 });
     let foo: Foo::<Foo::<usize> > = Foo::<Foo::<usize> > { data };
+}
+```
+
+## Methods
+
+```text
+struct Foo {
+    data: u32,
+
+    fn add_one(self: &mut Self) void {
+        self.data += 1;
+    }
+}
+
+interface AddTwo {
+    fn add_two(self: &mut Self) void;
+}
+
+impl AddTwo for Foo {
+    fn add_two(self: &mut Self) void {
+        self.data += 2;
+    }
 }
 ```
 
