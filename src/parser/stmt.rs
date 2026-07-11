@@ -103,11 +103,7 @@ pub fn parse_struct_decl_item(
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     let name = parser.expect_identifier()?;
 
-    let generic_params = if parser.current_token().kind == TokenKind::Less {
-        Some(parse_generic_params(parser)?)
-    } else {
-        None
-    };
+    let generic_params = parse_optional_generic_params(parser)?;
 
     parser.expect(TokenKind::OpenCurly)?;
 
@@ -231,11 +227,7 @@ pub fn parse_interface_decl_item(
     let interface_token = parser.expect(TokenKind::Interface)?;
     let name = parser.expect_identifier()?;
 
-    let generic_params = if parser.current_token().kind == TokenKind::Less {
-        Some(parse_generic_params(parser)?)
-    } else {
-        None
-    };
+    let generic_params = parse_optional_generic_params(parser)?;
 
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     parser.expect(TokenKind::OpenCurly)?;
@@ -314,11 +306,7 @@ pub fn parse_fn_decl_item(
 
     let name = parser.expect_identifier()?;
 
-    let generic_params = if parser.current_token().kind == TokenKind::Less {
-        Some(parse_generic_params(parser)?)
-    } else {
-        None
-    };
+    let generic_params = parse_optional_generic_params(parser)?;
 
     parser.expect(TokenKind::OpenParen)?;
     let mut parameters: ThinVec<(Ident, Type, NodeId)> = ThinVec::new();
@@ -664,24 +652,28 @@ fn parse_expr_stmt(parser: &mut Parser) -> Result<Stmt> {
     })
 }
 
-fn parse_generic_params(parser: &mut Parser) -> Result<GenericParams> {
-    let start_span = parser.expect(TokenKind::Less)?.span;
-    let mut params = ThinVec::new();
-    loop {
-        if parser.current_token().kind == TokenKind::More {
-            break;
+fn parse_optional_generic_params(parser: &mut Parser) -> Result<Option<GenericParams>> {
+    if parser.current_token().kind == TokenKind::Less {
+        let start_span = parser.expect(TokenKind::Less)?.span;
+        let mut params = ThinVec::new();
+        loop {
+            if parser.current_token().kind == TokenKind::More {
+                break;
+            }
+            params.push(GenericParam {
+                name: parser.expect_identifier()?,
+                node_id: NodeId::default(),
+            });
+            if parser.current_token().kind == TokenKind::Comma {
+                parser.advance();
+            }
         }
-        params.push(GenericParam {
-            name: parser.expect_identifier()?,
-            node_id: NodeId::default(),
-        });
-        if parser.current_token().kind == TokenKind::Comma {
-            parser.advance();
-        }
+        let end_span = parser.expect(TokenKind::More)?.span;
+        Ok(Some(GenericParams {
+            params,
+            span: Span::new(start_span.start(), end_span.end()),
+        }))
+    } else {
+        Ok(None)
     }
-    let end_span = parser.expect(TokenKind::More)?.span;
-    Ok(GenericParams {
-        params,
-        span: Span::new(start_span.start(), end_span.end()),
-    })
 }

@@ -502,7 +502,11 @@ impl QPath {
         match self {
             QPath::Resolved(path) => path.display(ctx),
             QPath::TypeRelative { qself, segment } => {
-                format!("{}::{}", qself.display(ctx), segment.ident.value)
+                format!(
+                    "{}::{}",
+                    qself.display(ctx),
+                    ctx.interner.lookup(segment.ident.value)
+                )
             }
         }
     }
