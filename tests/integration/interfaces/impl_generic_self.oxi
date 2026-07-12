@@ -1,0 +1,19 @@
+interface I {
+    fn foo(self: &Self, x: Container::<Self>) void;
+}
+
+struct Container<T> {
+    val: T,
+}
+
+struct S {}
+
+impl I for S {
+    fn foo(self: &Self, x: Container::<Self>) void {}
+}
+
+pub fn main() void {
+    let s = S {};
+    let c = Container { val: s };
+    s.foo(c);
+}
