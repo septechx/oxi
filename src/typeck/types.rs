@@ -65,7 +65,11 @@ impl Ty {
         }
     }
 
-    fn hir_generic_params(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+    pub(super) fn hir_generic_params(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+        // TODO: Handle generic args in spots other than the last segment.
+        // Currently Adt's can only have generic args in the last segment, but
+        // when support for associated types is added, this will need to be
+        // implemented.
         path.segments
             .last()
             .expect("path has segments")

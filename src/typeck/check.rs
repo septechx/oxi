@@ -826,6 +826,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         found = args.len()
                     },
                 );
+                return Ty::Error;
             } else {
                 for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
                     if let Some(&fresh) = fresh_var_map.get(hir_id) {

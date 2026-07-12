@@ -1,5 +1,7 @@
 use std::collections::hash_map::Entry;
 
+use thin_vec::ThinVec;
+
 use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
@@ -97,18 +99,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 2. Extract and validate interface generic args from the path
             let interface_scheme = self.item_schemes.get(&interface_def_id);
-            let interface_generic_args: Option<Vec<Ty>> = interface_ty
-                .segments
-                .last()
-                .and_then(|seg| seg.generic_params.as_ref())
-                .map(|params| {
-                    params
-                        .iter()
-                        .map(|hir_ty| Ty::from_hir(&mut icx, hir_ty))
-                        .collect()
-                });
+            let interface_generic_args = Ty::hir_generic_params(&mut icx, interface_ty);
 
-            let provided_args_len = interface_generic_args.as_ref().map_or(0, Vec::len);
+            let provided_args_len = interface_generic_args.as_ref().map_or(0, ThinVec::len);
             if let Some(scheme) = interface_scheme
                 && scheme.vars.len() != provided_args_len
             {
