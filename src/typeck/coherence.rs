@@ -6,7 +6,7 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::fold::fold_ty;
+use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
@@ -173,7 +173,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 if let (Some(iface_sig), Some(impl_sig)) = (iface_sig, impl_sig) {
                     let iface_sig_sub =
                         substitute_self(&iface_sig.body, interface_def_id, struct_def_id);
-                    let iface_sig_sub = substitute_generic(&iface_sig_sub, &generic_subst);
+                    let iface_sig_sub = substitute_ty_vars(&iface_sig_sub, &generic_subst);
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
@@ -218,13 +218,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             _ => None,
         }
     }
-}
-
-fn substitute_generic(ty: &Ty, subst: &FxHashMap<TyVarId, Ty>) -> Ty {
-    fold_ty(ty, &mut |ty| match ty {
-        Ty::Var(v) => subst.get(&v).cloned().unwrap_or(Ty::Var(v)),
-        ty => ty,
-    })
 }
 
 fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {

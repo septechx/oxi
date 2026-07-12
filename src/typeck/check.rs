@@ -13,7 +13,7 @@ use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
-use crate::typeck::fold::fold_ty;
+use crate::typeck::fold::substitute_ty_vars;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
@@ -177,13 +177,6 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
     adjustments: &'a mut FxHashMap<HirId, Vec<Adjustment>>,
     env: ScopeEnv,
     module_id: ModuleId,
-}
-
-fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
-    fold_ty(ty, &mut |ty| match ty {
-        Ty::Var(v) => mapping.get(&v).cloned().unwrap_or(Ty::Var(v)),
-        ty => ty,
-    })
 }
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {

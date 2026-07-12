@@ -1,4 +1,6 @@
+use crate::hashmap::FxHashMap;
 use crate::typeck::Ty;
+use crate::typeck::infctx::TyVarId;
 
 pub fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
 where
@@ -23,4 +25,11 @@ where
     };
 
     f(ty)
+}
+
+pub fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
+    fold_ty(ty, &mut |ty| match ty {
+        Ty::Var(v) => mapping.get(&v).cloned().unwrap_or(Ty::Var(v)),
+        ty => ty,
+    })
 }
