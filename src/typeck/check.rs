@@ -108,6 +108,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
         }
 
+        self.hir_id_to_ty_var = std::mem::take(&mut icx.hir_id_to_ty_var);
+
         let int_ids = icx.vars_with_source(TyVarSource::IntLit);
         let i32_ty = Ty::Prim(PrimTy::Int(IntTy::I32));
         for var in int_ids {

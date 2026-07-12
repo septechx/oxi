@@ -8,7 +8,7 @@ use crate::resolve::Res;
 use crate::span::Span;
 use crate::thir::scope::{Scope, ScopeKind, ScopeTree};
 use crate::thir::*;
-use crate::typeck::{Adjustment, Ty, TypeckOutputs};
+use crate::typeck::{Adjustment, Ty, TyVarId, TypeckOutputs};
 
 pub fn lower_body(
     params: &ThinVec<hir::Param>,
@@ -22,7 +22,7 @@ pub fn lower_body(
         lowerer.locals.insert(param.hir_id, local_var);
         lowerer.params.push(Param {
             name: param.name,
-            ty: hir_ty_to_ty(&param.ty, &typeck.node_types),
+            ty: hir_ty_to_ty(&param.ty, &typeck.hir_id_to_ty_var),
             hir_id: param.hir_id,
             local_var,
         });
@@ -220,7 +220,7 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let source = self.lower_expr(expr);
-        let target_ty = hir_ty_to_ty(target, &self.typeck.node_types);
+        let target_ty = hir_ty_to_ty(target, &self.typeck.hir_id_to_ty_var);
         self.alloc_expr(
             ExprKind::Cast {
                 source,
@@ -342,7 +342,7 @@ impl<'a> ThirLowerer<'a> {
                             .cloned()
                             .unwrap_or(Ty::Error)
                     } else {
-                        hir_ty_to_ty(ty, &self.typeck.node_types)
+                        hir_ty_to_ty(ty, &self.typeck.hir_id_to_ty_var)
                     };
                     let remainder_scope = self
                         .scope_tree
@@ -629,24 +629,27 @@ impl<'a> ThirLowerer<'a> {
     }
 }
 
-fn hir_ty_to_ty(hir_ty: &hir::Ty, node_types: &FxHashMap<HirId, Ty>) -> Ty {
-    match &hir_ty.kind {
+fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) -> Ty {
+    let ty = match &hir_ty.kind {
         hir::TyKind::Error | hir::TyKind::Infer => Ty::Error,
         hir::TyKind::Never => Ty::Never,
         hir::TyKind::PrimTy(prim) => Ty::Prim(*prim),
-        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner, node_types).into_box(), *m),
-        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner, node_types).into_box()),
+        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *m),
+        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box()),
         hir::TyKind::Array(inner, size) => {
-            Ty::Array(hir_ty_to_ty(inner, node_types).into_box(), *size)
+            Ty::Array(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *size)
         }
         hir::TyKind::Fn { params, ret } => Ty::Fn {
-            params: params.iter().map(|p| hir_ty_to_ty(p, node_types)).collect(),
-            ret: hir_ty_to_ty(ret, node_types).into_box(),
+            params: params
+                .iter()
+                .map(|p| hir_ty_to_ty(p, hir_id_to_ty_var))
+                .collect(),
+            ret: hir_ty_to_ty(ret, hir_id_to_ty_var).into_box(),
         },
         hir::TyKind::Tuple(elements) => Ty::Tuple(
             elements
                 .iter()
-                .map(|e| hir_ty_to_ty(e, node_types))
+                .map(|e| hir_ty_to_ty(e, hir_id_to_ty_var))
                 .collect(),
         ),
         hir::TyKind::Path(qpath) => match qpath {
@@ -659,7 +662,7 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, node_types: &FxHashMap<HirId, Ty>) -> Ty {
                         .as_ref()
                         .map(|args| {
                             args.iter()
-                                .map(|arg| hir_ty_to_ty(arg, node_types))
+                                .map(|arg| hir_ty_to_ty(arg, hir_id_to_ty_var))
                                 .collect()
                         });
                     Ty::Adt(*def_id, generics)
@@ -669,8 +672,11 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, node_types: &FxHashMap<HirId, Ty>) -> Ty {
             },
             QPath::TypeRelative { .. } => Ty::Error,
         },
-        hir::TyKind::GenericParam(hir_id, _) => {
-            node_types.get(hir_id).cloned().unwrap_or(Ty::Error)
-        }
-    }
+        hir::TyKind::GenericParam(hir_id, _) => hir_id_to_ty_var
+            .get(hir_id)
+            .map(|&ty_var| Ty::Var(ty_var))
+            .unwrap_or(Ty::Error),
+    };
+    assert!(!ty.is_error());
+    ty
 }

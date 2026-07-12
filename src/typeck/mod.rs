@@ -10,6 +10,8 @@ mod unify;
 mod types;
 pub use types::*;
 
+pub use infctx::TyVarId;
+
 use oxic_diag::include_diagnostics;
 
 use crate::ast::Mutability;
@@ -57,6 +59,8 @@ struct Typeck<'ctx, 'hir, 'res> {
     def_to_module: FxHashMap<DefId, ModuleId>,
     /// maps (expr hir id) -> (adjustments)
     adjustments: FxHashMap<HirId, Vec<Adjustment>>,
+    /// maps (generic param hir id) -> (type variable id)
+    hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -74,6 +78,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             item_schemes: FxHashMap::default(),
             def_to_module,
             adjustments: FxHashMap::default(),
+            hir_id_to_ty_var: FxHashMap::default(),
         }
     }
 
@@ -94,6 +99,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             interface_methods: self.interface_methods,
             item_schemes: self.item_schemes,
             adjustments: self.adjustments,
+            hir_id_to_ty_var: self.hir_id_to_ty_var,
         }
     }
 }
@@ -134,6 +140,8 @@ pub struct TypeckOutputs {
     pub item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
     pub adjustments: FxHashMap<HirId, Vec<Adjustment>>,
+    /// maps (generic param hir id) -> (type variable id)
+    pub hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
 }
 
 impl TypeckOutputs {

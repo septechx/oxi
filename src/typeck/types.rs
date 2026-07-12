@@ -117,6 +117,10 @@ impl Ty {
             other => other,
         }
     }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Ty::Error)
+    }
 }
 
 #[derive(Debug, Clone)]
