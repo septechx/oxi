@@ -13,6 +13,7 @@ use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
@@ -179,34 +180,10 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
 }
 
 fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
-    match ty {
-        Ty::Var(v) => mapping.get(v).cloned().unwrap_or_else(|| ty.clone()),
-        Ty::Ptr(inner, m) => Ty::Ptr(substitute_ty_vars(inner, mapping).into_box(), *m),
-        Ty::Slice(inner) => Ty::Slice(substitute_ty_vars(inner, mapping).into_box()),
-        Ty::Array(inner, size) => Ty::Array(substitute_ty_vars(inner, mapping).into_box(), *size),
-        Ty::Fn { params, ret } => Ty::Fn {
-            params: params
-                .iter()
-                .map(|ty| substitute_ty_vars(ty, mapping))
-                .collect(),
-            ret: substitute_ty_vars(ret, mapping).into_box(),
-        },
-        Ty::Tuple(elements) => Ty::Tuple(
-            elements
-                .iter()
-                .map(|ty| substitute_ty_vars(ty, mapping))
-                .collect(),
-        ),
-        Ty::Adt(def_id, generics) => Ty::Adt(
-            *def_id,
-            generics.as_ref().map(|tys| {
-                tys.iter()
-                    .map(|ty| substitute_ty_vars(ty, mapping))
-                    .collect()
-            }),
-        ),
-        Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
-    }
+    fold_ty(ty, &mut |ty| match ty {
+        Ty::Var(v) => mapping.get(&v).cloned().unwrap_or(Ty::Var(v)),
+        ty => ty,
+    })
 }
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {

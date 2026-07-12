@@ -2,6 +2,7 @@ mod check;
 mod coherence;
 mod collect;
 mod env;
+mod fold;
 mod infctx;
 mod method;
 mod rewrite;

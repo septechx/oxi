@@ -3,6 +3,7 @@ use thin_vec::ThinVec;
 use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{HirId, ModuleId};
 use crate::span::Span;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
 
@@ -237,39 +238,13 @@ impl InferCtx {
     }
 
     pub fn instantiate_with(&self, ty: &Ty, mapping: &FxHashMap<TyVarId, TyVarId>) -> Ty {
-        match ty {
-            Ty::Var(var) => match mapping.get(var) {
-                Some(&fresh) => Ty::Var(fresh),
-                None => ty.clone(),
-            },
-            Ty::Ptr(inner, m) => Ty::Ptr(self.instantiate_with(inner, mapping).into_box(), *m),
-            Ty::Slice(inner) => Ty::Slice(self.instantiate_with(inner, mapping).into_box()),
-            Ty::Array(inner, size) => {
-                Ty::Array(self.instantiate_with(inner, mapping).into_box(), *size)
-            }
-            Ty::Fn { params, ret } => Ty::Fn {
-                params: params
-                    .iter()
-                    .map(|ty| self.instantiate_with(ty, mapping))
-                    .collect(),
-                ret: self.instantiate_with(ret, mapping).into_box(),
-            },
-            Ty::Tuple(elements) => Ty::Tuple(
-                elements
-                    .iter()
-                    .map(|ty| self.instantiate_with(ty, mapping))
-                    .collect(),
-            ),
-            Ty::Adt(def_id, generics) => Ty::Adt(
-                *def_id,
-                generics.as_ref().map(|tys| {
-                    tys.iter()
-                        .map(|ty| self.instantiate_with(ty, mapping))
-                        .collect()
-                }),
-            ),
-            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
-        }
+        fold_ty(ty, &mut |ty| match ty {
+            Ty::Var(v) => mapping
+                .get(&v)
+                .map(|&fresh| Ty::Var(fresh))
+                .unwrap_or(Ty::Var(v)),
+            ty => ty,
+        })
     }
 
     pub fn vars_with_source(&self, source: TyVarSource) -> Vec<TyVarId> {

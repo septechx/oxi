@@ -3,6 +3,7 @@ use thin_vec::ThinVec;
 use crate::ast::Mutability;
 use crate::hir::{self, DefId, PrimTy, QPath, TyKind};
 use crate::resolve::Res;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
 #[derive(Debug, Clone)]
@@ -102,20 +103,10 @@ impl Ty {
     }
 
     pub fn reject_vars(self) -> Self {
-        match self {
+        fold_ty(&self, &mut |ty| match ty {
             Ty::Var(_) => Ty::Error,
-            Ty::Ptr(inner, m) => Ty::Ptr(Box::new(inner.reject_vars()), m),
-            Ty::Slice(inner) => Ty::Slice(Box::new(inner.reject_vars())),
-            Ty::Array(inner, size) => Ty::Array(Box::new(inner.reject_vars()), size),
-            Ty::Fn { params, ret } => Ty::Fn {
-                params: params.into_iter().map(|p| p.reject_vars()).collect(),
-                ret: Box::new(ret.reject_vars()),
-            },
-            Ty::Tuple(elements) => {
-                Ty::Tuple(elements.into_iter().map(|e| e.reject_vars()).collect())
-            }
-            other => other,
-        }
+            ty => ty,
+        })
     }
 
     pub fn is_error(&self) -> bool {
