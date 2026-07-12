@@ -45,30 +45,11 @@ impl Ty {
             ),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(path) => match path.res {
-                    Res::Def(def_id) => {
-                        // We don't know if it's a struct or interface. Tag it as Adt
-                        // and fix it downstream
-                        let generic_params = path
-                            .segments
-                            .last()
-                            .expect("path has segments")
-                            .generic_params
-                            .as_ref()
-                            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect());
+                    Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                        let generic_params = Self::hir_generic_params(icx, path);
                         Ty::Adt(def_id, generic_params)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
-                    Res::SelfTyAlias { alias_to } => {
-                        // Same as Res::Def
-                        let generic_params = path
-                            .segments
-                            .last()
-                            .expect("path has segments")
-                            .generic_params
-                            .as_ref()
-                            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect());
-                        Ty::Adt(alias_to, generic_params)
-                    }
                     Res::GenericParam(hir_id) => {
                         let ty_var = icx.hir_id_to_ty_var.get(&hir_id).expect("hir id exists");
                         Ty::Var(*ty_var)
@@ -82,6 +63,15 @@ impl Ty {
                 Ty::Var(*ty_var)
             }
         }
+    }
+
+    fn hir_generic_params(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+        path.segments
+            .last()
+            .expect("path has segments")
+            .generic_params
+            .as_ref()
+            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect())
     }
 
     pub fn is_numeric(&self, icx: &InferCtx) -> bool {
