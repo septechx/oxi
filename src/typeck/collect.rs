@@ -21,15 +21,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             match &info.nodes.nodes[0].node {
                 Node::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
-                        let (vars, _) = Self::collect_generic_params(&mut icx, &fun.generic_params);
-                        let ty = self.fn_ty(&mut icx, &fun.decl);
-                        self.item_schemes.insert(
-                            def_id,
-                            Scheme {
-                                vars: vars.into(),
-                                body: ty,
-                            },
-                        );
+                        let scheme = self.fn_scheme(&mut icx, &fun.generic_params, &fun.decl);
+                        self.item_schemes.insert(def_id, scheme);
                     }
                     ItemKind::Const { ty, .. } => {
                         let ty = Ty::from_hir(&mut icx, ty).reject_vars();
@@ -40,52 +33,34 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (param_vars, param_hir_ids) =
+                        let (vars, param_hir_ids) =
                             Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
                             .struct_generic_params
                             .insert(def_id, param_hir_ids);
+
+                        let scheme = Self::adt_scheme(def_id, vars);
+                        self.item_schemes.insert(def_id, scheme);
+
                         let entry = self.coherence.struct_fields.entry(def_id).or_default();
                         for (index, field) in fields.iter().enumerate() {
                             entry.insert(field.name, (field.ty.clone(), index));
                         }
-                        let generic_args = if param_vars.is_empty() {
-                            None
-                        } else {
-                            Some(param_vars.iter().map(|&v| Ty::Var(v)).collect())
-                        };
-                        let body = Ty::Adt(def_id, generic_args);
-                        self.item_schemes.insert(
-                            def_id,
-                            Scheme {
-                                vars: param_vars.into(),
-                                body,
-                            },
-                        );
                     }
                     ItemKind::Interface {
                         items,
                         generic_params,
                         ..
                     } => {
-                        let (param_vars, param_hir_ids) =
+                        let (vars, param_hir_ids) =
                             Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
                             .interface_generic_params
                             .insert(def_id, param_hir_ids);
-                        let generic_args = if param_vars.is_empty() {
-                            None
-                        } else {
-                            Some(param_vars.iter().map(|&v| Ty::Var(v)).collect())
-                        };
-                        let body = Ty::Adt(def_id, generic_args);
-                        self.item_schemes.insert(
-                            def_id,
-                            Scheme {
-                                vars: param_vars.into(),
-                                body,
-                            },
-                        );
+
+                        let scheme = Self::adt_scheme(def_id, vars);
+                        self.item_schemes.insert(def_id, scheme);
+
                         let methods: Vec<(Symbol, DefId)> = items
                             .iter()
                             .filter_map(|&item| {
@@ -100,15 +75,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
-                    let (vars, _) = Self::collect_generic_params(&mut icx, &fun.generic_params);
-                    let ty = self.fn_ty(&mut icx, &fun.decl);
-                    self.item_schemes.insert(
-                        def_id,
-                        Scheme {
-                            vars: vars.into(),
-                            body: ty,
-                        },
-                    );
+                    let scheme = self.fn_scheme(&mut icx, &fun.generic_params, &fun.decl);
+                    self.item_schemes.insert(def_id, scheme);
                 }
                 _ => {}
             }
@@ -122,7 +90,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn collect_generic_params(
         icx: &mut InferCtx,
         generic_params: &Option<ThinVec<GenericParam>>,
-    ) -> (Vec<TyVarId>, Vec<HirId>) {
+    ) -> (ThinVec<TyVarId>, Vec<HirId>) {
         generic_params
             .as_ref()
             .map(|params| {
@@ -146,5 +114,26 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .collect();
         let ret = Ty::from_hir(icx, &decl.ret).into_box();
         Ty::Fn { params, ret }
+    }
+
+    fn fn_scheme(
+        &self,
+        icx: &mut InferCtx,
+        generic_params: &Option<ThinVec<GenericParam>>,
+        decl: &FnDecl,
+    ) -> Scheme {
+        let (vars, _) = Self::collect_generic_params(icx, generic_params);
+        let body = self.fn_ty(icx, decl);
+        Scheme { vars, body }
+    }
+
+    fn adt_scheme(def_id: DefId, vars: ThinVec<TyVarId>) -> Scheme {
+        let generic_args = if vars.is_empty() {
+            None
+        } else {
+            Some(vars.iter().map(|&v| Ty::Var(v)).collect())
+        };
+        let body = Ty::Adt(def_id, generic_args);
+        Scheme { vars, body }
     }
 }
