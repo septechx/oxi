@@ -1,7 +1,7 @@
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
-use crate::hir::{AssocItemKind, DefId, FnDecl, HirId, ItemKind, MaybeOwner, Node};
+use crate::hir::{AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, MaybeOwner, Node};
 use crate::interner::Symbol;
 use crate::typeck::Typeck;
 use crate::typeck::infctx::{InferCtx, TyVarId};
@@ -21,21 +21,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             match &info.nodes.nodes[0].node {
                 Node::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
-                        let generic_params = fun.generic_params.as_ref().map(|params| {
-                            params
-                                .iter()
-                                .map(|param| {
-                                    let ty_var = icx.next_ty_var();
-                                    icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                                    ty_var
-                                })
-                                .collect()
-                        });
+                        let (vars, _) = Self::collect_generic_params(&mut icx, &fun.generic_params);
                         let ty = self.fn_ty(&mut icx, &fun.decl);
                         self.item_schemes.insert(
                             def_id,
                             Scheme {
-                                vars: generic_params.unwrap_or_default(),
+                                vars: vars.into(),
                                 body: ty,
                             },
                         );
@@ -49,23 +40,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let param_vars: Vec<TyVarId> = generic_params
-                            .as_ref()
-                            .map(|params| {
-                                params
-                                    .iter()
-                                    .map(|param| {
-                                        let ty_var = icx.next_ty_var();
-                                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                                        ty_var
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        let param_hir_ids: Vec<HirId> = generic_params
-                            .as_ref()
-                            .map(|params| params.iter().map(|param| param.hir_id).collect())
-                            .unwrap_or_default();
+                        let (param_vars, param_hir_ids) =
+                            Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
                             .struct_generic_params
                             .insert(def_id, param_hir_ids);
@@ -92,23 +68,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let param_vars: Vec<TyVarId> = generic_params
-                            .as_ref()
-                            .map(|params| {
-                                params
-                                    .iter()
-                                    .map(|param| {
-                                        let ty_var = icx.next_ty_var();
-                                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                                        ty_var
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        let param_hir_ids: Vec<HirId> = generic_params
-                            .as_ref()
-                            .map(|params| params.iter().map(|param| param.hir_id).collect())
-                            .unwrap_or_default();
+                        let (param_vars, param_hir_ids) =
+                            Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
                             .interface_generic_params
                             .insert(def_id, param_hir_ids);
@@ -139,21 +100,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
-                    let generic_params = fun.generic_params.as_ref().map(|params| {
-                        params
-                            .iter()
-                            .map(|param| {
-                                let ty_var = icx.next_ty_var();
-                                icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                                ty_var
-                            })
-                            .collect()
-                    });
+                    let (vars, _) = Self::collect_generic_params(&mut icx, &fun.generic_params);
                     let ty = self.fn_ty(&mut icx, &fun.decl);
                     self.item_schemes.insert(
                         def_id,
                         Scheme {
-                            vars: generic_params.unwrap_or_default(),
+                            vars: vars.into(),
                             body: ty,
                         },
                     );
@@ -165,6 +117,25 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
         }
+    }
+
+    fn collect_generic_params(
+        icx: &mut InferCtx,
+        generic_params: &Option<ThinVec<GenericParam>>,
+    ) -> (Vec<TyVarId>, Vec<HirId>) {
+        generic_params
+            .as_ref()
+            .map(|params| {
+                params
+                    .iter()
+                    .map(|param| {
+                        let ty_var = icx.next_ty_var();
+                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
+                        (ty_var, param.hir_id)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn fn_ty(&self, icx: &mut InferCtx, decl: &FnDecl) -> Ty {
