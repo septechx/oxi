@@ -10,7 +10,7 @@ use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::{GenericParamInfo, Typeck};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub(super) fn collect_signatures(&mut self) {
+    pub(crate) fn collect_signatures(&mut self) {
         let mut icx = InferCtx::default();
         icx.push_level();
 

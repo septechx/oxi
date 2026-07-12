@@ -15,7 +15,7 @@ use crate::typeck::unify::unify;
 use crate::typeck::{Typeck, diag};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub(super) fn check_coherence(&mut self) {
+    pub(crate) fn check_coherence(&mut self) {
         let mut icx = InferCtx::default();
         icx.push_level();
 

@@ -2,7 +2,7 @@ use crate::hir::{DefId, ItemKind, MaybeOwner, Node};
 use crate::typeck::Typeck;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub(super) fn build_method_tables(&mut self) {
+    pub(crate) fn build_method_tables(&mut self) {
         self.collect_inherent_methods();
         self.collect_interface_methods();
     }

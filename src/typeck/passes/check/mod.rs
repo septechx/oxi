@@ -42,7 +42,7 @@ fn tail_span(expr: &Expr) -> Span {
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub(super) fn check_bodies(&mut self) {
+    pub(crate) fn check_bodies(&mut self) {
         let mut icx = InferCtx::default();
         icx.push_level();
 

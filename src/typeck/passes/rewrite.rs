@@ -4,7 +4,7 @@ use crate::span::Span;
 use crate::typeck::{MemberRes, Typeck};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub(super) fn rewrite_member_access(&mut self) {
+    pub(crate) fn rewrite_member_access(&mut self) {
         for owner in self.krate.owners.iter_mut() {
             let MaybeOwner::Owner(info) = owner else {
                 continue;
