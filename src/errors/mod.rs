@@ -334,11 +334,9 @@ pub mod builders {
         params: &[(&str, &dyn Display)],
     ) -> CompilationError {
         prepare_diag(entry, params)
+            .add_widget(LocationWidget::new(span, module_id, ctx).expect("failed to create error"))
             .add_widget(
-                LocationWidget::new_with_ctx(span, module_id, ctx).expect("failed to create error"),
-            )
-            .add_widget(
-                CodeWidget::new_with_ctx(
+                CodeWidget::new(
                     span,
                     module_id,
                     match entry.level() {
@@ -360,7 +358,7 @@ pub mod builders {
         params: &[(&str, &dyn Display)],
     ) -> CompilationError {
         prepare_diag(entry, params).add_widget(
-            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+            InfoWidget::new(span, module_id, info, ctx).expect("failed to create error"),
         )
     }
 
@@ -382,7 +380,7 @@ pub mod builders {
         info: &str,
     ) -> CompilationError {
         prepare_diag_at(ctx, span, module_id, entry, params).add_widget(
-            InfoWidget::new_with_ctx(span, module_id, info, ctx).expect("failed to create error"),
+            InfoWidget::new(span, module_id, info, ctx).expect("failed to create error"),
         )
     }
 }

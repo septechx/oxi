@@ -11,15 +11,13 @@ pub mod hashmap;
 pub mod hir;
 pub mod interner;
 pub mod lexer;
-pub mod macros;
+pub mod newtype;
 pub mod parser;
 pub mod resolve;
 pub mod span;
 pub mod thir;
 pub mod typeck;
-pub mod utils;
 
-use std::cell::RefCell;
 use std::fs;
 use std::io::IsTerminal;
 
@@ -28,40 +26,29 @@ use clap::Parser;
 use oxic_diag::include_diagnostics;
 
 use crate::cli::{Cli, ColorChoice};
-use crate::context::{Ctx, with_ctx_mut};
+use crate::context::{with_ctx, with_ctx_mut};
 use crate::driver::compile_source;
 use crate::errors::builders;
 
 include_diagnostics!("diagnostics.toml");
 
-pub static DEFAULT_ROOT: &str = "..";
-
-// TODO: Make this not global
-thread_local! {
-    pub static CTX: RefCell<Ctx> = RefCell::new(Ctx::new());
-}
-
 pub fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.quiet {
-        CTX.with(|ctx| {
-            ctx.borrow_mut().enable_printing = false;
-        });
+        with_ctx_mut(|ctx| ctx.enable_printing = false);
     }
 
     build_files(cli)?;
 
-    CTX.with(|ctx| {
-        ctx.borrow().errors.print_all();
-    });
+    with_ctx(|ctx| ctx.errors.print_all());
 
     Ok(())
 }
 
 fn check_for_errors() -> Result<()> {
-    CTX.with(|ctx| {
-        let e = &ctx.borrow().errors;
+    with_ctx(|ctx| {
+        let e = &ctx.errors;
         if e.has_errors() {
             e.print_all();
             std::process::exit(1);
@@ -78,8 +65,8 @@ fn build_files(cli: Cli) -> Result<()> {
                 diag::SourceFileNotFound,
                 diag_params! { file = cli.input.display() },
             );
-            unreachable!()
-        })
+        });
+        std::process::exit(1);
     };
 
     let use_color = match cli.color {
