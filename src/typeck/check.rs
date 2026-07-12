@@ -16,7 +16,7 @@ use crate::typeck::env::ScopeEnv;
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
-use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, Typeck, diag};
+use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, TyVarId, Typeck, diag};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
 // catch uses of `break` outside of loops
@@ -176,6 +176,37 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
     adjustments: &'a mut FxHashMap<HirId, Vec<Adjustment>>,
     env: ScopeEnv,
     module_id: ModuleId,
+}
+
+fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
+    match ty {
+        Ty::Var(v) => mapping.get(v).cloned().unwrap_or_else(|| ty.clone()),
+        Ty::Ptr(inner, m) => Ty::Ptr(substitute_ty_vars(inner, mapping).into_box(), *m),
+        Ty::Slice(inner) => Ty::Slice(substitute_ty_vars(inner, mapping).into_box()),
+        Ty::Array(inner, size) => Ty::Array(substitute_ty_vars(inner, mapping).into_box(), *size),
+        Ty::Fn { params, ret } => Ty::Fn {
+            params: params
+                .iter()
+                .map(|ty| substitute_ty_vars(ty, mapping))
+                .collect(),
+            ret: substitute_ty_vars(ret, mapping).into_box(),
+        },
+        Ty::Tuple(elements) => Ty::Tuple(
+            elements
+                .iter()
+                .map(|ty| substitute_ty_vars(ty, mapping))
+                .collect(),
+        ),
+        Ty::Adt(def_id, generics) => Ty::Adt(
+            *def_id,
+            generics.as_ref().map(|tys| {
+                tys.iter()
+                    .map(|ty| substitute_ty_vars(ty, mapping))
+                    .collect()
+            }),
+        ),
+        Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
+    }
 }
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
@@ -772,6 +803,18 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         None
     }
 
+    fn struct_ty_var_subst(&self, def: DefId, args: &[Ty]) -> FxHashMap<TyVarId, Ty> {
+        let mut subst = FxHashMap::default();
+        if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+            for (hir_id, arg_ty) in param_hir_ids.iter().zip(args.iter()) {
+                if let Some(&registered_var) = self.icx.hir_id_to_ty_var.get(hir_id) {
+                    subst.insert(registered_var, arg_ty.clone());
+                }
+            }
+        }
+        subst
+    }
+
     fn check_struct_init(
         &mut self,
         def: DefId,
@@ -781,7 +824,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     ) -> Ty {
         self.register_if_generic_struct(def);
 
-        if let Some(generic_args) = generic_args {
+        let param_hir_ids = self.coherence.struct_generic_params.get(&def);
+
+        let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
+            .map(|ids| {
+                ids.iter()
+                    .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
             let args: ThinVec<Ty> = generic_args
                 .iter()
                 .map(|arg| {
@@ -790,7 +843,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     arg_ty
                 })
                 .collect();
-            if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+            if let Some(param_hir_ids) = param_hir_ids {
                 if args.len() != param_hir_ids.len() {
                     builders::emit_at(
                         self.ctx,
@@ -805,38 +858,31 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     );
                 } else {
                     for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
-                        if let Some(&var) = self.icx.hir_id_to_ty_var.get(hir_id) {
-                            unify(self.icx, &Ty::Var(var), arg, span, self.module_id)
+                        if let Some(&fresh) = fresh_var_map.get(hir_id) {
+                            unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
                                 .or_push_err(self.icx);
                         }
                     }
                 }
             }
-            let struct_ty = Ty::Adt(def, Some(args));
-            self.check_struct_fields(def, struct_ty, fields, span)
-        } else if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
+            let subst = self.struct_ty_var_subst(def, &args);
+            (Ty::Adt(def, Some(args)), subst)
+        } else if let Some(param_hir_ids) = param_hir_ids {
             if param_hir_ids.is_empty() {
-                let struct_ty = Ty::Adt(def, None);
-                self.check_struct_fields(def, struct_ty, fields, span)
+                (Ty::Adt(def, None), FxHashMap::default())
             } else {
                 let args: ThinVec<Ty> = param_hir_ids
                     .iter()
-                    .map(|&hir_id| {
-                        let &var = self
-                            .icx
-                            .hir_id_to_ty_var
-                            .get(&hir_id)
-                            .expect("generic var must be registered");
-                        Ty::Var(var)
-                    })
+                    .map(|&hir_id| Ty::Var(*fresh_var_map.get(&hir_id).expect("fresh var exists")))
                     .collect();
-                let struct_ty = Ty::Adt(def, Some(args));
-                self.check_struct_fields(def, struct_ty, fields, span)
+                let subst = self.struct_ty_var_subst(def, &args);
+                (Ty::Adt(def, Some(args)), subst)
             }
         } else {
-            let struct_ty = Ty::Adt(def, None);
-            self.check_struct_fields(def, struct_ty, fields, span)
-        }
+            (Ty::Adt(def, None), FxHashMap::default())
+        };
+
+        self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
     }
 
     fn check_struct_fields(
@@ -845,6 +891,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         struct_ty: Ty,
         fields: &ThinVec<(Ident, Expr)>,
         span: Span,
+        ty_var_subst: &FxHashMap<TyVarId, Ty>,
     ) -> Ty {
         let field_table = self
             .coherence
@@ -892,7 +939,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let expr_span = expr.span;
             let expr = self.check_expr(expr);
             if let Some((hir_field_ty, _)) = field_table.get(&name.value) {
-                let field_ty = Ty::from_hir(self.icx, hir_field_ty);
+                let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+                if !ty_var_subst.is_empty() {
+                    field_ty = substitute_ty_vars(&field_ty, ty_var_subst);
+                }
                 if let Err(err) = unify(self.icx, &field_ty, &expr, expr_span, self.module_id) {
                     self.icx.errors.push(err);
                 }
@@ -1094,13 +1144,20 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
         let recv_ty = self.icx.resolve(&recv_ty);
-        if let Ty::Adt(struct_id, _) = &recv_ty
+        if let Ty::Adt(struct_id, generic_args) = &recv_ty
             && let Some(fields) = self.coherence.struct_fields.get(struct_id)
             && let Some((hir_field_ty, index)) = fields.get(&member)
         {
             self.member_res
                 .insert(hir_id, MemberRes::Field { index: *index });
-            return Ty::from_hir(self.icx, hir_field_ty);
+            let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+            if let Some(generic_args) = generic_args {
+                let subst = self.struct_ty_var_subst(*struct_id, generic_args);
+                if !subst.is_empty() {
+                    field_ty = substitute_ty_vars(&field_ty, &subst);
+                }
+            }
+            return field_ty;
         }
         match recv_ty {
             Ty::Adt(_, _) => {
@@ -1121,13 +1178,20 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     .entry(base.hir_id)
                     .or_default()
                     .push(Adjustment::AutoDeref);
-                if let Ty::Adt(struct_id, _) = inner.as_ref()
+                if let Ty::Adt(struct_id, generic_args) = inner.as_ref()
                     && let Some(fields) = self.coherence.struct_fields.get(struct_id)
                     && let Some((hir_field_ty, index)) = fields.get(&member)
                 {
                     self.member_res
                         .insert(hir_id, MemberRes::Field { index: *index });
-                    return Ty::from_hir(self.icx, hir_field_ty);
+                    let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+                    if let Some(generic_args) = generic_args {
+                        let subst = self.struct_ty_var_subst(*struct_id, generic_args);
+                        if !subst.is_empty() {
+                            field_ty = substitute_ty_vars(&field_ty, &subst);
+                        }
+                    }
+                    return field_ty;
                 }
                 if let Ty::Adt(_, _) = inner.as_ref() {
                     let field = self.ctx.interner.lookup(member).to_string();
