@@ -660,13 +660,16 @@ fn parse_optional_generic_params(parser: &mut Parser) -> Result<Option<GenericPa
             if parser.current_token().kind == TokenKind::More {
                 break;
             }
+            if !params.is_empty() {
+                parser.expect(TokenKind::Comma)?;
+                if parser.current_token().kind == TokenKind::More {
+                    break;
+                }
+            }
             params.push(GenericParam {
                 name: parser.expect_identifier()?,
                 node_id: NodeId::default(),
             });
-            if parser.current_token().kind == TokenKind::Comma {
-                parser.advance();
-            }
         }
         let end_span = parser.expect(TokenKind::More)?.span;
         Ok(Some(GenericParams {
