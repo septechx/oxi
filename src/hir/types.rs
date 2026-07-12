@@ -215,6 +215,7 @@ pub struct GenericParam {
     pub hir_id: HirId,
     pub name: Symbol,
     pub span: Span,
+    pub default: Option<Ty>,
 }
 
 #[derive(Debug, Clone)]

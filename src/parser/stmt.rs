@@ -666,8 +666,16 @@ fn parse_optional_generic_params(parser: &mut Parser) -> Result<Option<GenericPa
                     break;
                 }
             }
+            let name = parser.expect_identifier()?;
+            let default = if parser.current_token().kind == TokenKind::Equals {
+                parser.advance();
+                Some(parse_type(parser, BindingPower::DefaultBp)?)
+            } else {
+                None
+            };
             params.push(GenericParam {
-                name: parser.expect_identifier()?,
+                name,
+                default,
                 node_id: NodeId::default(),
             });
         }

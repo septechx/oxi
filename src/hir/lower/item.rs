@@ -184,15 +184,22 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
             params
                 .iter()
-                .map(|ast::GenericParam { name, node_id }| {
-                    let param_hir_id = self.next_hir_id();
-                    self.register_local(*node_id, param_hir_id);
-                    GenericParam {
-                        hir_id: param_hir_id,
-                        name: name.value,
-                        span: name.span,
-                    }
-                })
+                .map(
+                    |ast::GenericParam {
+                         name,
+                         node_id,
+                         default,
+                     }| {
+                        let param_hir_id = self.next_hir_id();
+                        self.register_local(*node_id, param_hir_id);
+                        GenericParam {
+                            hir_id: param_hir_id,
+                            name: name.value,
+                            span: name.span,
+                            default: default.as_ref().map(|ty| self.lower_type(ty)),
+                        }
+                    },
+                )
                 .collect()
         });
 
@@ -245,15 +252,22 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
             params
                 .iter()
-                .map(|ast::GenericParam { name, node_id }| {
-                    let param_hir_id = self.next_hir_id();
-                    self.register_local(*node_id, param_hir_id);
-                    GenericParam {
-                        hir_id: param_hir_id,
-                        name: name.value,
-                        span: name.span,
-                    }
-                })
+                .map(
+                    |ast::GenericParam {
+                         name,
+                         node_id,
+                         default,
+                     }| {
+                        let param_hir_id = self.next_hir_id();
+                        self.register_local(*node_id, param_hir_id);
+                        GenericParam {
+                            hir_id: param_hir_id,
+                            name: name.value,
+                            span: name.span,
+                            default: default.as_ref().map(|ty| self.lower_type(ty)),
+                        }
+                    },
+                )
                 .collect()
         });
 
@@ -360,15 +374,22 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 .map(|ast::GenericParams { params, .. }| {
                     params
                         .iter()
-                        .map(|ast::GenericParam { name, node_id }| {
-                            let param_hir_id = self.next_hir_id();
-                            self.register_local(*node_id, param_hir_id);
-                            GenericParam {
-                                hir_id: param_hir_id,
-                                name: name.value,
-                                span: name.span,
-                            }
-                        })
+                        .map(
+                            |ast::GenericParam {
+                                 name,
+                                 node_id,
+                                 default,
+                             }| {
+                                let param_hir_id = self.next_hir_id();
+                                self.register_local(*node_id, param_hir_id);
+                                GenericParam {
+                                    hir_id: param_hir_id,
+                                    name: name.value,
+                                    span: name.span,
+                                    default: default.as_ref().map(|ty| self.lower_type(ty)),
+                                }
+                            },
+                        )
                         .collect()
                 });
 

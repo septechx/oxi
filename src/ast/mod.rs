@@ -378,6 +378,7 @@ pub struct GenericParams {
 pub struct GenericParam {
     pub name: Ident,
     pub node_id: NodeId,
+    pub default: Option<Type>,
 }
 
 pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {

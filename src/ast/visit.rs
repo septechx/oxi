@@ -2,13 +2,8 @@ use std::hash::Hash;
 
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::{
-        AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Item, ItemKind, Literal, Stmt,
-        StmtKind, Type, TypeKind,
-    },
-    hashmap::FxHashMap,
-};
+use crate::ast::*;
+use crate::hashmap::FxHashMap;
 
 pub enum VisitAction {
     /// Descend into children
@@ -170,13 +165,28 @@ impl Visitable for Item {
                     value.visit(visitor);
                     ty.visit(visitor);
                 }
-                ItemKind::Struct { fields, items, .. } => {
+                ItemKind::Struct {
+                    fields,
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit(visitor);
+                    }
                     for field in fields {
                         field.1.visit(visitor);
                     }
                     items.visit(visitor);
                 }
-                ItemKind::Interface { items, .. } => {
+                ItemKind::Interface {
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit(visitor);
+                    }
                     items.visit(visitor);
                 }
                 ItemKind::Impl { items, .. } => {
@@ -203,13 +213,28 @@ impl Visitable for Item {
                     value.visit_mut(visitor);
                     ty.visit_mut(visitor);
                 }
-                ItemKind::Struct { fields, items, .. } => {
+                ItemKind::Struct {
+                    fields,
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit_mut(visitor);
+                    }
                     for field in fields {
                         field.1.visit_mut(visitor);
                     }
                     items.visit_mut(visitor);
                 }
-                ItemKind::Interface { items, .. } => {
+                ItemKind::Interface {
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit_mut(visitor);
+                    }
                     items.visit_mut(visitor);
                 }
                 ItemKind::Impl { items, .. } => {
@@ -262,6 +287,9 @@ impl Visitable for AssocItemKind {
 
 impl Visitable for Fn {
     fn visit(&self, visitor: &mut impl Visitor) {
+        if let Some(params) = &self.generic_params {
+            params.visit(visitor);
+        }
         for arg in &self.parameters {
             arg.1.visit(visitor);
         }
@@ -272,6 +300,9 @@ impl Visitable for Fn {
     }
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        if let Some(params) = &mut self.generic_params {
+            params.visit_mut(visitor);
+        }
         for arg in &mut self.parameters {
             arg.1.visit_mut(visitor);
         }
@@ -289,6 +320,34 @@ impl Visitable for Block {
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         self.stmts.visit_mut(visitor);
+    }
+}
+
+impl Visitable for GenericParams {
+    fn visit(&self, visitor: &mut impl Visitor) {
+        for param in &self.params {
+            param.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for param in &mut self.params {
+            param.visit_mut(visitor);
+        }
+    }
+}
+
+impl Visitable for GenericParam {
+    fn visit(&self, visitor: &mut impl Visitor) {
+        if let Some(ty) = &self.default {
+            ty.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        if let Some(ty) = &mut self.default {
+            ty.visit_mut(visitor);
+        }
     }
 }
 
