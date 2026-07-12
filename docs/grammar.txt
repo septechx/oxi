@@ -42,7 +42,7 @@ Expr -> Lit
       | loop { [Stmt]* }
 Stmt -> Expr;
       | let [mut]? Id [: Ty]? [= Expr]?;
-Assoc -> [pub]? fn Id([Id: Ty],*) Ty { [Stmt]* [Expr]? }
+Assoc -> [pub]? fn Id [< [Id],* >]? ([Id: Ty],*) Ty { [Stmt]* [Expr]? }
 Item -> [pub]? const Id: Ty = Expr;
       | [pub]? struct Id [< [Id],* >]? { [[pub]? Id: Ty],* [Assoc]* }
       | [pub]? interface Id [< [Id],* >]? { [Assoc]* }
