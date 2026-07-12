@@ -22,6 +22,10 @@ message = "Cannot call non-function expression"
 level = "Error"
 message = "Expected {expected} parameter{s}, found {found}"
 
+[unexpected_generic_params]
+level = "Error"
+message = "Expected {expected} generic parameter{s}, found {found}"
+
 [unknown_field]
 level = "Error"
 message = "Unknown field `{field}` on type `{type}`"

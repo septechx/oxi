@@ -427,7 +427,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 self.ctx,
                 span,
                 self.module_id,
-                diag::UnexpectedParameters,
+                diag::UnexpectedGenericParams,
                 diag_params! {
                     expected = scheme.vars.len(),
                     s = if scheme.vars.len() == 1 { "" } else { "s" },
@@ -801,15 +801,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     ) -> Ty {
         self.register_if_generic_struct(def);
 
-        let param_hir_ids = self.coherence.struct_generic_params.get(&def);
+        let param_hir_ids = self
+            .coherence
+            .struct_generic_params
+            .get(&def)
+            .expect("struct exists");
 
         let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
-            .map(|ids| {
-                ids.iter()
-                    .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
-                    .collect()
-            })
-            .unwrap_or_default();
+            .iter()
+            .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
+            .collect();
 
         let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
             let args: ThinVec<Ty> = generic_args
@@ -820,31 +821,29 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     arg_ty
                 })
                 .collect();
-            if let Some(param_hir_ids) = param_hir_ids {
-                if args.len() != param_hir_ids.len() {
-                    builders::emit_at(
-                        self.ctx,
-                        span,
-                        self.module_id,
-                        diag::UnexpectedParameters,
-                        diag_params! {
-                            expected = param_hir_ids.len(),
-                            s = if param_hir_ids.len() == 1 { "" } else { "s" },
-                            found = args.len()
-                        },
-                    );
-                } else {
-                    for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
-                        if let Some(&fresh) = fresh_var_map.get(hir_id) {
-                            unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
-                                .or_push_err(self.icx);
-                        }
+            if args.len() != param_hir_ids.len() {
+                builders::emit_at(
+                    self.ctx,
+                    span,
+                    self.module_id,
+                    diag::UnexpectedGenericParams,
+                    diag_params! {
+                        expected = param_hir_ids.len(),
+                        s = if param_hir_ids.len() == 1 { "" } else { "s" },
+                        found = args.len()
+                    },
+                );
+            } else {
+                for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
+                    if let Some(&fresh) = fresh_var_map.get(hir_id) {
+                        unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
+                            .or_push_err(self.icx);
                     }
                 }
             }
             let subst = self.struct_ty_var_subst(def, &args);
             (Ty::Adt(def, Some(args)), subst)
-        } else if let Some(param_hir_ids) = param_hir_ids {
+        } else {
             if param_hir_ids.is_empty() {
                 (Ty::Adt(def, None), FxHashMap::default())
             } else {
@@ -855,8 +854,6 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 let subst = self.struct_ty_var_subst(def, &args);
                 (Ty::Adt(def, Some(args)), subst)
             }
-        } else {
-            (Ty::Adt(def, None), FxHashMap::default())
         };
 
         self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)

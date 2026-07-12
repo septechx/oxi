@@ -1,0 +1,10 @@
+// @expect-error unexpected_generic_params
+
+struct Point {
+    x: u32,
+    y: u32,
+}
+
+fn main() void {
+    let p = Point::<u32> { x: 1, y: 2 };
+}

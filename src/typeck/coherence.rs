@@ -116,7 +116,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     self.ctx,
                     interface_ty.span,
                     impl_module,
-                    diag::UnexpectedParameters,
+                    diag::UnexpectedGenericParams,
                     diag_params! {
                         expected = scheme.vars.len(),
                         s = if scheme.vars.len() == 1 { "" } else { "s" },

@@ -1,4 +1,4 @@
-// @expect-error unexpected_parameters
+// @expect-error unexpected_generic_params
 
 fn identity<T>(x: T) T {
     x
