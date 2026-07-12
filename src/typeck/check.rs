@@ -570,15 +570,29 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn check_call(&mut self, callee: &Expr, params: &ThinVec<Expr>, call_span: Span) -> Ty {
         let callee_span = callee.span;
 
-        if let Some((recv_ty, member, is_method_call, receiver_hir_id)) = match &callee.kind {
-            ExprKind::MemberAccess { base, member } => {
-                Some((self.check_expr(base), *member, true, Some(base.hir_id)))
+        if let Some((recv_ty, member, is_method_call, receiver_hir_id, generic_args)) =
+            match &callee.kind {
+                ExprKind::MemberAccess { base, member } => Some((
+                    self.check_expr(base),
+                    *member,
+                    true,
+                    Some(base.hir_id),
+                    None,
+                )),
+                ExprKind::Path(QPath::TypeRelative { qself, segment }) => {
+                    self.qpath_recv_ty(qself).map(|ty| {
+                        (
+                            ty,
+                            segment.ident.value,
+                            false,
+                            None,
+                            segment.generic_params.as_ref(),
+                        )
+                    })
+                }
+                _ => None,
             }
-            ExprKind::Path(QPath::TypeRelative { qself, segment }) => self
-                .qpath_recv_ty(qself)
-                .map(|ty| (ty, segment.ident.value, false, None)),
-            _ => None,
-        } {
+        {
             return self.check_member_call(
                 callee,
                 callee_span,
@@ -588,6 +602,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 is_method_call,
                 params,
                 receiver_hir_id,
+                generic_args,
             );
         }
 
@@ -605,6 +620,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         is_method_call: bool,
         params: &ThinVec<Expr>,
         receiver_hir_id: Option<HirId>,
+        explicit_generic_args: Option<&ThinVec<hir::Ty>>,
     ) -> Ty {
         let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
             builders::emit_at(
@@ -621,7 +637,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return Ty::Error;
         };
 
-        let instantiated = self.icx.instantiate(&scheme);
+        let instantiated = self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
         let Ty::Fn {
             params: param_tys,
             ret,
