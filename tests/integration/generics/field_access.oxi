@@ -1,0 +1,12 @@
+struct Foo<T> {
+    val: T,
+}
+
+fn get_val(f: Foo::<isize>) isize {
+    f.val
+}
+
+pub fn main() void {
+    let f = Foo { val: 42 };
+    let x = get_val(f);
+}
