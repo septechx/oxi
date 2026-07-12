@@ -1108,6 +1108,28 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         block_ty_res.early.unwrap_or(Ty::Never)
     }
 
+    fn lookup_adt_field(
+        &mut self,
+        struct_id: DefId,
+        generic_args: &Option<ThinVec<Ty>>,
+        member: Symbol,
+        hir_id: HirId,
+    ) -> Option<Ty> {
+        self.register_if_generic_struct(struct_id);
+        let fields = self.coherence.struct_fields.get(&struct_id)?;
+        let (hir_field_ty, index) = fields.get(&member)?;
+        self.member_res
+            .insert(hir_id, MemberRes::Field { index: *index });
+        let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+        if let Some(generic_args) = generic_args {
+            let subst = self.struct_ty_var_subst(struct_id, generic_args);
+            if !subst.is_empty() {
+                field_ty = substitute_ty_vars(&field_ty, &subst);
+            }
+        }
+        Some(field_ty)
+    }
+
     fn check_member_access(
         &mut self,
         member: Symbol,
@@ -1119,27 +1141,25 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let recv_ty = self.check_expr(base);
         let recv_ty = self.icx.resolve(&recv_ty);
 
-        if let Ty::Adt(struct_id, generic_args) = &recv_ty {
-            self.register_if_generic_struct(*struct_id);
-
-            if let Some(fields) = self.coherence.struct_fields.get(struct_id)
-                && let Some((hir_field_ty, index)) = fields.get(&member)
-            {
-                self.member_res
-                    .insert(hir_id, MemberRes::Field { index: *index });
-                let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
-                if let Some(generic_args) = generic_args {
-                    let subst = self.struct_ty_var_subst(*struct_id, generic_args);
-                    if !subst.is_empty() {
-                        field_ty = substitute_ty_vars(&field_ty, &subst);
-                    }
-                }
-                return field_ty;
-            }
-        }
+        // TODO: Maybe run in a loop to dereference types like `&&T`
+        let recv_ty = if let Ty::Ptr(inner, _) = &recv_ty {
+            self.adjustments
+                .entry(base.hir_id)
+                .or_default()
+                .push(Adjustment::AutoDeref);
+            inner.as_ref()
+        } else {
+            &recv_ty
+        };
 
         match recv_ty {
-            Ty::Adt(_, _) => {
+            Ty::Adt(struct_id, generic_args) => {
+                if let Some(field_ty) =
+                    self.lookup_adt_field(*struct_id, generic_args, member, hir_id)
+                {
+                    return field_ty;
+                }
+
                 let field = self.ctx.interner.lookup(member).to_string();
                 builders::emit_at(
                     self.ctx,
@@ -1148,57 +1168,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     diag::UnknownField,
                     diag_params! {
                         field = field,
-                        type = ty_display(&recv_ty, self.resolver, &self.ctx.interner)
+                        type = ty_display(recv_ty, self.resolver, &self.ctx.interner)
                     },
                 );
-            }
-            Ty::Ptr(inner, _) => {
-                self.adjustments
-                    .entry(base.hir_id)
-                    .or_default()
-                    .push(Adjustment::AutoDeref);
-                if let Ty::Adt(struct_id, generic_args) = inner.as_ref() {
-                    self.register_if_generic_struct(*struct_id);
-
-                    if let Some(fields) = self.coherence.struct_fields.get(struct_id)
-                        && let Some((hir_field_ty, index)) = fields.get(&member)
-                    {
-                        self.member_res
-                            .insert(hir_id, MemberRes::Field { index: *index });
-                        let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
-                        if let Some(generic_args) = generic_args {
-                            let subst = self.struct_ty_var_subst(*struct_id, generic_args);
-                            if !subst.is_empty() {
-                                field_ty = substitute_ty_vars(&field_ty, &subst);
-                            }
-                        }
-                        return field_ty;
-                    }
-
-                    let field = self.ctx.interner.lookup(member).to_string();
-                    builders::emit_at(
-                        self.ctx,
-                        member_span,
-                        self.module_id,
-                        diag::UnknownField,
-                        diag_params! {
-                            field = field,
-                            type = ty_display(&inner, self.resolver, &self.ctx.interner)
-                        },
-                    );
-                } else {
-                    let field = self.ctx.interner.lookup(member).to_string();
-                    builders::emit_at(
-                        self.ctx,
-                        member_span,
-                        self.module_id,
-                        diag::TypeWithNoFields,
-                        diag_params! {
-                            field = field,
-                            type = ty_display(&inner, self.resolver, &self.ctx.interner)
-                        },
-                    );
-                }
             }
             Ty::Slice(elem) => {
                 let interner = &self.ctx.interner;
@@ -1230,7 +1202,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     diag::TypeWithNoFields,
                     diag_params! {
                         field = field,
-                        type = ty_display(&recv_ty, self.resolver, &self.ctx.interner)
+                        type = ty_display(recv_ty, self.resolver, &self.ctx.interner)
                     },
                 );
             }
