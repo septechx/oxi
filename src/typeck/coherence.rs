@@ -108,9 +108,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         .collect()
                 });
 
+            let provided_args_len = interface_generic_args.as_ref().map_or(0, Vec::len);
             if let Some(scheme) = interface_scheme
-                && let Some(ref args) = interface_generic_args
-                && args.len() != scheme.vars.len()
+                && scheme.vars.len() != provided_args_len
             {
                 builders::emit_at(
                     self.ctx,
@@ -120,7 +120,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     diag_params! {
                         expected = scheme.vars.len(),
                         s = if scheme.vars.len() == 1 { "" } else { "s" },
-                        found = args.len()
+                        found = provided_args_len
                     },
                 );
                 continue;
