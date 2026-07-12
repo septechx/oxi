@@ -177,6 +177,8 @@ pub struct CoherenceTable {
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
     /// maps (struct def id) -> (generic param hir ids)
     pub struct_generic_params: FxHashMap<DefId, Vec<HirId>>,
+    /// maps (interface def id) -> (generic param hir ids)
+    pub interface_generic_params: FxHashMap<DefId, Vec<HirId>>,
 }
 
 impl CoherenceTable {

@@ -92,12 +92,39 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        if let Some(generic_params) = generic_params {
-                            for param in generic_params {
-                                let ty_var = icx.next_ty_var();
-                                icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                            }
-                        }
+                        let param_vars: Vec<TyVarId> = generic_params
+                            .as_ref()
+                            .map(|params| {
+                                params
+                                    .iter()
+                                    .map(|param| {
+                                        let ty_var = icx.next_ty_var();
+                                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
+                                        ty_var
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let param_hir_ids: Vec<HirId> = generic_params
+                            .as_ref()
+                            .map(|params| params.iter().map(|param| param.hir_id).collect())
+                            .unwrap_or_default();
+                        self.coherence
+                            .interface_generic_params
+                            .insert(def_id, param_hir_ids);
+                        let generic_args = if param_vars.is_empty() {
+                            None
+                        } else {
+                            Some(param_vars.iter().map(|&v| Ty::Var(v)).collect())
+                        };
+                        let body = Ty::Adt(def_id, generic_args);
+                        self.item_schemes.insert(
+                            def_id,
+                            Scheme {
+                                vars: param_vars.into(),
+                                body,
+                            },
+                        );
                         let methods: Vec<(Symbol, DefId)> = items
                             .iter()
                             .filter_map(|&item| {

@@ -6,7 +6,7 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::infctx::InferCtx;
+use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
 use crate::typeck::{Typeck, diag};
@@ -94,7 +94,46 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
             }
 
-            // 2. Signatures check
+            // 2. Extract and validate interface generic args from the path
+            let interface_scheme = self.item_schemes.get(&interface_def_id);
+            let interface_generic_args: Option<Vec<Ty>> = interface_ty
+                .segments
+                .last()
+                .and_then(|seg| seg.generic_params.as_ref())
+                .map(|params| {
+                    params
+                        .iter()
+                        .map(|hir_ty| Ty::from_hir(&mut icx, hir_ty))
+                        .collect()
+                });
+
+            if let Some(scheme) = interface_scheme
+                && let Some(ref args) = interface_generic_args
+                && args.len() != scheme.vars.len()
+            {
+                builders::emit_at(
+                    self.ctx,
+                    interface_ty.span,
+                    impl_module,
+                    diag::UnexpectedParameters,
+                    diag_params! {
+                        expected = scheme.vars.len(),
+                        s = if scheme.vars.len() == 1 { "" } else { "s" },
+                        found = args.len()
+                    },
+                );
+                continue;
+            }
+
+            let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+            if let (Some(scheme), Some(args)) = (interface_scheme, interface_generic_args.as_ref())
+            {
+                for (&var, arg) in scheme.vars.iter().zip(args.iter()) {
+                    generic_subst.insert(var, arg.clone());
+                }
+            }
+
+            // 3. Signatures check
             let Some(interface_methods) = self.coherence.interface_methods.get(&interface_def_id)
             else {
                 continue;
@@ -133,6 +172,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 if let (Some(iface_sig), Some(impl_sig)) = (iface_sig, impl_sig) {
                     let iface_sig_sub =
                         substitute_self(&iface_sig.body, interface_def_id, struct_def_id);
+                    let iface_sig_sub = substitute_generic(&iface_sig_sub, &generic_subst);
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
@@ -179,40 +219,41 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 }
 
+fn substitute_generic(ty: &Ty, subst: &FxHashMap<TyVarId, Ty>) -> Ty {
+    fold_ty(ty, &mut |ty| match ty {
+        Ty::Var(v) => subst.get(&v).cloned().unwrap_or(Ty::Var(v)),
+        ty => ty,
+    })
+}
+
 fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {
-    match ty {
+    fold_ty(ty, &mut |ty| match ty {
+        Ty::Adt(d, generics) if d == from => Ty::Adt(to, generics),
+        ty => ty,
+    })
+}
+
+fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
+where
+    F: FnMut(Ty) -> Ty,
+{
+    let ty = match ty {
         Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
-        Ty::Adt(d, generics) if *d == from => Ty::Adt(
-            to,
-            generics.as_ref().map(|args| {
-                args.iter()
-                    .map(|ty| substitute_self(ty, from, to))
-                    .collect()
-            }),
-        ),
         Ty::Adt(d, generics) => Ty::Adt(
             *d,
-            generics.as_ref().map(|args| {
-                args.iter()
-                    .map(|ty| substitute_self(ty, from, to))
-                    .collect()
-            }),
+            generics
+                .as_ref()
+                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
         ),
-        Ty::Ptr(inner, m) => Ty::Ptr(substitute_self(inner, from, to).into_box(), *m),
-        Ty::Slice(inner) => Ty::Slice(substitute_self(inner, from, to).into_box()),
-        Ty::Array(inner, n) => Ty::Array(substitute_self(inner, from, to).into_box(), *n),
+        Ty::Ptr(inner, m) => Ty::Ptr(fold_ty(inner, f).into_box(), *m),
+        Ty::Slice(inner) => Ty::Slice(fold_ty(inner, f).into_box()),
+        Ty::Array(inner, n) => Ty::Array(fold_ty(inner, f).into_box(), *n),
         Ty::Fn { params, ret } => Ty::Fn {
-            params: params
-                .iter()
-                .map(|ty| substitute_self(ty, from, to))
-                .collect(),
-            ret: substitute_self(ret, from, to).into_box(),
+            params: params.iter().map(|ty| fold_ty(ty, f)).collect(),
+            ret: fold_ty(ret, f).into_box(),
         },
-        Ty::Tuple(elements) => Ty::Tuple(
-            elements
-                .iter()
-                .map(|ty| substitute_self(ty, from, to))
-                .collect(),
-        ),
-    }
+        Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| fold_ty(ty, f)).collect()),
+    };
+
+    f(ty)
 }
