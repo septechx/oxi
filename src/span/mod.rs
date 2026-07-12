@@ -8,7 +8,10 @@ pub struct Span {
 
 impl Span {
     pub fn new(low: u32, high: u32) -> Self {
-        assert!(low <= high);
+        assert!(
+            low <= high,
+            "Span::new called with inverted bounds: low={low} > high={high}"
+        );
 
         Self {
             low,
