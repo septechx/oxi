@@ -14,6 +14,7 @@ pub use types::*;
 pub use infctx::TyVarId;
 
 use oxic_diag::include_diagnostics;
+use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
@@ -176,10 +177,14 @@ pub struct CoherenceTable {
     pub method_to_interface: FxHashMap<DefId, DefId>,
     /// maps (struct def id) -> (maps (field name) -> (HIR type, index))
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
-    /// maps (struct def id) -> (generic param hir ids)
-    pub struct_generic_params: FxHashMap<DefId, Vec<HirId>>,
-    /// maps (interface def id) -> (generic param hir ids)
-    pub interface_generic_params: FxHashMap<DefId, Vec<HirId>>,
+    /// maps (def id) -> (generic param info)
+    pub generic_params: FxHashMap<DefId, GenericParamInfo>,
+}
+
+#[derive(Debug, Default)]
+pub struct GenericParamInfo {
+    pub hir_ids: Vec<HirId>,
+    pub defaults: ThinVec<Option<hir::Ty>>,
 }
 
 impl CoherenceTable {

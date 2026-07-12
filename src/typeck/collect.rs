@@ -1,11 +1,13 @@
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
-use crate::hir::{AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, MaybeOwner, Node};
+use crate::hir::{
+    self, AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, MaybeOwner, Node,
+};
 use crate::interner::Symbol;
-use crate::typeck::Typeck;
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
+use crate::typeck::{GenericParamInfo, Typeck};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(super) fn collect_signatures(&mut self) {
@@ -33,11 +35,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (vars, param_hir_ids) =
+                        let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
-                            .struct_generic_params
-                            .insert(def_id, param_hir_ids);
+                            .generic_params
+                            .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
                         self.item_schemes.insert(def_id, scheme);
@@ -52,11 +54,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (vars, param_hir_ids) =
+                        let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, generic_params);
                         self.coherence
-                            .interface_generic_params
-                            .insert(def_id, param_hir_ids);
+                            .generic_params
+                            .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
                         self.item_schemes.insert(def_id, scheme);
@@ -90,7 +92,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn collect_generic_params(
         icx: &mut InferCtx,
         generic_params: &Option<ThinVec<GenericParam>>,
-    ) -> (ThinVec<TyVarId>, Vec<HirId>) {
+    ) -> (ThinVec<TyVarId>, Vec<HirId>, ThinVec<Option<hir::Ty>>) {
         generic_params
             .as_ref()
             .map(|params| {
@@ -99,7 +101,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     .map(|param| {
                         let ty_var = icx.next_ty_var();
                         icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-                        (ty_var, param.hir_id)
+                        (ty_var, param.hir_id, param.default.clone())
                     })
                     .collect()
             })
@@ -122,7 +124,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         generic_params: &Option<ThinVec<GenericParam>>,
         decl: &FnDecl,
     ) -> Scheme {
-        let (vars, _) = Self::collect_generic_params(icx, generic_params);
+        let (vars, _, _) = Self::collect_generic_params(icx, generic_params);
         let body = self.fn_ty(icx, decl);
         Scheme { vars, body }
     }

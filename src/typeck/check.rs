@@ -189,9 +189,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
-    fn register_if_generic_struct(&mut self, def: DefId) {
-        if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
-            for &hir_id in param_hir_ids {
+    fn register_if_generic_def(&mut self, def: DefId) {
+        if let Some(info) = self.coherence.generic_params.get(&def) {
+            for &hir_id in &info.hir_ids {
                 if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
                     let ty_var = self.icx.next_ty_var();
                     self.icx.hir_id_to_ty_var.insert(hir_id, ty_var);
@@ -789,10 +789,10 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         None
     }
 
-    fn struct_ty_var_subst(&self, def: DefId, args: &[Ty]) -> FxHashMap<TyVarId, Ty> {
+    fn def_ty_var_subst(&self, def: DefId, args: &[Ty]) -> FxHashMap<TyVarId, Ty> {
         let mut subst = FxHashMap::default();
-        if let Some(param_hir_ids) = self.coherence.struct_generic_params.get(&def) {
-            for (hir_id, arg_ty) in param_hir_ids.iter().zip(args.iter()) {
+        if let Some(info) = self.coherence.generic_params.get(&def) {
+            for (hir_id, arg_ty) in info.hir_ids.iter().zip(args.iter()) {
                 if let Some(&registered_var) = self.icx.hir_id_to_ty_var.get(hir_id) {
                     subst.insert(registered_var, arg_ty.clone());
                 }
@@ -808,13 +808,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         fields: &ThinVec<(Ident, Expr)>,
         span: Span,
     ) -> Ty {
-        self.register_if_generic_struct(def);
+        self.register_if_generic_def(def);
 
-        let param_hir_ids = self
+        let param_hir_ids = &self
             .coherence
-            .struct_generic_params
+            .generic_params
             .get(&def)
-            .expect("struct exists");
+            .expect("struct exists")
+            .hir_ids;
 
         let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
             .iter()
@@ -851,7 +852,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     }
                 }
             }
-            let subst = self.struct_ty_var_subst(def, &args);
+            let subst = self.def_ty_var_subst(def, &args);
             (Ty::Adt(def, Some(args)), subst)
         } else {
             if param_hir_ids.is_empty() {
@@ -861,12 +862,34 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     .iter()
                     .map(|&hir_id| Ty::Var(*fresh_var_map.get(&hir_id).expect("fresh var exists")))
                     .collect();
-                let subst = self.struct_ty_var_subst(def, &args);
+                self.apply_def_generic_defaults(def, &fresh_var_map, span);
+                let subst = self.def_ty_var_subst(def, &args);
                 (Ty::Adt(def, Some(args)), subst)
             }
         };
 
         self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
+    }
+
+    fn apply_def_generic_defaults(
+        &mut self,
+        def: DefId,
+        fresh_var_map: &FxHashMap<HirId, TyVarId>,
+        span: Span,
+    ) {
+        let info = match self.coherence.generic_params.get(&def) {
+            Some(info) => info,
+            None => return,
+        };
+        for (hir_id, default) in info.hir_ids.iter().zip(info.defaults.iter()) {
+            if let Some(default_ty) = default
+                && let Some(&fresh) = fresh_var_map.get(hir_id)
+            {
+                let default_ty = Ty::from_hir(self.icx, default_ty);
+                unify(self.icx, &Ty::Var(fresh), &default_ty, span, self.module_id)
+                    .or_push_err(self.icx);
+            }
+        }
     }
 
     fn check_struct_fields(
@@ -1125,14 +1148,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         member: Symbol,
         hir_id: HirId,
     ) -> Option<Ty> {
-        self.register_if_generic_struct(struct_id);
+        self.register_if_generic_def(struct_id);
         let fields = self.coherence.struct_fields.get(&struct_id)?;
         let (hir_field_ty, index) = fields.get(&member)?;
         self.member_res
             .insert(hir_id, MemberRes::Field { index: *index });
         let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
         if let Some(generic_args) = generic_args {
-            let subst = self.struct_ty_var_subst(struct_id, generic_args);
+            let subst = self.def_ty_var_subst(struct_id, generic_args);
             if !subst.is_empty() {
                 field_ty = substitute_ty_vars(&field_ty, &subst);
             }

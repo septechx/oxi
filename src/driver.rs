@@ -55,7 +55,9 @@ pub fn compile_source(
     typeck.assert_no_errors();
 
     let scope_trees = build_scope_trees(&hir_crate);
-    let _thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+
+    println!("{:#?}", thir_crate);
 
     Ok(())
 }

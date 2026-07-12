@@ -90,6 +90,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
                     let sym = param.name.value;
                     let rib = this.ribs.last_mut().expect("rib exists");
                     rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                    param.visit(this);
                 }
             }
             for arg in &fun.parameters {
@@ -337,6 +338,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                             let sym = param.name.value;
                             let rib = this.ribs.last_mut().expect("rib exists");
                             rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                            param.visit(this);
                         }
                     }
                     for field in fields {
@@ -357,6 +359,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                             let sym = param.name.value;
                             let rib = this.ribs.last_mut().expect("rib exists");
                             rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                            param.visit(this);
                         }
                     }
                     this.resolve_assoc_items(items);
