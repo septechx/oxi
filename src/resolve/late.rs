@@ -9,7 +9,7 @@ use crate::diag_params;
 use crate::errors::builders;
 use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind};
-use crate::interner::{Symbol, sym};
+use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver, diag};
 
@@ -143,20 +143,19 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             return Res::PrimTy(prim);
         }
 
-        // Check if the symbol is a local variable.
-        let mut depth = 1;
-        while depth <= self.ribs.len() {
-            let rib_index = self.ribs.len() - depth;
-
-            if let Some(&res) = self.ribs[rib_index].bindings.get(&name) {
-                return res;
-            }
-
-            if name != sym::Self_ && self.ribs[rib_index].kind.blocks_enclosing_locals() {
+        // Check the rib stack for a binding.
+        let mut locals_visible = true;
+        for rib in self.ribs.iter().rev() {
+            if let Some(&res) = rib.bindings.get(&name) {
+                if locals_visible || !matches!(res, Res::Local(_)) {
+                    return res;
+                }
                 break;
             }
 
-            depth += 1;
+            if rib.kind.blocks_enclosing_locals() {
+                locals_visible = false;
+            }
         }
 
         // Check if the symbol is a module-level definition.
@@ -164,6 +163,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             return Res::Def(res.best_binding().def_id);
         }
 
+        // TODO: Emit a better error message
         builders::emit_at(
             self.resolver.ctx,
             path.span,

@@ -13,7 +13,7 @@ use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
-use crate::typeck::fold::substitute_ty_vars;
+use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
@@ -661,7 +661,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         self.member_res
             .insert(callee.hir_id, MemberRes::Method { def_id, kind });
 
-        *ret
+        let ret = self.icx.resolve(&ret);
+        if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+            let recv_args = recv_args.clone();
+            fold_ty(&ret, &mut |ty| match ty {
+                Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
+                t => t,
+            })
+        } else {
+            ret
+        }
     }
 
     fn check_direct_call(
@@ -1154,10 +1163,31 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         self.member_res
             .insert(hir_id, MemberRes::Field { index: *index });
         let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
-        if let Some(generic_args) = generic_args {
-            let subst = self.def_ty_var_subst(struct_id, generic_args);
-            if !subst.is_empty() {
-                field_ty = substitute_ty_vars(&field_ty, &subst);
+        match generic_args {
+            Some(generic_args) => {
+                let subst = self.def_ty_var_subst(struct_id, generic_args);
+                if !subst.is_empty() {
+                    field_ty = substitute_ty_vars(&field_ty, &subst);
+                }
+            }
+            None => {
+                if let Some(info) = self.coherence.generic_params.get(&struct_id) {
+                    let defaults: ThinVec<_> = info
+                        .defaults
+                        .iter()
+                        .map(|d| {
+                            d.as_ref()
+                                .map(|ty| Ty::from_hir(self.icx, ty))
+                                .unwrap_or(Ty::Error)
+                        })
+                        .collect();
+                    if defaults.iter().all(|ty| !ty.is_error()) {
+                        let subst = self.def_ty_var_subst(struct_id, &defaults);
+                        if !subst.is_empty() {
+                            field_ty = substitute_ty_vars(&field_ty, &subst);
+                        }
+                    }
+                }
             }
         }
         Some(field_ty)

@@ -1,0 +1,7 @@
+struct Foo<T = i64> {
+    data: T,
+}
+
+pub fn main() void {
+    let foo = Foo { data: 12 };
+}

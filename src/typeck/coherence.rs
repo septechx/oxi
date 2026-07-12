@@ -101,27 +101,59 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let interface_scheme = self.item_schemes.get(&interface_def_id);
             let interface_generic_args = Ty::hir_generic_params(&mut icx, interface_ty);
 
-            let provided_args_len = interface_generic_args.as_ref().map_or(0, ThinVec::len);
-            if let Some(scheme) = interface_scheme
-                && scheme.vars.len() != provided_args_len
-            {
-                builders::emit_at(
-                    self.ctx,
-                    interface_ty.span,
-                    impl_module,
-                    diag::UnexpectedGenericParams,
-                    diag_params! {
-                        expected = scheme.vars.len(),
-                        s = if scheme.vars.len() == 1 { "" } else { "s" },
-                        found = provided_args_len
-                    },
-                );
-                continue;
-            }
+            // If no explicit generic args were provided and the interface has defaults, fill them in
+            let interface_generic_args = match (interface_scheme, &interface_generic_args) {
+                (Some(scheme), None) if !scheme.vars.is_empty() => {
+                    if let Some(info) = self.coherence.generic_params.get(&interface_def_id)
+                        && info.defaults.iter().all(|d| d.is_some())
+                    {
+                        let args: ThinVec<Ty> = info
+                            .defaults
+                            .iter()
+                            .map(|d| {
+                                let mut ty =
+                                    Ty::from_hir(&mut icx, d.as_ref().expect("default exists"));
+                                ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                                ty
+                            })
+                            .collect();
+                        Some(args)
+                    } else {
+                        let provided_args_len = 0;
+                        builders::emit_at(
+                            self.ctx,
+                            interface_ty.span,
+                            impl_module,
+                            diag::UnexpectedGenericParams,
+                            diag_params! {
+                                expected = scheme.vars.len(),
+                                s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                found = provided_args_len
+                            },
+                        );
+                        continue;
+                    }
+                }
+                (Some(scheme), Some(args)) if scheme.vars.len() != args.len() => {
+                    let provided_args_len = args.len();
+                    builders::emit_at(
+                        self.ctx,
+                        interface_ty.span,
+                        impl_module,
+                        diag::UnexpectedGenericParams,
+                        diag_params! {
+                            expected = scheme.vars.len(),
+                            s = if scheme.vars.len() == 1 { "" } else { "s" },
+                            found = provided_args_len
+                        },
+                    );
+                    continue;
+                }
+                _ => interface_generic_args,
+            };
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
-            if let (Some(scheme), Some(args)) = (interface_scheme, interface_generic_args.as_ref())
-            {
+            if let (Some(scheme), Some(ref args)) = (interface_scheme, interface_generic_args) {
                 for (&var, arg) in scheme.vars.iter().zip(args.iter()) {
                     generic_subst.insert(var, arg.clone());
                 }

@@ -64,19 +64,13 @@ pub fn unify(
         (Ty::Slice(i1), Ty::Slice(i2)) => unify(icx, i1, i2, span, module_id),
         (Ty::Adt(d1, g1), Ty::Adt(d2, g2)) => {
             if d1 == d2 {
-                if let Some(g1) = g1 {
-                    if let Some(g2) = g2 {
-                        if g1.len() != g2.len() {
-                            return Err(mismatch(a, b, span, module_id));
-                        }
-                        for (a, b) in g1.iter().zip(g2) {
-                            unify(icx, a, b, span, module_id)?;
-                        }
-                    } else {
+                if let (Some(g1), Some(g2)) = (g1, g2) {
+                    if g1.len() != g2.len() {
                         return Err(mismatch(a, b, span, module_id));
                     }
-                } else if g2.is_some() {
-                    return Err(mismatch(a, b, span, module_id));
+                    for (a, b) in g1.iter().zip(g2) {
+                        unify(icx, a, b, span, module_id)?;
+                    }
                 }
                 Ok(())
             } else {
