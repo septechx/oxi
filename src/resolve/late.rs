@@ -371,7 +371,6 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                 items,
             } => {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
-                self.resolve_path(&interface.0, interface.1);
 
                 self.with_rib(RibKind::Item, |this| {
                     let self_sym = this.resolver.ctx.interner.intern("Self");
@@ -387,6 +386,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                         }
                         None => {}
                     }
+                    this.resolve_path(&interface.0, interface.1);
                     this.resolve_assoc_items(items);
                 });
             }

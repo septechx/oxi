@@ -1,5 +1,3 @@
-use std::collections::hash_map::Entry;
-
 use thin_vec::ThinVec;
 
 use crate::diag_params;
@@ -8,6 +6,7 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
+use crate::typeck::CoherenceTable;
 use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
@@ -36,7 +35,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 continue;
             };
 
-            let impl_span = self.resolver.defs[def_id.0 as usize].span;
             let impl_module = self
                 .def_to_module
                 .get(&def_id)
@@ -64,40 +62,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 continue;
             };
 
-            // 1. Overlap check
-            let key = (interface_def_id, struct_def_id);
-
-            if let Entry::Vacant(e) = self.coherence.impls.entry(key) {
-                e.insert(def_id);
-            } else {
-                let iface = self
-                    .ctx
-                    .interner
-                    .lookup(
-                        self.resolver.defs[interface_def_id.0 as usize]
-                            .name
-                            .expect("interface has name"),
-                    )
-                    .to_string();
-                let strct = self
-                    .ctx
-                    .interner
-                    .lookup(
-                        self.resolver.defs[struct_def_id.0 as usize]
-                            .name
-                            .expect("struct has name"),
-                    )
-                    .to_string();
-                builders::emit_at(
-                    self.ctx,
-                    impl_span,
-                    impl_module,
-                    diag::ConflictingImplementations,
-                    diag_params! { iface = iface, struct = strct },
-                );
-            }
-
-            // 2. Extract and validate interface generic args from the path
+            // 1. Extract and validate interface generic args from the path
             let interface_scheme = self.item_schemes.get(&interface_def_id);
             let interface_generic_args = Ty::hir_generic_params(&mut icx, interface_ty);
 
@@ -151,6 +116,46 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
                 _ => interface_generic_args,
             };
+
+            // 2. Check for duplicate impls using resolved generic args
+            self.coherence
+                .impl_resolved_generic_args
+                .insert(def_id, interface_generic_args.clone());
+
+            let key = (interface_def_id, struct_def_id);
+            let is_conflicting = self.coherence.impls.get(&key).is_some_and(|existing| {
+                Self::has_conflicting_impl(&self.coherence, existing, &interface_generic_args)
+            });
+            if is_conflicting {
+                let iface = self
+                    .ctx
+                    .interner
+                    .lookup(
+                        self.resolver.defs[interface_def_id.0 as usize]
+                            .name
+                            .expect("interface has name"),
+                    )
+                    .to_string();
+                let strct = self
+                    .ctx
+                    .interner
+                    .lookup(
+                        self.resolver.defs[struct_def_id.0 as usize]
+                            .name
+                            .expect("struct has name"),
+                    )
+                    .to_string();
+                let impl_span = self.resolver.defs[def_id.0 as usize].span;
+                builders::emit_at(
+                    self.ctx,
+                    impl_span,
+                    impl_module,
+                    diag::ConflictingImplementations,
+                    diag_params! { iface = iface, struct = strct },
+                );
+                continue;
+            }
+            self.coherence.impls.entry(key).or_default().push(def_id);
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
             if let (Some(scheme), Some(ref args)) = (interface_scheme, interface_generic_args) {
@@ -232,6 +237,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             DefKind::Struct => Some(def_id),
             _ => None,
         }
+    }
+
+    fn has_conflicting_impl(
+        coherence: &CoherenceTable,
+        existing: &[DefId],
+        new_args: &Option<ThinVec<Ty>>,
+    ) -> bool {
+        existing.iter().any(|&existing_def_id| {
+            coherence
+                .impl_resolved_generic_args
+                .get(&existing_def_id)
+                .is_some_and(|existing_args| existing_args == new_args)
+        })
     }
 
     fn resolve_interface(&self, res: Res<HirId>) -> Option<DefId> {

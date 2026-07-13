@@ -6,7 +6,7 @@ use crate::resolve::Res;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
     Var(TyVarId),
     Prim(PrimTy),

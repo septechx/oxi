@@ -163,11 +163,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 struct BodyChecker<'a, 'b, 'ctx, 'res> {
     icx: &'a mut InferCtx,
     item_schemes: &'b mut FxHashMap<DefId, Scheme>,
     inherent_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    interface_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
+    interface_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     coherence: &'b mut CoherenceTable,
     ctx: &'ctx mut Ctx,
     resolver: &'res ResolverOutputs,
@@ -622,7 +623,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         receiver_hir_id: Option<HirId>,
         explicit_generic_args: Option<&ThinVec<hir::Ty>>,
     ) -> Ty {
-        let Some((def_id, kind)) = self.resolve_method(&recv_ty, member) else {
+        let candidates = self.resolve_method_candidates(&recv_ty, member);
+        if candidates.is_empty() {
             builders::emit_at(
                 self.ctx,
                 callee_span,
@@ -631,21 +633,101 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 diag_params! { method = member, type = ty_display(&recv_ty, self.resolver, &self.ctx.interner) },
             );
             return Ty::Error;
-        };
+        }
 
-        let Some(scheme) = self.item_schemes.get(&def_id).cloned() else {
+        // Type-check args once (side effects: node_types, adjustments)
+        let arg_tys: ThinVec<Ty> = params.iter().map(|arg| self.check_expr(arg)).collect();
+
+        for (def_id, kind) in &candidates {
+            let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
+                continue;
+            };
+
+            let snap = self.icx.snapshot();
+
+            let instantiated =
+                self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
+            let Ty::Fn {
+                params: param_tys,
+                ret,
+            } = instantiated
+            else {
+                self.icx.rollback(snap);
+                continue;
+            };
+
+            let before_errors = self.icx.errors.len();
+
+            if !self.try_match_method_args(
+                &recv_ty,
+                &param_tys,
+                &arg_tys,
+                is_method_call,
+                call_span,
+            ) {
+                self.icx.rollback(snap);
+                continue;
+            }
+
+            if self.icx.errors.len() != before_errors {
+                self.icx.rollback(snap);
+                continue;
+            }
+
+            // Success, keep bindings and finalize
+            if is_method_call && !param_tys.is_empty() {
+                let first = param_tys.first().expect("method has at least 1 param");
+                let arg_r = self.icx.resolve(&recv_ty);
+                let param_r = self.icx.resolve(first);
+                if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
+                    && let Ty::Ptr(..) = &param_r
+                {
+                    let Ty::Ptr(_, mutability) = param_r else {
+                        unreachable!()
+                    };
+                    if let Some(hir_id) = receiver_hir_id {
+                        self.adjustments
+                            .entry(hir_id)
+                            .or_default()
+                            .push(Adjustment::AutoRef(mutability));
+                    }
+                }
+            }
+            self.node_types.insert(callee.hir_id, recv_ty.clone());
+            self.member_res.insert(
+                callee.hir_id,
+                MemberRes::Method {
+                    def_id: *def_id,
+                    kind: *kind,
+                },
+            );
+
+            let ret = self.icx.resolve(&ret);
+            if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+                let recv_args = recv_args.clone();
+                return fold_ty(&ret, &mut |ty| match ty {
+                    Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
+                    t => t,
+                });
+            } else {
+                return ret;
+            }
+        }
+
+        // All candidates failed
+        let Some((def_id, _)) = candidates.first() else {
             return Ty::Error;
         };
-
+        let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
+            return Ty::Error;
+        };
         let instantiated = self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
         let Ty::Fn {
-            params: param_tys,
-            ret,
+            params: param_tys, ..
         } = instantiated
         else {
             return Ty::Error;
         };
-
         if !self.check_call_args(
             params,
             &param_tys,
@@ -656,21 +738,53 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         ) {
             return Ty::Error;
         }
+        Ty::Error
+    }
 
-        self.node_types.insert(callee.hir_id, recv_ty.clone());
-        self.member_res
-            .insert(callee.hir_id, MemberRes::Method { def_id, kind });
-
-        let ret = self.icx.resolve(&ret);
-        if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
-            let recv_args = recv_args.clone();
-            fold_ty(&ret, &mut |ty| match ty {
-                Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
-                t => t,
-            })
+    fn try_match_method_args(
+        &mut self,
+        recv_ty: &Ty,
+        param_tys: &[Ty],
+        arg_tys: &[Ty],
+        is_method_call: bool,
+        call_span: Span,
+    ) -> bool {
+        let arg_param_tys = if is_method_call && !param_tys.is_empty() {
+            &param_tys[1..]
         } else {
-            ret
+            param_tys
+        };
+
+        if arg_tys.len() != arg_param_tys.len() {
+            return false;
         }
+
+        // Match receiver against first param
+        if is_method_call && !param_tys.is_empty() {
+            let first = param_tys.first().expect("method has at least 1 param");
+            let arg_r = self.icx.resolve(recv_ty);
+            let param_r = self.icx.resolve(first);
+            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
+                && let Ty::Ptr(..) = &param_r
+            {
+                let Ty::Ptr(inner, _) = param_r else {
+                    unreachable!()
+                };
+                if unify(self.icx, &inner, recv_ty, call_span, self.module_id).is_err() {
+                    return false;
+                }
+            } else if unify(self.icx, first, recv_ty, call_span, self.module_id).is_err() {
+                return false;
+            }
+        }
+
+        for (arg_ty, param_ty) in arg_tys.iter().zip(arg_param_tys) {
+            if unify(self.icx, param_ty, arg_ty, call_span, self.module_id).is_err() {
+                return false;
+            }
+        }
+
+        true
     }
 
     fn check_direct_call(
@@ -773,29 +887,33 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         true
     }
 
-    fn resolve_method(&self, recv_ty: &Ty, member: Symbol) -> Option<(DefId, MethodKind)> {
+    fn resolve_method_candidates(&self, recv_ty: &Ty, member: Symbol) -> Vec<(DefId, MethodKind)> {
         let recv_ty = self.icx.resolve(recv_ty);
         let Ty::Adt(struct_id, _) = recv_ty else {
-            return None;
+            return vec![];
         };
+
+        let mut candidates = vec![];
 
         if let Some(method) = self.inherent_methods.get(&struct_id)
             && let Some(&method_def_id) = method.get(&member)
         {
-            return Some((method_def_id, MethodKind::Inherent));
+            candidates.push((method_def_id, MethodKind::Inherent));
         }
 
         if let Some(method) = self.interface_methods.get(&struct_id)
-            && let Some(&(iface, method_def_id)) = method.get(&member)
+            && let Some(entries) = method.get(&member)
         {
-            let impl_def = *self
-                .coherence
-                .impls
-                .get(&(iface, struct_id))
-                .expect("impl exists");
-            return Some((method_def_id, MethodKind::Interface { iface, impl_def }));
+            for &(iface, method_def_id) in entries {
+                if let Some(impl_def_ids) = self.coherence.impls.get(&(iface, struct_id)) {
+                    for &impl_def in impl_def_ids {
+                        candidates.push((method_def_id, MethodKind::Interface { iface, impl_def }));
+                    }
+                }
+            }
         }
-        None
+
+        candidates
     }
 
     fn def_ty_var_subst(&self, def: DefId, args: &[Ty]) -> FxHashMap<TyVarId, Ty> {

@@ -32,24 +32,28 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn collect_interface_methods(&mut self) {
-        for ((iface_def_id, struct_def_id), impl_def_id) in self.coherence.impls.iter() {
-            let Some(MaybeOwner::Owner(info)) = self.krate.owner(*impl_def_id) else {
-                continue;
-            };
-            let Node::Item(item) = &info.nodes.nodes[0].node else {
-                continue;
-            };
-            let ItemKind::Impl { items, .. } = &item.kind else {
-                continue;
-            };
-            let entry = self.interface_methods.entry(*struct_def_id).or_default();
-            for &item in items {
-                entry.insert(
-                    self.resolver.defs[item.0 as usize]
-                        .name
-                        .expect("item has name"),
-                    (*iface_def_id, item),
-                );
+        for ((iface_def_id, struct_def_id), impl_def_ids) in self.coherence.impls.iter() {
+            for &impl_def_id in impl_def_ids {
+                let Some(MaybeOwner::Owner(info)) = self.krate.owner(impl_def_id) else {
+                    continue;
+                };
+                let Node::Item(item) = &info.nodes.nodes[0].node else {
+                    continue;
+                };
+                let ItemKind::Impl { items, .. } = &item.kind else {
+                    continue;
+                };
+                let entry = self.interface_methods.entry(*struct_def_id).or_default();
+                for &item in items {
+                    entry
+                        .entry(
+                            self.resolver.defs[item.0 as usize]
+                                .name
+                                .expect("item has name"),
+                        )
+                        .or_default()
+                        .push((*iface_def_id, item));
+                }
             }
         }
     }

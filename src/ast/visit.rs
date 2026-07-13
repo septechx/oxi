@@ -189,7 +189,17 @@ impl Visitable for Item {
                     }
                     items.visit(visitor);
                 }
-                ItemKind::Impl { items, .. } => {
+                ItemKind::Impl {
+                    self_ty,
+                    interface,
+                    items,
+                } => {
+                    for segment in &self_ty.0.segments {
+                        segment.generic_params.visit(visitor);
+                    }
+                    for segment in &interface.0.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                     items.visit(visitor);
                 }
                 ItemKind::Fn(f) => f.visit(visitor),
@@ -237,7 +247,17 @@ impl Visitable for Item {
                     }
                     items.visit_mut(visitor);
                 }
-                ItemKind::Impl { items, .. } => {
+                ItemKind::Impl {
+                    self_ty,
+                    interface,
+                    items,
+                } => {
+                    for segment in &mut self_ty.0.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
+                    for segment in &mut interface.0.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                     items.visit_mut(visitor);
                 }
                 ItemKind::Fn(f) => f.visit_mut(visitor),

@@ -7,7 +7,7 @@ mod unify;
 mod types;
 pub use types::*;
 
-pub use infctx::TyVarId;
+pub(super) use infctx::TyVarId;
 
 use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
@@ -49,8 +49,8 @@ struct Typeck<'ctx, 'hir, 'res> {
     coherence: CoherenceTable,
     /// maps (struct def id) -> (maps (method name) -> (method def id))
     inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> (interface def id, method def id))
-    interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
+    /// maps (struct def id) -> (maps (method name) -> [(interface def id, method def id)])
+    interface_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (def id) -> (module id)
@@ -132,8 +132,8 @@ pub struct TypeckOutputs {
     pub coherence: CoherenceTable,
     /// maps (struct def id) -> (maps (method name) -> (method def id))
     pub inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> (interface def id, method def id))
-    pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
+    /// maps (struct def id) -> (maps (method name) -> [(interface def id, method def id)])
+    pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     pub item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
@@ -165,8 +165,8 @@ pub enum MethodKind {
 
 #[derive(Debug, Default)]
 pub struct CoherenceTable {
-    /// maps (interface def id, struct def id) -> (impl def id)
-    pub impls: FxHashMap<(DefId, DefId), DefId>,
+    /// maps (interface def id, struct def id) -> [impl def id]
+    pub impls: FxHashMap<(DefId, DefId), Vec<DefId>>,
     /// maps (interface def id) -> (maps (method name) -> (mdethod def id))
     pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning interface def id)
@@ -175,6 +175,8 @@ pub struct CoherenceTable {
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
     /// maps (def id) -> (generic param info)
     pub generic_params: FxHashMap<DefId, GenericParamInfo>,
+    /// maps (impl def id) -> resolved interface generic args (for duplicate detection)
+    pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
 }
 
 #[derive(Debug, Default)]

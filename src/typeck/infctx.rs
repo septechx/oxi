@@ -7,6 +7,13 @@ use crate::typeck::fold::fold_ty;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
 
+#[derive(Debug)]
+pub struct Snapshot {
+    vars_len: usize,
+    errors_len: usize,
+    roots: FxHashMap<u32, Option<Ty>>,
+}
+
 crate::newtype_ids!(TyVarId);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -245,6 +252,30 @@ impl InferCtx {
                 .unwrap_or(Ty::Var(v)),
             ty => ty,
         })
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        let roots: FxHashMap<u32, Option<Ty>> = self
+            .vars
+            .iter()
+            .enumerate()
+            .map(|(i, var)| (i as u32, var.root.clone()))
+            .collect();
+        Snapshot {
+            vars_len: self.vars.len(),
+            errors_len: self.errors.len(),
+            roots,
+        }
+    }
+
+    pub fn rollback(&mut self, snapshot: Snapshot) {
+        for (id, root) in snapshot.roots {
+            if let Some(var) = self.vars.get_mut(id as usize) {
+                var.root = root;
+            }
+        }
+        self.vars.truncate(snapshot.vars_len);
+        self.errors.truncate(snapshot.errors_len);
     }
 
     pub fn vars_with_source(&self, source: TyVarSource) -> Vec<TyVarId> {
