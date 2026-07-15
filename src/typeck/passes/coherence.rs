@@ -6,7 +6,6 @@ use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::CoherenceTable;
 use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
@@ -124,7 +123,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             let key = (interface_def_id, struct_def_id);
             let is_conflicting = self.coherence.impls.get(&key).is_some_and(|existing| {
-                Self::has_conflicting_impl(&self.coherence, existing, &interface_generic_args)
+                self.coherence
+                    .has_conflicting_impl(existing, &interface_generic_args)
             });
             if is_conflicting {
                 let iface = self
@@ -237,19 +237,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             DefKind::Struct => Some(def_id),
             _ => None,
         }
-    }
-
-    fn has_conflicting_impl(
-        coherence: &CoherenceTable,
-        existing: &[DefId],
-        new_args: &Option<ThinVec<Ty>>,
-    ) -> bool {
-        existing.iter().any(|&existing_def_id| {
-            coherence
-                .impl_resolved_generic_args
-                .get(&existing_def_id)
-                .is_some_and(|existing_args| existing_args == new_args)
-        })
     }
 
     fn resolve_interface(&self, res: Res<HirId>) -> Option<DefId> {

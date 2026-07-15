@@ -11,7 +11,8 @@ use crate::typeck::unify::UnifyError;
 pub struct Snapshot {
     vars_len: usize,
     errors_len: usize,
-    roots: FxHashMap<u32, Option<Ty>>,
+    roots: FxHashMap<TyVarId, Option<Ty>>,
+    levels: FxHashMap<TyVarId, u32>,
 }
 
 crate::newtype_ids!(TyVarId);
@@ -255,23 +256,35 @@ impl InferCtx {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        let roots: FxHashMap<u32, Option<Ty>> = self
+        let roots: FxHashMap<TyVarId, Option<Ty>> = self
             .vars
             .iter()
             .enumerate()
-            .map(|(i, var)| (i as u32, var.root.clone()))
+            .map(|(i, var)| (TyVarId(i as u32), var.root.clone()))
+            .collect();
+        let levels: FxHashMap<TyVarId, u32> = self
+            .vars
+            .iter()
+            .enumerate()
+            .map(|(i, var)| (TyVarId(i as u32), var.level))
             .collect();
         Snapshot {
             vars_len: self.vars.len(),
             errors_len: self.errors.len(),
             roots,
+            levels,
         }
     }
 
     pub fn rollback(&mut self, snapshot: Snapshot) {
         for (id, root) in snapshot.roots {
-            if let Some(var) = self.vars.get_mut(id as usize) {
+            if let Some(var) = self.vars.get_mut(id.0 as usize) {
                 var.root = root;
+            }
+        }
+        for (id, level) in snapshot.levels {
+            if let Some(var) = self.vars.get_mut(id.0 as usize) {
+                var.level = level;
             }
         }
         self.vars.truncate(snapshot.vars_len);

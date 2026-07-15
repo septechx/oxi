@@ -186,6 +186,14 @@ pub struct GenericParamInfo {
 }
 
 impl CoherenceTable {
+    pub fn has_conflicting_impl(&self, existing: &[DefId], new_args: &Option<ThinVec<Ty>>) -> bool {
+        existing.iter().any(|&existing_def_id| {
+            self.impl_resolved_generic_args
+                .get(&existing_def_id)
+                .is_some_and(|existing_args| existing_args == new_args)
+        })
+    }
+
     pub(super) fn register_interface(&mut self, interface: DefId, methods: Vec<(Symbol, DefId)>) {
         // or_default() will always be called
         let entry = self.interface_methods.entry(interface).or_default();

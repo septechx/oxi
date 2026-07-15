@@ -675,24 +675,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
 
             // Success, keep bindings and finalize
-            if is_method_call && !param_tys.is_empty() {
-                let first = param_tys.first().expect("method has at least 1 param");
-                let arg_r = self.icx.resolve(&recv_ty);
-                let param_r = self.icx.resolve(first);
-                if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
-                    && let Ty::Ptr(..) = &param_r
-                {
-                    let Ty::Ptr(_, mutability) = param_r else {
-                        unreachable!()
-                    };
-                    if let Some(hir_id) = receiver_hir_id {
-                        self.adjustments
-                            .entry(hir_id)
-                            .or_default()
-                            .push(Adjustment::AutoRef(mutability));
-                    }
-                }
-            }
+            self.apply_auto_ref_adjustment(
+                &recv_ty,
+                &param_tys,
+                is_method_call,
+                call_span,
+                receiver_hir_id,
+            );
             self.node_types.insert(callee.hir_id, recv_ty.clone());
             self.member_res.insert(
                 callee.hir_id,
@@ -715,9 +704,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         // All candidates failed
-        let Some((def_id, _)) = candidates.first() else {
-            return Ty::Error;
-        };
+        let (def_id, _) = candidates.first().expect("candidates not empty");
         let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
             return Ty::Error;
         };
@@ -728,15 +715,34 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         else {
             return Ty::Error;
         };
-        if !self.check_call_args(
-            params,
-            &param_tys,
-            Some(&recv_ty),
-            is_method_call,
-            call_span,
-            receiver_hir_id,
-        ) {
-            return Ty::Error;
+
+        let arg_param_tys = if is_method_call && !param_tys.is_empty() {
+            &param_tys[1..]
+        } else {
+            &param_tys
+        };
+
+        if arg_tys.len() != arg_param_tys.len() {
+            let expected = arg_param_tys.len();
+            builders::emit_at(
+                self.ctx,
+                call_span,
+                self.module_id,
+                diag::UnexpectedParameters,
+                diag_params! {
+                    expected = expected,
+                    s = if expected == 1 { "" } else { "s" },
+                    found = arg_tys.len()
+                },
+            );
+        } else {
+            if is_method_call && !param_tys.is_empty() {
+                let first = param_tys.first().expect("method has at least 1 param");
+                unify(self.icx, first, &recv_ty, call_span, self.module_id).or_push_err(self.icx);
+            }
+            for (arg_ty, param_ty) in arg_tys.iter().zip(arg_param_tys) {
+                unify(self.icx, param_ty, arg_ty, call_span, self.module_id).or_push_err(self.icx);
+            }
         }
         Ty::Error
     }
@@ -785,6 +791,37 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         true
+    }
+
+    fn apply_auto_ref_adjustment(
+        &mut self,
+        recv_ty: &Ty,
+        param_tys: &[Ty],
+        is_method_call: bool,
+        call_span: Span,
+        receiver_hir_id: Option<HirId>,
+    ) {
+        if is_method_call && !param_tys.is_empty() {
+            let first = param_tys.first().expect("method has at least 1 param");
+            let arg_r = self.icx.resolve(recv_ty);
+            let param_r = self.icx.resolve(first);
+            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
+                && let Ty::Ptr(..) = &param_r
+            {
+                let Ty::Ptr(inner, mutability) = param_r else {
+                    unreachable!()
+                };
+                if let Some(hir_id) = receiver_hir_id {
+                    self.adjustments
+                        .entry(hir_id)
+                        .or_default()
+                        .push(Adjustment::AutoRef(mutability));
+                }
+                unify(self.icx, &inner, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+            } else {
+                unify(self.icx, first, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+            }
+        }
     }
 
     fn check_direct_call(
@@ -851,29 +888,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return false;
         }
 
-        if let Some(recv_ty) = recv_ty
-            && is_method_call
-            && !param_tys.is_empty()
-        {
-            let first = param_tys.first().expect("method has at least 1 param");
-            let arg_r = self.icx.resolve(recv_ty);
-            let param_r = self.icx.resolve(first);
-            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
-                && let Ty::Ptr(..) = &param_r
-            {
-                let Ty::Ptr(inner, mutability) = param_r else {
-                    unreachable!()
-                };
-                if let Some(hir_id) = receiver_hir_id {
-                    self.adjustments
-                        .entry(hir_id)
-                        .or_default()
-                        .push(Adjustment::AutoRef(mutability));
-                }
-                unify(self.icx, &inner, recv_ty, call_span, self.module_id).or_push_err(self.icx);
-            } else {
-                unify(self.icx, first, recv_ty, call_span, self.module_id).or_push_err(self.icx);
-            }
+        if let Some(recv_ty) = recv_ty {
+            self.apply_auto_ref_adjustment(
+                recv_ty,
+                param_tys,
+                is_method_call,
+                call_span,
+                receiver_hir_id,
+            );
         }
 
         for (i, arg) in args.iter().enumerate() {
