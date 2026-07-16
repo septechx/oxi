@@ -99,19 +99,53 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                 }
                 (Some(scheme), Some(args)) if scheme.vars.len() != args.len() => {
-                    let provided_args_len = args.len();
-                    builders::emit_at(
-                        self.ctx,
-                        interface_ty.span,
-                        impl_module,
-                        diag::UnexpectedGenericParams,
-                        diag_params! {
-                            expected = scheme.vars.len(),
-                            s = if scheme.vars.len() == 1 { "" } else { "s" },
-                            found = provided_args_len
-                        },
-                    );
-                    continue;
+                    if args.len() < scheme.vars.len() {
+                        match self.coherence.generic_params.get(&interface_def_id) {
+                            Some(info)
+                                if info.defaults[args.len()..].iter().all(|d| d.is_some()) =>
+                            {
+                                let mut full_args: ThinVec<Ty> = args.clone();
+                                for default in info.defaults[args.len()..].iter() {
+                                    let mut ty = Ty::from_hir(
+                                        &mut icx,
+                                        default.as_ref().expect("default exists"),
+                                    );
+                                    ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                                    full_args.push(ty);
+                                }
+                                Some(full_args)
+                            }
+                            _ => {
+                                let provided_args_len = args.len();
+                                builders::emit_at(
+                                    self.ctx,
+                                    interface_ty.span,
+                                    impl_module,
+                                    diag::UnexpectedGenericParams,
+                                    diag_params! {
+                                        expected = scheme.vars.len(),
+                                        s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                        found = provided_args_len
+                                    },
+                                );
+                                continue;
+                            }
+                        }
+                    } else {
+                        let provided_args_len = args.len();
+                        builders::emit_at(
+                            self.ctx,
+                            interface_ty.span,
+                            impl_module,
+                            diag::UnexpectedGenericParams,
+                            diag_params! {
+                                expected = scheme.vars.len(),
+                                s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                found = provided_args_len
+                            },
+                        );
+                        continue;
+                    }
                 }
                 _ => interface_generic_args,
             };
