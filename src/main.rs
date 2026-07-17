@@ -58,15 +58,21 @@ fn check_for_errors() -> Result<()> {
 }
 
 fn build_files(cli: Cli) -> Result<()> {
-    let Ok(source_text) = fs::read_to_string(&cli.input) else {
-        with_ctx_mut(|ctx| {
-            builders::emit(
-                ctx,
-                diag::SourceFileNotFound,
-                diag_params! { file = cli.input.display() },
-            );
-        });
-        std::process::exit(1);
+    let source_text = match fs::read_to_string(&cli.input) {
+        Ok(text) => text,
+        Err(e) => {
+            with_ctx_mut(|ctx| {
+                builders::emit(
+                    ctx,
+                    diag::SourceFileNotFound,
+                    diag_params! {
+                        file = cli.input.display(),
+                        error = e
+                    },
+                );
+            });
+            std::process::exit(1);
+        }
     };
 
     let use_color = match cli.color {

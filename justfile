@@ -8,6 +8,9 @@ build MODE="release":
 run *ARGS:
     env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- {{ARGS}}
 
+run-test *ARGS:
+    env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- tests/integration/{{ARGS}}
+
 test FILTER="":
     env OXI_ROOT="$(pwd)" cargo test {{FILTER}}
 
