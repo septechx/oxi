@@ -1,0 +1,11 @@
+struct Foo<T = i64> {
+    data: T,
+
+    pub fn do_stuff(self: &Self) void {}
+}
+
+pub fn main() void {
+    let foo: Foo::<u8> = Foo { data: 12 };
+    let bar = Foo { data: 12 };
+    Foo::<u8>::do_stuff(&foo);
+}

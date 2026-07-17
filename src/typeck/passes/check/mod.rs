@@ -148,6 +148,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             )
         }
 
+        let generic_defaults = std::mem::take(&mut icx.generic_defaults);
+        for (var, default_ty) in generic_defaults {
+            if icx.is_bound(var) {
+                continue;
+            }
+            let span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let module_id = icx.ty_var_module(var);
+            unify(&mut icx, &Ty::Var(var), &default_ty, span, module_id).or_push_err(&mut icx);
+        }
+
         let resolved: FxHashMap<HirId, Ty> = node_types
             .iter()
             .map(|(&id, ty)| (id, icx.resolve(ty)))
@@ -1011,7 +1021,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     .iter()
                     .map(|&hir_id| Ty::Var(*fresh_var_map.get(&hir_id).expect("fresh var exists")))
                     .collect();
-                self.apply_def_generic_defaults(def, &fresh_var_map, span);
+                self.stash_generic_defaults(def, &fresh_var_map);
                 let subst = self.def_ty_var_subst(def, &args);
                 (Ty::Adt(def, Some(args)), subst)
             }
@@ -1020,12 +1030,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
     }
 
-    fn apply_def_generic_defaults(
-        &mut self,
-        def: DefId,
-        fresh_var_map: &FxHashMap<HirId, TyVarId>,
-        span: Span,
-    ) {
+    fn stash_generic_defaults(&mut self, def: DefId, fresh_var_map: &FxHashMap<HirId, TyVarId>) {
         let info = match self.coherence.generic_params.get(&def) {
             Some(info) => info,
             None => return,
@@ -1035,8 +1040,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 && let Some(&fresh) = fresh_var_map.get(hir_id)
             {
                 let default_ty = Ty::from_hir(self.icx, default_ty);
-                unify(self.icx, &Ty::Var(fresh), &default_ty, span, self.module_id)
-                    .or_push_err(self.icx);
+                self.icx.add_generic_default(fresh, default_ty);
             }
         }
     }

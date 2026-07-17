@@ -41,6 +41,7 @@ pub struct InferCtx {
     levels: Vec<u32>,
     pub(super) errors: Vec<UnifyError>,
     pub(super) hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
+    pub(super) generic_defaults: Vec<(TyVarId, Ty)>,
 }
 
 impl InferCtx {
@@ -289,6 +290,10 @@ impl InferCtx {
         }
         self.vars.truncate(snapshot.vars_len);
         self.errors.truncate(snapshot.errors_len);
+    }
+
+    pub fn add_generic_default(&mut self, var: TyVarId, default: Ty) {
+        self.generic_defaults.push((var, default));
     }
 
     pub fn vars_with_source(&self, source: TyVarSource) -> Vec<TyVarId> {
