@@ -663,9 +663,22 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let arg_tys: ThinVec<Ty> = params.iter().map(|arg| self.check_expr(arg)).collect();
 
         for (def_id, kind) in &candidates {
-            let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
+            let Some(mut scheme) = self.item_schemes.get(def_id).cloned() else {
                 continue;
             };
+
+            if let MethodKind::Interface { iface, impl_def } = kind
+                && let Some(iface_scheme) = self.item_schemes.get(iface)
+                && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
+            {
+                let mut subst = FxHashMap::default();
+                for (&var, arg) in iface_scheme.vars.iter().zip(args.iter()) {
+                    subst.insert(var, arg.clone());
+                }
+                if !subst.is_empty() {
+                    scheme.body = substitute_ty_vars(&scheme.body, &subst);
+                }
+            }
 
             // Fold the receiver's concrete type args into the method scheme,
             // so that e.g. Foo::<u32>::do_stuff(&foo) checks that foo: Foo<u32>
