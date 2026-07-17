@@ -89,3 +89,4 @@ Examples:
 - Run integration tests only: `cargo test --test integration`
 - Run unit tests (inside `src/`): `cargo test --lib <filter>`
 - Generate coverage: `just coverage <format>` (uses cargo-tarpaulin)
+- Run a specific test as a regular source file: `just run-test <file>` (equivalent to `just run tests/integration/<file>`)
