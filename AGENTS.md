@@ -4,7 +4,6 @@ The `src/codegen` module is deprecated
 
 # Useful commands
 
-- Run test suite: `just test`
 - Run lint: `just lint`. If formatting issues are reported, fix them with `cargo fmt`
 - Run compiler: `just run <file>`.
 
@@ -66,4 +65,27 @@ impl AddTwo for Foo {
 }
 ```
 
-The tests (`tests/integration/**/*.oxi`) contain more example code
+# Tests
+
+## Creating a new integration test
+
+Add an `.oxi` file under `tests/integration/` (or a subdirectory). Tests that should fail use `// @expect-error <code>` annotations. Tests that depend on helpers use `// @auxiliary-module <name>` referencing `tests/integration/<subdirectory?>/auxiliary/<name>.oxi`.
+
+## Test name generation
+
+Test function names are generated at compile time by the `oxic_test` proc-macro (`crates/oxic_test/`). The relative path from `tests/integration/` has its `.oxi` extension stripped, then `/` and `-` are replaced with `_`.
+
+Examples:
+
+- `tests/integration/booleans.oxi` → `booleans`
+- `tests/integration/interfaces/interfaces1.oxi` → `interfaces_interfaces1`
+- `tests/integration/interfaces/specialization/impl_duplicate_explicit_args.oxi` → `interfaces_specialization_impl_duplicate_explicit_args`
+
+## Running tests
+
+- Run all tests: `just test`
+- Run a specific test by generated name: `just test <name>` (e.g. `just test booleans`, `just test interfaces_interfaces1`)
+- Run a subset: `just test <partial-name>` uses substring matching (e.g. `just test generics` runs all tests with "generics" in the name)
+- Run integration tests only: `cargo test --test integration`
+- Run unit tests (inside `src/`): `cargo test --lib <filter>`
+- Generate coverage: `just coverage <format>` (uses cargo-tarpaulin)

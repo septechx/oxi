@@ -26,6 +26,8 @@ lint:
     cargo fmt -- --check
     cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- src/
 
-coverage:
-    cargo tarpaulin --out Html
+coverage FORMAT="Html":
+    cargo tarpaulin --out {{FORMAT}}
+
+coverage-open: (coverage "Html")
     xdg-open tarpaulin-report.html
