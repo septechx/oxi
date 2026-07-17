@@ -1096,11 +1096,24 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Some(info) => info,
             None => return,
         };
+        let subst: FxHashMap<TyVarId, Ty> = info
+            .hir_ids
+            .iter()
+            .filter_map(|hir_id| {
+                fresh_var_map.get(hir_id).and_then(|&fresh| {
+                    self.icx
+                        .hir_id_to_ty_var
+                        .get(hir_id)
+                        .map(|&def_var| (def_var, Ty::Var(fresh)))
+                })
+            })
+            .collect();
         for (hir_id, default) in info.hir_ids.iter().zip(info.defaults.iter()) {
             if let Some(default_ty) = default
                 && let Some(&fresh) = fresh_var_map.get(hir_id)
             {
                 let default_ty = Ty::from_hir(self.icx, default_ty);
+                let default_ty = substitute_ty_vars(&default_ty, &subst);
                 self.icx.add_generic_default(fresh, default_ty);
             }
         }
