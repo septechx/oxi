@@ -683,6 +683,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
             let snap = self.icx.snapshot();
 
+            // Silently skip arity-mismatched candidates during speculative probing;
+            // diagnostics are deferred to the fallback path (all candidates failed).
+            if let Some(args) = explicit_generic_args
+                && args.len() != scheme.vars.len()
+            {
+                self.icx.rollback(snap);
+                continue;
+            }
+
             let instantiated =
                 self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
             let Ty::Fn {
