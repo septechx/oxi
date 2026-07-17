@@ -469,8 +469,22 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let base = match qpath {
             QPath::Resolved(path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    match self.item_schemes.get(def_id) {
-                        Some(scheme) => self.icx.instantiate(scheme),
+                    match self.item_schemes.get(def_id).cloned() {
+                        Some(scheme) => {
+                            if let Some(explicit_args) = path
+                                .segments
+                                .last()
+                                .and_then(|seg| seg.generic_params.as_ref())
+                            {
+                                self.instantiate_with_explicit_args(
+                                    &scheme,
+                                    explicit_args,
+                                    path.span,
+                                )
+                            } else {
+                                self.icx.instantiate(&scheme)
+                            }
+                        }
                         None => Ty::Error,
                     }
                 }
@@ -653,6 +667,20 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 continue;
             };
 
+            // Fold the receiver's concrete type args into the method scheme,
+            // so that e.g. Foo::<u32>::do_stuff(&foo) checks that foo: Foo<u32>
+            let scheme = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+                Scheme {
+                    vars: scheme.vars,
+                    body: fold_ty(&scheme.body, &mut |ty| match ty {
+                        Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
+                        t => t,
+                    }),
+                }
+            } else {
+                scheme
+            };
+
             let snap = self.icx.snapshot();
 
             let instantiated =
@@ -717,6 +745,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let (def_id, _) = candidates.first().expect("candidates not empty");
         let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
             return Ty::Error;
+        };
+        let scheme = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+            Scheme {
+                vars: scheme.vars,
+                body: fold_ty(&scheme.body, &mut |ty| match ty {
+                    Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
+                    t => t,
+                }),
+            }
+        } else {
+            scheme
         };
         let instantiated = self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
         let Ty::Fn {
