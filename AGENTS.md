@@ -28,7 +28,7 @@ fn add(a: u32, b: u32) u32 {
 ## Generics
 
 ```text
-struct Foo<T> {
+struct Foo<T = i32> {
     data: T,
 }
 
@@ -62,6 +62,16 @@ impl AddTwo for Foo {
     fn add_two(self: &mut Self) void {
         self.data += 2;
     }
+}
+
+pub fn main() void {
+    let mut foo = Foo { data: 42 };
+    foo.add_one();
+    foo.add_two();
+    // UFCS
+    Foo::add_one(&mut foo);
+    // Or using pipes
+    &mut foo |> Foo::add_one;
 }
 ```
 

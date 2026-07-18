@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Literal, Mutability};
@@ -407,7 +409,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .segments
                         .last()
                         .and_then(|seg| seg.generic_params.as_ref());
-                    self.instantiate_fn_scheme(&scheme, explicit_args, path.span)
+                    self.instantiate_fn_scheme(*def_id, &scheme, explicit_args, path.span)
                 }
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
@@ -420,13 +422,40 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
+    fn try_complete_generic_args(
+        &self,
+        def_id: DefId,
+        args: &mut ThinVec<hir::Ty>,
+        expected_len: usize,
+    ) -> bool {
+        match args.len().cmp(&expected_len) {
+            Ordering::Equal => true,
+            Ordering::Greater => false,
+            Ordering::Less => {
+                let Some(info) = self.coherence.generic_params.get(&def_id) else {
+                    return false;
+                };
+                for i in args.len()..expected_len {
+                    match info.defaults.get(i) {
+                        Some(Some(default_ty)) => args.push(default_ty.clone()),
+                        _ => return false,
+                    }
+                }
+                true
+            }
+        }
+    }
+
     fn instantiate_with_explicit_args(
         &mut self,
+        def_id: DefId,
         scheme: &Scheme,
         explicit_args: &ThinVec<hir::Ty>,
         span: Span,
     ) -> Ty {
-        if explicit_args.len() != scheme.vars.len() {
+        let provided = explicit_args.len();
+        let mut args = explicit_args.clone();
+        if !self.try_complete_generic_args(def_id, &mut args, scheme.vars.len()) {
             builders::emit_at(
                 self.ctx,
                 span,
@@ -435,7 +464,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 diag_params! {
                     expected = scheme.vars.len(),
                     s = if scheme.vars.len() == 1 { "" } else { "s" },
-                    found = explicit_args.len()
+                    found = provided,
                 },
             );
             return Ty::Error;
@@ -444,7 +473,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for &v in &scheme.vars {
             mapping.insert(v, self.icx.next_ty_var());
         }
-        for (hir_arg_ty, &v) in explicit_args.iter().zip(&scheme.vars) {
+        if let Some(info) = self.coherence.generic_params.get(&def_id) {
+            for (hir_id, &v) in info.hir_ids.iter().zip(&scheme.vars) {
+                if let Some(&fresh) = mapping.get(&v) {
+                    self.icx.hir_id_to_ty_var.entry(*hir_id).or_insert(fresh);
+                }
+            }
+        }
+        for (hir_arg_ty, &v) in args.iter().zip(&scheme.vars) {
             let arg_ty = Ty::from_hir(self.icx, hir_arg_ty);
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
@@ -455,12 +491,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
     fn instantiate_fn_scheme(
         &mut self,
+        def_id: DefId,
         scheme: &Scheme,
         explicit_args: Option<&ThinVec<hir::Ty>>,
         span: Span,
     ) -> Ty {
         match explicit_args {
-            Some(args) => self.instantiate_with_explicit_args(scheme, args, span),
+            Some(args) => self.instantiate_with_explicit_args(def_id, scheme, args, span),
             None => self.icx.instantiate(scheme),
         }
     }
@@ -477,6 +514,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                                 .and_then(|seg| seg.generic_params.as_ref())
                             {
                                 self.instantiate_with_explicit_args(
+                                    *def_id,
                                     &scheme,
                                     explicit_args,
                                     path.span,
@@ -698,15 +736,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
             // Silently skip arity-mismatched candidates during speculative probing;
             // diagnostics are deferred to the fallback path (all candidates failed).
-            if let Some(args) = explicit_generic_args
-                && args.len() != scheme.vars.len()
-            {
-                self.icx.rollback(snap);
-                continue;
+            if let Some(args) = explicit_generic_args {
+                let mut completed = args.clone();
+                if !self.try_complete_generic_args(*def_id, &mut completed, scheme.vars.len()) {
+                    self.icx.rollback(snap);
+                    continue;
+                }
             }
 
             let instantiated =
-                self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
+                self.instantiate_fn_scheme(*def_id, &scheme, explicit_generic_args, callee_span);
             let Ty::Fn {
                 params: param_tys,
                 ret,
@@ -779,7 +818,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         } else {
             scheme
         };
-        let instantiated = self.instantiate_fn_scheme(&scheme, explicit_generic_args, callee_span);
+        let instantiated =
+            self.instantiate_fn_scheme(*def_id, &scheme, explicit_generic_args, callee_span);
         let Ty::Fn {
             params: param_tys, ..
         } = instantiated
@@ -1043,15 +1083,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             .collect();
 
         let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
-            let args: ThinVec<Ty> = generic_args
-                .iter()
-                .map(|arg| {
-                    let arg_ty = Ty::from_hir(self.icx, arg);
-                    self.node_types.insert(arg.hir_id, arg_ty.clone());
-                    arg_ty
-                })
-                .collect();
-            if args.len() != param_hir_ids.len() {
+            let provided = generic_args.len();
+            let mut hir_args = generic_args.clone();
+            if !self.try_complete_generic_args(def, &mut hir_args, param_hir_ids.len()) {
                 builders::emit_at(
                     self.ctx,
                     span,
@@ -1060,16 +1094,23 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     diag_params! {
                         expected = param_hir_ids.len(),
                         s = if param_hir_ids.len() == 1 { "" } else { "s" },
-                        found = args.len()
+                        found = provided,
                     },
                 );
                 return Ty::Error;
-            } else {
-                for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
-                    if let Some(&fresh) = fresh_var_map.get(hir_id) {
-                        unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
-                            .or_push_err(self.icx);
-                    }
+            }
+            let args: ThinVec<Ty> = hir_args
+                .iter()
+                .map(|arg| {
+                    let arg_ty = Ty::from_hir(self.icx, arg);
+                    self.node_types.insert(arg.hir_id, arg_ty.clone());
+                    arg_ty
+                })
+                .collect();
+            for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
+                if let Some(&fresh) = fresh_var_map.get(hir_id) {
+                    unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
+                        .or_push_err(self.icx);
                 }
             }
             let subst = self.def_ty_var_subst(def, &args);
