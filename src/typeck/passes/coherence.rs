@@ -65,22 +65,38 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let interface_scheme = self.item_schemes.get(&interface_def_id);
             let interface_generic_args = Ty::hir_generic_params(&mut icx, interface_ty);
 
+            if let Some(scheme) = interface_scheme
+                && !scheme.vars.is_empty()
+                && let Some(info) = self.coherence.generic_params.get(&interface_def_id)
+            {
+                for &hir_id in &info.hir_ids {
+                    if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                        let var = icx.next_ty_var();
+                        icx.hir_id_to_ty_var.insert(hir_id, var);
+                    }
+                }
+            }
+
             // If no explicit generic args were provided and the interface has defaults, fill them in
             let interface_generic_args = match (interface_scheme, &interface_generic_args) {
                 (Some(scheme), None) if !scheme.vars.is_empty() => {
                     if let Some(info) = self.coherence.generic_params.get(&interface_def_id)
                         && info.defaults.iter().all(|d| d.is_some())
                     {
-                        let args: ThinVec<Ty> = info
-                            .defaults
-                            .iter()
-                            .map(|d| {
-                                let mut ty =
-                                    Ty::from_hir(&mut icx, d.as_ref().expect("default exists"));
-                                ty = substitute_self(&ty, interface_def_id, struct_def_id);
-                                ty
-                            })
-                            .collect();
+                        let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                        let mut args: ThinVec<Ty> = ThinVec::new();
+                        for (i, default) in info.defaults.iter().enumerate() {
+                            let mut ty =
+                                Ty::from_hir(&mut icx, default.as_ref().expect("default exists"));
+                            if !subst.is_empty() {
+                                ty = substitute_ty_vars(&ty, &subst);
+                            }
+                            ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                                subst.insert(var, ty.clone());
+                            }
+                            args.push(ty);
+                        }
                         Some(args)
                     } else {
                         let provided_args_len = 0;
@@ -104,13 +120,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             Some(info)
                                 if info.defaults[args.len()..].iter().all(|d| d.is_some()) =>
                             {
+                                let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                                 let mut full_args: ThinVec<Ty> = args.clone();
-                                for default in info.defaults[args.len()..].iter() {
+                                for (i, arg) in full_args.iter().enumerate() {
+                                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                                        subst.insert(var, arg.clone());
+                                    }
+                                }
+                                for (i, default) in
+                                    info.defaults[full_args.len()..].iter().enumerate()
+                                {
+                                    let idx = full_args.len() + i;
                                     let mut ty = Ty::from_hir(
                                         &mut icx,
                                         default.as_ref().expect("default exists"),
                                     );
+                                    if !subst.is_empty() {
+                                        ty = substitute_ty_vars(&ty, &subst);
+                                    }
                                     ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
+                                    {
+                                        subst.insert(var, ty.clone());
+                                    }
                                     full_args.push(ty);
                                 }
                                 Some(full_args)

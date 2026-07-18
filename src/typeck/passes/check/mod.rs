@@ -1390,17 +1390,30 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             None => {
                 if let Some(info) = self.coherence.generic_params.get(&struct_id) {
-                    let defaults: ThinVec<_> = info
-                        .defaults
-                        .iter()
-                        .map(|d| {
-                            d.as_ref()
-                                .map(|ty| Ty::from_hir(self.icx, ty))
-                                .unwrap_or(Ty::Error)
-                        })
-                        .collect();
-                    if defaults.iter().all(|ty| !ty.is_error()) {
-                        let subst = self.def_ty_var_subst(struct_id, &defaults);
+                    let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                    let mut resolved: ThinVec<Ty> = ThinVec::new();
+                    let mut has_missing = false;
+                    for (i, default) in info.defaults.iter().enumerate() {
+                        match default {
+                            Some(ty) => {
+                                let mut ty = Ty::from_hir(self.icx, ty);
+                                if !subst.is_empty() {
+                                    ty = substitute_ty_vars(&ty, &subst);
+                                }
+                                if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                                {
+                                    subst.insert(var, ty.clone());
+                                }
+                                resolved.push(ty);
+                            }
+                            None => {
+                                has_missing = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !has_missing {
+                        let subst = self.def_ty_var_subst(struct_id, &resolved);
                         if !subst.is_empty() {
                             field_ty = substitute_ty_vars(&field_ty, &subst);
                         }
