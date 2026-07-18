@@ -803,10 +803,24 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         // All candidates failed
-        let (def_id, _) = candidates.first().expect("candidates not empty");
-        let Some(scheme) = self.item_schemes.get(def_id).cloned() else {
+        let (def_id, kind) = candidates.first().expect("candidates not empty");
+        let Some(mut scheme) = self.item_schemes.get(def_id).cloned() else {
             return Ty::Error;
         };
+
+        if let MethodKind::Interface { iface, impl_def } = kind
+            && let Some(iface_scheme) = self.item_schemes.get(iface)
+            && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
+        {
+            let mut subst = FxHashMap::default();
+            for (&var, arg) in iface_scheme.vars.iter().zip(args.iter()) {
+                subst.insert(var, arg.clone());
+            }
+            if !subst.is_empty() {
+                scheme.body = substitute_ty_vars(&scheme.body, &subst);
+            }
+        }
+
         let scheme = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
             Scheme {
                 vars: scheme.vars,
