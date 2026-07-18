@@ -69,6 +69,28 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             module_id: ModuleId(0),
         };
 
+        let assoc_to_parent: FxHashMap<DefId, DefId> = {
+            let mut map = FxHashMap::default();
+            for (i, owner) in self.krate.owners.iter().enumerate() {
+                let def_id = DefId(i as u32);
+                let MaybeOwner::Owner(info) = owner else {
+                    continue;
+                };
+                match &info.nodes.nodes[0].node {
+                    Node::Item(item) => match &item.kind {
+                        ItemKind::Struct { items, .. } | ItemKind::Interface { items, .. } => {
+                            for &item_def_id in items {
+                                map.insert(item_def_id, def_id);
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            map
+        };
+
         for (i, owner) in self.krate.owners.iter().enumerate() {
             let def_id = DefId(i as u32);
 
@@ -100,6 +122,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
+                    if let Some(&parent_def_id) = assoc_to_parent.get(&def_id) {
+                        checker.register_if_generic_def(parent_def_id);
+                    }
                     checker.register_if_generic(&fun.generic_params);
                     if let Some(body_id) = fun.body_id
                         && let Some(body) = info.nodes.body(body_id)
