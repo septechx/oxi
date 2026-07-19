@@ -449,7 +449,11 @@ pub struct Path {
 
 impl Path {
     pub fn display(&self, ctx: &Ctx) -> String {
-        path_segments_to_string(&self.segments, ctx)
+        self.segments
+            .iter()
+            .map(|s| s.display(ctx))
+            .collect::<Vec<_>>()
+            .join("::")
     }
 }
 
@@ -459,26 +463,20 @@ pub struct PathSegment {
     pub generic_params: Option<ThinVec<Ty>>,
 }
 
-pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
-    segments
-        .iter()
-        .map(|s| {
-            if let Some(params) = &s.generic_params {
-                format!(
-                    "{}::<{}>",
-                    ctx.interner.lookup(s.ident.value),
-                    params
-                        .iter()
-                        .map(|t| t.display(ctx))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            } else {
-                ctx.interner.lookup(s.ident.value).to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("::")
+impl PathSegment {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        let ident = ctx.interner.lookup(self.ident.value);
+        if let Some(params) = &self.generic_params {
+            let params_str = params
+                .iter()
+                .map(|t| t.display(ctx))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}::<{}>", ident, params_str)
+        } else {
+            ident.to_string()
+        }
+    }
 }
 
 /// A path that may still have associated-item suffixes to resolve during type checking.
@@ -498,11 +496,7 @@ impl QPath {
         match self {
             QPath::Resolved(path) => path.display(ctx),
             QPath::TypeRelative { qself, segment } => {
-                format!(
-                    "{}::{}",
-                    qself.display(ctx),
-                    ctx.interner.lookup(segment.ident.value)
-                )
+                format!("{}::{}", qself.display(ctx), segment.display(ctx))
             }
         }
     }
