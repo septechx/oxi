@@ -177,6 +177,8 @@ pub struct CoherenceTable {
     pub generic_params: FxHashMap<DefId, GenericParamInfo>,
     /// maps (impl def id) -> resolved interface generic args (for duplicate detection)
     pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
+    /// maps (assoc item def id) -> (parent struct/interface def id)
+    pub assoc_to_parent: FxHashMap<DefId, DefId>,
 }
 
 #[derive(Debug, Default)]

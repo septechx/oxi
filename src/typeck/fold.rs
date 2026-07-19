@@ -7,7 +7,7 @@ where
     F: FnMut(Ty) -> Ty,
 {
     let ty = match ty {
-        Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
+        Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         Ty::Adt(d, generics) => Ty::Adt(
             *d,
             generics

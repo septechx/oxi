@@ -1,0 +1,15 @@
+struct Foo<T> {
+    pub fn bar(baz: T) T {
+        baz
+    }
+
+    pub fn qux(self: &Self, baz: T) T {
+        baz
+    }
+}
+
+pub fn main() void {
+    Foo::bar(21);
+    let foo = Foo {};
+    foo.qux(12);
+}

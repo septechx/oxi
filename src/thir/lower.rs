@@ -482,17 +482,7 @@ impl<'a> ThirLowerer<'a> {
         let mut params = ThinVec::with_capacity(1 + args.len());
         params.push(recv_id);
         params.extend(args);
-        let struct_scheme = self
-            .typeck
-            .item_schemes
-            .get(&def_id)
-            .expect("struct exists");
-        let path_id = self.alloc_expr(
-            ExprKind::Path { def_id },
-            struct_scheme.body.clone(),
-            span,
-            hir_id,
-        );
+        let path_id = self.alloc_expr(ExprKind::Path { def_id }, Ty::MethodCallee, span, hir_id);
         self.alloc_expr(
             ExprKind::Call {
                 callee: path_id,

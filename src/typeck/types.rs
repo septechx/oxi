@@ -13,10 +13,18 @@ pub enum Ty {
     Ptr(Box<Ty>, Mutability),
     Slice(Box<Ty>),
     Array(Box<Ty>, usize),
-    Fn { params: ThinVec<Ty>, ret: Box<Ty> },
+    Fn {
+        params: ThinVec<Ty>,
+        ret: Box<Ty>,
+    },
     Tuple(ThinVec<Ty>),
     Adt(DefId, Option<ThinVec<Ty>>),
     Never,
+    /// Dummy type for the synthetic `Path` callee created during THIR lowering
+    /// of method calls. This callee `Path` expression is never type-checked, it
+    /// unifies with everything. Downstream consumers (IR emission, etc.) resolve
+    /// the actual method `DefId` via `TypeckOutputs::member_res`.
+    MethodCallee,
     Error,
 }
 

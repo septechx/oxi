@@ -168,7 +168,7 @@ impl InferCtx {
                     .as_ref()
                     .map(|tys| tys.iter().map(|ty| self.adjust(ty, bound)).collect()),
             ),
-            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
 
@@ -192,7 +192,7 @@ impl InferCtx {
                     .as_ref()
                     .map(|tys| tys.iter().map(|ty| self.resolve(ty)).collect()),
             ),
-            Ty::Prim(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
 
@@ -224,7 +224,7 @@ impl InferCtx {
                     }
                 }
             }
-            Ty::Prim(_) | Ty::Never | Ty::Error => {}
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => {}
         }
     }
 

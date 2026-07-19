@@ -5,6 +5,7 @@ use crate::hir::{
     self, AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, MaybeOwner, Node,
 };
 use crate::interner::Symbol;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::{GenericParamInfo, Typeck};
@@ -39,6 +40,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                     ItemKind::Struct {
                         fields,
+                        items,
                         generic_params,
                         ..
                     } => {
@@ -54,6 +56,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let entry = self.coherence.struct_fields.entry(def_id).or_default();
                         for (index, field) in fields.iter().enumerate() {
                             entry.insert(field.name, (field.ty.clone(), index));
+                        }
+
+                        for &item_def_id in items {
+                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
                     ItemKind::Interface {
@@ -79,20 +85,72 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             })
                             .collect();
                         self.coherence.register_interface(def_id, methods);
+
+                        for &item_def_id in items {
+                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
+                        }
                     }
-                    ItemKind::Impl { .. } | ItemKind::Module { .. } | ItemKind::Import(_) => {}
+                    ItemKind::Impl { items, .. } => {
+                        self.coherence.generic_params.insert(
+                            def_id,
+                            GenericParamInfo {
+                                hir_ids: Vec::new(),
+                                defaults: ThinVec::new(),
+                            },
+                        );
+
+                        for &item_def_id in items {
+                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
+                        }
+                    }
+                    ItemKind::Module { .. } | ItemKind::Import(_) => {}
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
-                    let (vars, hir_ids, defaults) =
+                    let (mut scheme_vars, hir_ids, defaults) =
                         Self::collect_generic_params(&mut icx, &fun.generic_params);
+
+                    let parent_def_id = self
+                        .coherence
+                        .assoc_to_parent
+                        .get(&def_id)
+                        .expect("assoc item has parent");
+                    let parent_info = self
+                        .coherence
+                        .generic_params
+                        .get(parent_def_id)
+                        .expect("assoc item parent has generic params");
+                    let parent_vars: ThinVec<TyVarId> = parent_info
+                        .hir_ids
+                        .iter()
+                        .map(|hir_id| {
+                            *icx.hir_id_to_ty_var
+                                .get(hir_id)
+                                .expect("parent generic param registered")
+                        })
+                        .collect();
+                    let parent_args: ThinVec<Ty> =
+                        parent_vars.iter().map(|&v| Ty::Var(v)).collect();
+                    scheme_vars = parent_vars.into_iter().chain(scheme_vars).collect();
+                    let body = self.fn_ty(&mut icx, &fun.decl);
+                    let body = fold_ty(&body, &mut |ty| match ty {
+                        Ty::Adt(id, None) if id == *parent_def_id => {
+                            Ty::Adt(id, Some(parent_args.clone()))
+                        }
+                        t => t,
+                    });
+                    self.item_schemes.insert(
+                        def_id,
+                        Scheme {
+                            vars: scheme_vars,
+                            body,
+                        },
+                    );
                     if !hir_ids.is_empty() {
                         self.coherence
                             .generic_params
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
                     }
-                    let body = self.fn_ty(&mut icx, &fun.decl);
-                    self.item_schemes.insert(def_id, Scheme { vars, body });
                 }
                 _ => {}
             }

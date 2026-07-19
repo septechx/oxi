@@ -69,28 +69,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             module_id: ModuleId(0),
         };
 
-        let assoc_to_parent: FxHashMap<DefId, DefId> = {
-            let mut map = FxHashMap::default();
-            for (i, owner) in self.krate.owners.iter().enumerate() {
-                let def_id = DefId(i as u32);
-                let MaybeOwner::Owner(info) = owner else {
-                    continue;
-                };
-                match &info.nodes.nodes[0].node {
-                    Node::Item(item) => match &item.kind {
-                        ItemKind::Struct { items, .. } | ItemKind::Interface { items, .. } => {
-                            for &item_def_id in items {
-                                map.insert(item_def_id, def_id);
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-            map
-        };
-
         for (i, owner) in self.krate.owners.iter().enumerate() {
             let def_id = DefId(i as u32);
 
@@ -122,7 +100,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
-                    if let Some(&parent_def_id) = assoc_to_parent.get(&def_id) {
+                    if let Some(&parent_def_id) = checker.coherence.assoc_to_parent.get(&def_id) {
                         checker.register_if_generic_def(parent_def_id);
                     }
                     checker.register_if_generic(&fun.generic_params);
@@ -434,7 +412,16 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .segments
                         .last()
                         .and_then(|seg| seg.generic_params.as_ref());
-                    self.instantiate_fn_scheme(*def_id, &scheme, explicit_args, path.span)
+                    if matches!(scheme.body, Ty::Adt(_, _)) {
+                        match explicit_args {
+                            Some(args) => self
+                                .instantiate_with_explicit_args(*def_id, &scheme, args, path.span),
+                            None if scheme.vars.is_empty() => self.icx.instantiate(&scheme),
+                            None => Ty::Adt(*def_id, None),
+                        }
+                    } else {
+                        self.instantiate_fn_scheme(*def_id, &scheme, explicit_args, path.span)
+                    }
                 }
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
@@ -545,7 +532,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                                     path.span,
                                 )
                             } else {
-                                self.icx.instantiate(&scheme)
+                                if matches!(scheme.body, Ty::Adt(_, _)) {
+                                    Ty::Adt(*def_id, None)
+                                } else {
+                                    self.icx.instantiate(&scheme)
+                                }
                             }
                         }
                         None => Ty::Error,
@@ -743,19 +734,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
             }
 
-            // Fold the receiver's concrete type args into the method scheme,
+            // Substitute receiver's concrete type args into the method scheme,
             // so that e.g. Foo::<u32>::do_stuff(&foo) checks that foo: Foo<u32>
-            let scheme = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
-                Scheme {
-                    vars: scheme.vars,
-                    body: fold_ty(&scheme.body, &mut |ty| match ty {
-                        Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
-                        t => t,
-                    }),
-                }
-            } else {
-                scheme
-            };
+            let scheme = self.fold_recv_into_scheme(def_id, scheme, &recv_ty);
 
             let snap = self.icx.snapshot();
 
@@ -846,17 +827,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
 
-        let scheme = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
-            Scheme {
-                vars: scheme.vars,
-                body: fold_ty(&scheme.body, &mut |ty| match ty {
-                    Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
-                    t => t,
-                }),
-            }
-        } else {
-            scheme
-        };
+        let scheme = self.fold_recv_into_scheme(def_id, scheme, &recv_ty);
         let instantiated =
             self.instantiate_fn_scheme(*def_id, &scheme, explicit_generic_args, callee_span);
         let Ty::Fn {
@@ -895,6 +866,45 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
         Ty::Error
+    }
+
+    fn fold_recv_into_scheme(&self, def_id: &DefId, scheme: Scheme, recv_ty: &Ty) -> Scheme {
+        let Ty::Adt(_, Some(recv_args)) = recv_ty else {
+            return scheme;
+        };
+
+        let parent_def_id = self
+            .coherence
+            .assoc_to_parent
+            .get(def_id)
+            .expect("assoc item has parent");
+
+        let parent_info = self
+            .coherence
+            .generic_params
+            .get(parent_def_id)
+            .expect("assoc item parent has generic params");
+
+        let parent_var_count = parent_info.hir_ids.len();
+        if parent_var_count == 0 {
+            return scheme;
+        }
+
+        assert!(scheme.vars.len() >= parent_var_count);
+        assert!(recv_args.len() >= parent_var_count);
+
+        let subst: FxHashMap<_, _> = scheme
+            .vars
+            .iter()
+            .take(parent_var_count)
+            .copied()
+            .zip(recv_args.iter().take(parent_var_count).cloned())
+            .collect();
+
+        Scheme {
+            vars: scheme.vars,
+            body: substitute_ty_vars(&scheme.body, &subst),
+        }
     }
 
     fn try_match_method_args(
@@ -1736,6 +1746,7 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             )
         }
         Ty::Never => "!".to_string(),
+        Ty::MethodCallee => "<method-callee>".to_string(),
         Ty::Error => "<error>".to_string(),
     }
 }

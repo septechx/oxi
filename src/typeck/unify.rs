@@ -46,6 +46,7 @@ pub fn unify(
     match (&a, &b) {
         (Ty::Error, _) | (_, Ty::Error) => Ok(()),
         (Ty::Never, _) | (_, Ty::Never) => Ok(()),
+        (Ty::MethodCallee, _) | (_, Ty::MethodCallee) => Ok(()),
         (Ty::Var(v), t) | (t, Ty::Var(v)) => bind(icx, *v, t, span, module_id),
         (Ty::Prim(p1), Ty::Prim(p2)) => {
             if p1 == p2 {
@@ -191,7 +192,7 @@ fn occurs(icx: &InferCtx, var: TyVarId, to: &Ty) -> bool {
                 false
             }
         }
-        Ty::Prim(_) | Ty::Never | Ty::Error => false,
+        Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => false,
     }
 }
 

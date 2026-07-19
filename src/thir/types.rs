@@ -28,7 +28,7 @@ pub struct ThirCrate {
 impl ThirCrate {
     pub fn assert_no_free_vars(&self, typeck: &TypeckOutputs) {
         for (&def_id, body) in &self.bodies {
-            let bound_vars: FxHashSet<TyVarId> = typeck
+            let mut bound_vars: FxHashSet<TyVarId> = typeck
                 .coherence
                 .generic_params
                 .get(&def_id)
@@ -40,6 +40,16 @@ impl ThirCrate {
                         .collect()
                 })
                 .unwrap_or_default();
+
+            if let Some(&parent_def_id) = typeck.coherence.assoc_to_parent.get(&def_id)
+                && let Some(info) = typeck.coherence.generic_params.get(&parent_def_id)
+            {
+                for hir_id in &info.hir_ids {
+                    if let Some(&var_id) = typeck.hir_id_to_ty_var.get(hir_id) {
+                        bound_vars.insert(var_id);
+                    }
+                }
+            }
 
             for expr in &body.exprs {
                 check_ty_no_free_vars(&expr.ty, &bound_vars, def_id, expr.hir_id);
@@ -88,7 +98,7 @@ fn check_ty_no_free_vars(ty: &Ty, bound_vars: &FxHashSet<TyVarId>, def_id: DefId
                 }
             }
         }
-        Ty::Prim(_) | Ty::Never | Ty::Error => {}
+        Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => {}
     }
 }
 
