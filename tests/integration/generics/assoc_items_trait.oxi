@@ -1,6 +1,6 @@
 struct Foo {}
 
-interface Bar<T> {
+trait Bar<T> {
     fn bar(baz: T) T;
     fn qux(self: &Self, baz: T) T;
 }

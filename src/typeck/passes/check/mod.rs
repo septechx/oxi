@@ -58,7 +58,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             icx: &mut icx,
             item_schemes: &mut self.item_schemes,
             inherent_methods: &mut self.inherent_methods,
-            interface_methods: &mut self.interface_methods,
+            trait_methods: &mut self.trait_methods,
             coherence: &mut self.coherence,
             resolver: self.resolver,
             node_types: &mut node_types,
@@ -183,7 +183,7 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
     icx: &'a mut InferCtx,
     item_schemes: &'b mut FxHashMap<DefId, Scheme>,
     inherent_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    interface_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
+    trait_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     coherence: &'b mut CoherenceTable,
     ctx: &'ctx mut Ctx,
     resolver: &'res ResolverOutputs,
@@ -729,12 +729,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 continue;
             };
 
-            if let MethodKind::Interface { iface, impl_def } = kind
-                && let Some(iface_scheme) = self.item_schemes.get(iface)
+            if let MethodKind::Trait { trait_, impl_def } = kind
+                && let Some(trait_scheme) = self.item_schemes.get(trait_)
                 && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
             {
                 let mut subst = FxHashMap::default();
-                for (&var, arg) in iface_scheme.vars.iter().zip(args.iter()) {
+                for (&var, arg) in trait_scheme.vars.iter().zip(args.iter()) {
                     subst.insert(var, arg.clone());
                 }
                 if !subst.is_empty() {
@@ -822,12 +822,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return Ty::Error;
         };
 
-        if let MethodKind::Interface { iface, impl_def } = kind
-            && let Some(iface_scheme) = self.item_schemes.get(iface)
+        if let MethodKind::Trait { trait_, impl_def } = kind
+            && let Some(trait_scheme) = self.item_schemes.get(trait_)
             && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
         {
             let mut subst = FxHashMap::default();
-            for (&var, arg) in iface_scheme.vars.iter().zip(args.iter()) {
+            for (&var, arg) in trait_scheme.vars.iter().zip(args.iter()) {
                 subst.insert(var, arg.clone());
             }
             if !subst.is_empty() {
@@ -1091,13 +1091,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             candidates.push((method_def_id, MethodKind::Inherent));
         }
 
-        if let Some(method) = self.interface_methods.get(&struct_id)
+        if let Some(method) = self.trait_methods.get(&struct_id)
             && let Some(entries) = method.get(&member)
         {
-            for &(iface, method_def_id) in entries {
-                if let Some(impl_def_ids) = self.coherence.impls.get(&(iface, struct_id)) {
+            for &(trait_, method_def_id) in entries {
+                if let Some(impl_def_ids) = self.coherence.impls.get(&(trait_, struct_id)) {
                     for &impl_def in impl_def_ids {
-                        candidates.push((method_def_id, MethodKind::Interface { iface, impl_def }));
+                        candidates.push((method_def_id, MethodKind::Trait { trait_, impl_def }));
                     }
                 }
             }

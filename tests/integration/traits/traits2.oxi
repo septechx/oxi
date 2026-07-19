@@ -1,4 +1,4 @@
-interface Maker {
+trait Maker {
     fn new(v: i32) Self;
 }
 

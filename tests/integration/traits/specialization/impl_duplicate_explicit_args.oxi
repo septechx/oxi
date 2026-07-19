@@ -1,8 +1,10 @@
+// @expect-error conflicting_implementations
+
 struct Foo<T = i64> {
     data: T,
 }
 
-interface Add<T = Self> {
+trait Add<T = Self> {
     fn add(self: &Self, rhs: &T) T;
 }
 
@@ -15,6 +17,12 @@ impl Add for Foo {
 impl Add::<i64> for Foo {
     fn add(self: &Self, rhs: &i64) i64 {
         self.data + rhs@
+    }
+}
+
+impl Add::<i64> for Foo {
+    fn add(self: &Self, rhs: &i64) i64 {
+        self.data * rhs@
     }
 }
 

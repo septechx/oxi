@@ -4,11 +4,11 @@ struct Foo {
     data: u32,
 }
 
-interface MyInterface<T, U> {
+trait MyTrait<T> {
     fn do_something(self: &Self) void;
 }
 
-impl MyInterface::<u32> for Foo {
+impl MyTrait for Foo {
     fn do_something(self: &Self) void {}
 }
 

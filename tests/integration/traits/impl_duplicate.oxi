@@ -1,6 +1,6 @@
 // @expect-error conflicting_implementations
 
-interface I {
+trait I {
     fn f(self: &Self) i32;
 }
 

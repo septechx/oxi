@@ -1,6 +1,6 @@
 // @expect-error impl_expected_path_to_struct
 
-interface I {
+trait I {
     fn f(self: &Self) i32;
 }
 

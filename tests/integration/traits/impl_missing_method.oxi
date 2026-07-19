@@ -1,6 +1,6 @@
 // @expect-error missing_implementation
 
-interface I {
+trait I {
     fn a(self: &Self) void;
     fn b(self: &Self) void;
 }

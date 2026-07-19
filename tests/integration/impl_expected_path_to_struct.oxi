@@ -1,7 +1,7 @@
 // @expect-error impl_expected_path_to_struct
 
-interface MyInterface {}
+trait MyTrait {}
 
-impl MyInterface for MyInterface {
+impl MyTrait for MyTrait {
     fn foo() void {}
 }

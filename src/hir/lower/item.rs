@@ -31,11 +31,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     item.visibility,
                 ),
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
-                ast::ItemKind::Interface {
+                ast::ItemKind::Trait {
                     name,
                     items,
                     generic_params,
-                } => this.lower_interface(
+                } => this.lower_trait(
                     def_id,
                     name,
                     items,
@@ -45,16 +45,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 ),
                 ast::ItemKind::Impl {
                     self_ty,
-                    interface,
+                    trait_,
                     items,
-                } => this.lower_impl(
-                    def_id,
-                    self_ty,
-                    interface,
-                    items,
-                    item.span,
-                    item.visibility,
-                ),
+                } => this.lower_impl(def_id, self_ty, trait_, items, item.span, item.visibility),
                 ast::ItemKind::Import(_) | ast::ItemKind::Module { .. } => return None,
             })
         })
@@ -79,7 +72,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         &mut self,
         def_id: DefId,
         self_ty: &(ast::Path, NodeId),
-        interface: &(ast::Path, NodeId),
+        trait_: &(ast::Path, NodeId),
         items: &'a ThinVec<ast::AssocItem>,
         span: Span,
         visibility: Visibility,
@@ -124,19 +117,19 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
         let self_ty = self.lower_resolved_path(&self_ty.0, self_res);
 
-        let interface_res = self
+        let trait_res = self
             .resolver
             .res_map
-            .get(&interface.1)
+            .get(&trait_.1)
             .expect("resolution exists")
             .full_res();
-        let Some(interface_res) = interface_res else {
+        let Some(trait_res) = trait_res else {
             builders::emit_at(
                 self.ctx,
-                interface.0.span,
+                trait_.0.span,
                 module_id,
-                diag::ExpectedPathToInterface,
-                diag_params! { path = interface.0.display(self.ctx) },
+                diag::ExpectedPathToTrait,
+                diag_params! { path = trait_.0.display(self.ctx) },
             );
             return OwnerInfo {
                 nodes: OwnerNodes {
@@ -146,7 +139,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             };
         };
 
-        let interface_ty = self.lower_resolved_path(&interface.0, interface_res);
+        let trait_ty = self.lower_resolved_path(&trait_.0, trait_res);
 
         OwnerInfo {
             nodes: OwnerNodes {
@@ -157,7 +150,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Impl {
                             self_ty,
-                            interface_ty,
+                            trait_ty,
                             items,
                         },
                         span,
@@ -169,7 +162,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
     }
 
-    fn lower_interface(
+    fn lower_trait(
         &mut self,
         def_id: DefId,
         name: &'a Ident,
@@ -221,7 +214,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     node: Node::Item(Box::new(Item {
                         hir_id,
                         owner_id,
-                        kind: ItemKind::Interface {
+                        kind: ItemKind::Trait {
                             name: name.value,
                             generic_params,
                             items,

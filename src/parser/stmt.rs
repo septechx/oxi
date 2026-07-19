@@ -219,12 +219,12 @@ pub fn parse_struct_decl_item(
     })
 }
 
-pub fn parse_interface_decl_item(
+pub fn parse_trait_decl_item(
     mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
     modifiers: ThinVec<Modifier>,
 ) -> Result<Item> {
-    let interface_token = parser.expect(TokenKind::Interface)?;
+    let trait_token = parser.expect(TokenKind::Trait)?;
     let name = parser.expect_identifier()?;
 
     let generic_params = parse_optional_generic_params(parser)?;
@@ -243,7 +243,7 @@ pub fn parse_interface_decl_item(
                     parser.ctx,
                     stmt.span,
                     parser.current_token().module_id,
-                    diag::InterfaceMethodHasBody,
+                    diag::TraitMethodHasBody,
                     diag_params! {},
                 );
             }
@@ -262,7 +262,7 @@ pub fn parse_interface_decl_item(
 
     let mut is_public = false;
 
-    let mut start_span = interface_token.span;
+    let mut start_span = trait_token.span;
 
     if let Some(pub_mod) = pub_mod {
         start_span = pub_mod.span;
@@ -278,7 +278,7 @@ pub fn parse_interface_decl_item(
     };
 
     Ok(Item {
-        kind: ItemKind::Interface {
+        kind: ItemKind::Trait {
             items,
             name,
             generic_params,
@@ -396,7 +396,7 @@ pub fn parse_impl_item(
     no_modifiers!(&mut parser, &modifiers);
 
     let start_span = parser.expect(TokenKind::Impl)?.span;
-    let interface = parse_path(parser)?;
+    let trait_ = parse_path(parser)?;
     parser.expect(TokenKind::For)?;
     let self_ty = parse_path(parser)?;
 
@@ -432,7 +432,7 @@ pub fn parse_impl_item(
         kind: ItemKind::Impl {
             items,
             self_ty: (self_ty, NodeId::default()),
-            interface: (interface, NodeId::default()),
+            trait_: (trait_, NodeId::default()),
         },
         node_id: NodeId::default(),
         attributes,

@@ -54,7 +54,7 @@ struct Foo {
     }
 }
 
-interface AddTwo {
+trait AddTwo {
     fn add_two(self: &mut Self) void;
 }
 
@@ -88,13 +88,13 @@ Test function names are generated at compile time by the `oxic_test` proc-macro 
 Examples:
 
 - `tests/integration/booleans.oxi` → `booleans`
-- `tests/integration/interfaces/interfaces1.oxi` → `interfaces_interfaces1`
-- `tests/integration/interfaces/specialization/impl_duplicate_explicit_args.oxi` → `interfaces_specialization_impl_duplicate_explicit_args`
+- `tests/integration/traits/traits1.oxi` → `traits_traits1`
+- `tests/integration/traits/specialization/impl_duplicate_explicit_args.oxi` → `traits_specialization_impl_duplicate_explicit_args`
 
 ## Running tests
 
 - Run all tests: `just test`
-- Run a specific test by generated name: `just test <name>` (e.g. `just test booleans`, `just test interfaces_interfaces1`)
+- Run a specific test by generated name: `just test <name>` (e.g. `just test booleans`, `just test traits_traits1`)
 - Run a subset: `just test <partial-name>` uses substring matching (e.g. `just test generics` runs all tests with "generics" in the name)
 - Run integration tests only: `cargo test --test integration`
 - Run unit tests (inside `src/`): `cargo test --lib <filter>`

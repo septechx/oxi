@@ -358,11 +358,11 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
             }
             ItemKind::Impl {
                 self_ty,
-                interface,
+                trait_,
                 items,
             } => {
                 self_ty.1 = self.next_node_id();
-                interface.1 = self.next_node_id();
+                trait_.1 = self.next_node_id();
                 self.assign_to_assoc_items(items);
             }
             ItemKind::Struct {
@@ -375,7 +375,7 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
                     self.assign_to_generic_params(generic_params);
                 }
             }
-            ItemKind::Interface {
+            ItemKind::Trait {
                 items,
                 generic_params,
                 ..
@@ -468,12 +468,12 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 }
                 VisitAction::SkipChildren
             }
-            ItemKind::Interface { name, .. } => {
+            ItemKind::Trait { name, .. } => {
                 let sym = name.value;
                 self.resolver.create_def(
                     item.node_id,
                     sym,
-                    DefKind::Interface,
+                    DefKind::Trait,
                     item.visibility,
                     item.span,
                 );

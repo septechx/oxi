@@ -4,7 +4,7 @@ use crate::typeck::Typeck;
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn build_method_tables(&mut self) {
         self.collect_inherent_methods();
-        self.collect_interface_methods();
+        self.collect_trait_methods();
     }
 
     fn collect_inherent_methods(&mut self) {
@@ -31,8 +31,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
-    fn collect_interface_methods(&mut self) {
-        for ((iface_def_id, struct_def_id), impl_def_ids) in self.coherence.impls.iter() {
+    fn collect_trait_methods(&mut self) {
+        for ((trait_def_id, struct_def_id), impl_def_ids) in self.coherence.impls.iter() {
             for &impl_def_id in impl_def_ids {
                 let Some(MaybeOwner::Owner(info)) = self.krate.owner(impl_def_id) else {
                     continue;
@@ -43,7 +43,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let ItemKind::Impl { items, .. } = &item.kind else {
                     continue;
                 };
-                let entry = self.interface_methods.entry(*struct_def_id).or_default();
+                let entry = self.trait_methods.entry(*struct_def_id).or_default();
                 for &item in items {
                     entry
                         .entry(
@@ -52,7 +52,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("item has name"),
                         )
                         .or_default()
-                        .push((*iface_def_id, item));
+                        .push((*trait_def_id, item));
                 }
             }
         }

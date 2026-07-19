@@ -1,5 +1,5 @@
-mod ifaces {
-    pub interface I {
+mod traits {
+    pub trait I {
         fn f(self: &Self) i32;
         fn new(v: i32) Self;
     }
@@ -11,7 +11,7 @@ mod structs {
     }
 }
 
-import ifaces::I;
+import traits::I;
 import structs::S;
 
 impl I for S {

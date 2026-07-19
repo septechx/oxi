@@ -46,17 +46,17 @@ message = "Unknown field `{field}` on slice"
 level = "Error"
 message = "Expected path to struct in impl, found `{type}`"
 
-[impl_expected_path_to_interface]
+[impl_expected_path_to_trait]
 level = "Error"
-message = "Expected path to interface in impl, found `{type}`"
+message = "Expected path to trait in impl, found `{type}`"
 
 [conflicting_implementations]
 level = "Error"
-message = "Conflicting implementations of `{iface}` for `{struct}`"
+message = "Conflicting implementations of `{trait}` for `{struct}`"
 
 [missing_implementation]
 level = "Error"
-message = "Missing implementation of interface method `{method}`"
+message = "Missing implementation of trait method `{method}`"
 
 [signature_mismatch]
 level = "Error"

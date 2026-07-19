@@ -27,7 +27,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
             let ItemKind::Impl {
                 self_ty,
-                interface_ty,
+                trait_ty,
                 items,
             } = &item.kind
             else {
@@ -50,24 +50,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
                 continue;
             };
-            let Some(interface_def_id) = self.resolve_interface(interface_ty.res) else {
+            let Some(trait_def_id) = self.resolve_trait(trait_ty.res) else {
                 builders::emit_at(
                     self.ctx,
-                    interface_ty.span,
+                    trait_ty.span,
                     impl_module,
-                    diag::ImplExpectedPathToInterface,
-                    diag_params! { type = interface_ty.display(self.ctx) },
+                    diag::ImplExpectedPathToTrait,
+                    diag_params! { type = trait_ty.display(self.ctx) },
                 );
                 continue;
             };
 
-            // 1. Extract and validate interface generic args from the path
-            let interface_scheme = self.item_schemes.get(&interface_def_id);
-            let interface_generic_args = Ty::hir_generic_params(&mut icx, interface_ty);
+            // 1. Extract and validate trait generic args from the path
+            let trait_scheme = self.item_schemes.get(&trait_def_id);
+            let trait_generic_args = Ty::hir_generic_params(&mut icx, trait_ty);
 
-            if let Some(scheme) = interface_scheme
+            if let Some(scheme) = trait_scheme
                 && !scheme.vars.is_empty()
-                && let Some(info) = self.coherence.generic_params.get(&interface_def_id)
+                && let Some(info) = self.coherence.generic_params.get(&trait_def_id)
             {
                 for &hir_id in &info.hir_ids {
                     if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
@@ -77,10 +77,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
 
-            // If no explicit generic args were provided and the interface has defaults, fill them in
-            let interface_generic_args = match (interface_scheme, &interface_generic_args) {
+            // If no explicit generic args were provided and the trait has defaults, fill them in
+            let trait_generic_args = match (trait_scheme, &trait_generic_args) {
                 (Some(scheme), None) if !scheme.vars.is_empty() => {
-                    if let Some(info) = self.coherence.generic_params.get(&interface_def_id)
+                    if let Some(info) = self.coherence.generic_params.get(&trait_def_id)
                         && info.defaults.iter().all(|d| d.is_some())
                     {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
@@ -91,7 +91,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             if !subst.is_empty() {
                                 ty = substitute_ty_vars(&ty, &subst);
                             }
-                            ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                            ty = substitute_self(&ty, trait_def_id, struct_def_id);
                             if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, ty.clone());
                             }
@@ -102,7 +102,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let provided_args_len = 0;
                         builders::emit_at(
                             self.ctx,
-                            interface_ty.span,
+                            trait_ty.span,
                             impl_module,
                             diag::UnexpectedGenericParams,
                             diag_params! {
@@ -116,7 +116,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
                 (Some(scheme), Some(args)) if scheme.vars.len() != args.len() => {
                     if args.len() < scheme.vars.len() {
-                        match self.coherence.generic_params.get(&interface_def_id) {
+                        match self.coherence.generic_params.get(&trait_def_id) {
                             Some(info)
                                 if info.defaults[args.len()..].iter().all(|d| d.is_some()) =>
                             {
@@ -138,7 +138,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     if !subst.is_empty() {
                                         ty = substitute_ty_vars(&ty, &subst);
                                     }
-                                    ty = substitute_self(&ty, interface_def_id, struct_def_id);
+                                    ty = substitute_self(&ty, trait_def_id, struct_def_id);
                                     if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
                                     {
                                         subst.insert(var, ty.clone());
@@ -151,7 +151,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 let provided_args_len = args.len();
                                 builders::emit_at(
                                     self.ctx,
-                                    interface_ty.span,
+                                    trait_ty.span,
                                     impl_module,
                                     diag::UnexpectedGenericParams,
                                     diag_params! {
@@ -167,7 +167,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let provided_args_len = args.len();
                         builders::emit_at(
                             self.ctx,
-                            interface_ty.span,
+                            trait_ty.span,
                             impl_module,
                             diag::UnexpectedGenericParams,
                             diag_params! {
@@ -179,27 +179,27 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         continue;
                     }
                 }
-                _ => interface_generic_args,
+                _ => trait_generic_args,
             };
 
             // 2. Check for duplicate impls using resolved generic args
             self.coherence
                 .impl_resolved_generic_args
-                .insert(def_id, interface_generic_args.clone());
+                .insert(def_id, trait_generic_args.clone());
 
-            let key = (interface_def_id, struct_def_id);
+            let key = (trait_def_id, struct_def_id);
             let is_conflicting = self.coherence.impls.get(&key).is_some_and(|existing| {
                 self.coherence
-                    .has_conflicting_impl(existing, &interface_generic_args)
+                    .has_conflicting_impl(existing, &trait_generic_args)
             });
             if is_conflicting {
-                let iface = self
+                let trait_ = self
                     .ctx
                     .interner
                     .lookup(
-                        self.resolver.defs[interface_def_id.0 as usize]
+                        self.resolver.defs[trait_def_id.0 as usize]
                             .name
-                            .expect("interface has name"),
+                            .expect("trait has name"),
                     )
                     .to_string();
                 let strct = self
@@ -217,22 +217,21 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     impl_span,
                     impl_module,
                     diag::ConflictingImplementations,
-                    diag_params! { iface = iface, struct = strct },
+                    diag_params! { trait = trait_, struct = strct },
                 );
                 continue;
             }
             self.coherence.impls.entry(key).or_default().push(def_id);
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
-            if let (Some(scheme), Some(ref args)) = (interface_scheme, interface_generic_args) {
+            if let (Some(scheme), Some(ref args)) = (trait_scheme, trait_generic_args) {
                 for (&var, arg) in scheme.vars.iter().zip(args.iter()) {
                     generic_subst.insert(var, arg.clone());
                 }
             }
 
             // 3. Signatures check
-            let Some(interface_methods) = self.coherence.interface_methods.get(&interface_def_id)
-            else {
+            let Some(trait_methods) = self.coherence.trait_methods.get(&trait_def_id) else {
                 continue;
             };
 
@@ -246,35 +245,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
             }
 
-            for (name, interface_method) in interface_methods.iter() {
+            for (name, trait_method) in trait_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
-                    let iface_span = self.resolver.defs[interface_method.0 as usize].span;
-                    let iface_module = self
-                        .def_to_module
-                        .get(interface_method)
-                        .copied()
-                        .unwrap_or(impl_module);
                     let method = self.ctx.interner.lookup(*name).to_string();
                     builders::emit_at(
                         self.ctx,
-                        iface_span,
-                        iface_module,
+                        item.span,
+                        impl_module,
                         diag::MissingImplementation,
                         diag_params! { method = method },
                     );
                     continue;
                 };
-                let iface_sig = self.item_schemes.get(interface_method);
+                let trait_sig = self.item_schemes.get(trait_method);
                 let impl_sig = self.item_schemes.get(impl_method);
-                if let (Some(iface_sig), Some(impl_sig)) = (iface_sig, impl_sig) {
-                    let iface_sig_sub =
-                        substitute_self(&iface_sig.body, interface_def_id, struct_def_id);
-                    let iface_sig_sub = substitute_ty_vars(&iface_sig_sub, &generic_subst);
+                if let (Some(trait_sig), Some(impl_sig)) = (trait_sig, impl_sig) {
+                    let trait_sig_sub =
+                        substitute_self(&trait_sig.body, trait_def_id, struct_def_id);
+                    let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
                         &mut icx,
-                        &iface_sig_sub,
+                        &trait_sig_sub,
                         &impl_sig.body,
                         method_span,
                         impl_module,
@@ -305,12 +298,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
-    fn resolve_interface(&self, res: Res<HirId>) -> Option<DefId> {
+    fn resolve_trait(&self, res: Res<HirId>) -> Option<DefId> {
         let Res::Def(def_id) = res else {
             return None;
         };
         match self.resolver.defs[def_id.0 as usize].kind {
-            DefKind::Interface => Some(def_id),
+            DefKind::Trait => Some(def_id),
             _ => None,
         }
     }

@@ -1,6 +1,6 @@
-// @expect-error expected_type_found_interface
+// @expect-error expected_type_found_trait
 
-interface I {
+trait I {
     fn f(self: &I) void;
 }
 

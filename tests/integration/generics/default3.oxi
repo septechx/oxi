@@ -2,7 +2,7 @@ struct Foo<T = i64> {
     data: T,
 }
 
-interface Add<T = Self, U = i32> {
+trait Add<T = Self, U = i32> {
     fn add(self: &Self, rhs: &T) T;
 }
 

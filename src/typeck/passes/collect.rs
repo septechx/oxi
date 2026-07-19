@@ -62,7 +62,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
-                    ItemKind::Interface {
+                    ItemKind::Trait {
                         items,
                         generic_params,
                         ..
@@ -84,7 +84,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     .map(|name| (name, item))
                             })
                             .collect();
-                        self.coherence.register_interface(def_id, methods);
+                        self.coherence.register_trait(def_id, methods);
 
                         for &item_def_id in items {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);

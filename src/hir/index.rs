@@ -65,7 +65,7 @@ fn index_module_rec<'ast>(
 
         match &item.kind {
             ItemKind::Struct { items: assoc, .. }
-            | ItemKind::Interface { items: assoc, .. }
+            | ItemKind::Trait { items: assoc, .. }
             | ItemKind::Impl { items: assoc, .. } => {
                 for assoc_item in assoc {
                     if let Some(&def_id) = def_map.get(&assoc_item.node_id) {

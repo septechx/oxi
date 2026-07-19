@@ -6,7 +6,7 @@ use crate::span::Span;
 pub enum DefKind {
     Mod,
     Struct,
-    Interface,
+    Trait,
     Function,
     Const,
     Impl,

@@ -1,4 +1,4 @@
-interface I {
+trait I {
     fn a(self: &Self) i32;
     fn b(self: &Self) i32;
     fn c(self: &Self) i32;

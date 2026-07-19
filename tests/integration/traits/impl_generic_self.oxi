@@ -1,4 +1,4 @@
-interface I {
+trait I {
     fn foo(self: &Self, x: Container::<Self>) void;
 }
 
