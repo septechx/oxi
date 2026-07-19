@@ -247,17 +247,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             for (name, trait_method) in trait_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
-                    let trait_span = self.resolver.defs[trait_method.0 as usize].span;
-                    let trait_module = self
-                        .def_to_module
-                        .get(trait_method)
-                        .copied()
-                        .unwrap_or(impl_module);
                     let method = self.ctx.interner.lookup(*name).to_string();
                     builders::emit_at(
                         self.ctx,
-                        trait_span,
-                        trait_module,
+                        item.span,
+                        impl_module,
                         diag::MissingImplementation,
                         diag_params! { method = method },
                     );
