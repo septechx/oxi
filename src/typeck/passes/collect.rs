@@ -134,7 +134,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let body = self.fn_ty(&mut icx, &fun.decl);
                     let body = fold_ty(&body, &mut |ty| match ty {
                         Ty::Adt(id, None) if id == *parent_def_id => {
-                            Ty::Adt(id, Some(parent_args.clone()))
+                            Ty::Adt(id, (!parent_args.is_empty()).then_some(parent_args.clone()))
                         }
                         t => t,
                     });
