@@ -485,14 +485,22 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for &v in &scheme.vars {
             mapping.insert(v, self.icx.next_ty_var());
         }
+        let parent_var_count = self
+            .coherence
+            .assoc_to_parent
+            .get(&def_id)
+            .and_then(|parent_def_id| self.coherence.generic_params.get(parent_def_id))
+            .map(|parent_info| parent_info.hir_ids.len())
+            .unwrap_or(0);
+        let method_vars = &scheme.vars[parent_var_count..];
         if let Some(info) = self.coherence.generic_params.get(&def_id) {
-            for (hir_id, &v) in info.hir_ids.iter().zip(&scheme.vars) {
+            for (hir_id, &v) in info.hir_ids.iter().zip(method_vars) {
                 if let Some(&fresh) = mapping.get(&v) {
                     self.icx.hir_id_to_ty_var.entry(*hir_id).or_insert(fresh);
                 }
             }
         }
-        for (hir_arg_ty, &v) in args.iter().zip(&scheme.vars) {
+        for (hir_arg_ty, &v) in args.iter().zip(method_vars) {
             let arg_ty = Ty::from_hir(self.icx, hir_arg_ty);
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
