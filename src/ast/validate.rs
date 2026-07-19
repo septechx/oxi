@@ -18,7 +18,7 @@ struct AstValidator {
     in_function: bool,
     in_loop: bool,
     is_top_level: bool,
-    in_interface: bool,
+    in_trait: bool,
 }
 
 impl AstValidator {
@@ -68,7 +68,7 @@ impl AstValidator {
                     );
                 });
             }
-        } else if f.body.is_none() && !self.in_interface {
+        } else if f.body.is_none() && !self.in_trait {
             with_ctx_mut(|ctx| {
                 builders::emit_at(
                     ctx,
@@ -178,23 +178,23 @@ impl Visitor for AstValidator {
 
                 VisitAction::SkipChildren
             }
-            ItemKind::Interface { items, .. } => {
+            ItemKind::Trait { items, .. } => {
                 self.check_duplicate_names(
                     items.iter().map(|item| match &item.kind {
                         AssocItemKind::Fn(f) => &f.name,
                     }),
-                    "interface methods",
+                    "trait_ methods",
                 );
 
                 let old_top_level = self.is_top_level;
-                let old_in_interface = self.in_interface;
+                let old_in_trait = self.in_trait;
                 self.is_top_level = false;
-                self.in_interface = true;
+                self.in_trait = true;
                 for item in items.iter() {
                     self.validate_assoc_item(item);
                 }
                 self.is_top_level = old_top_level;
-                self.in_interface = old_in_interface;
+                self.in_trait = old_in_trait;
 
                 VisitAction::SkipChildren
             }
@@ -207,7 +207,7 @@ impl Visitor for AstValidator {
                         match &item.kind {
                             ItemKind::Fn(f) => names.push(&f.name),
                             ItemKind::Struct { name, .. } => names.push(name),
-                            ItemKind::Interface { name, .. } => names.push(name),
+                            ItemKind::Trait { name, .. } => names.push(name),
                             ItemKind::Const { name, .. } => names.push(name),
                             ItemKind::Module { name, .. } => names.push(name),
                             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
@@ -370,7 +370,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
         in_function: false,
         in_loop: false,
         is_top_level: true,
-        in_interface: false,
+        in_trait: false,
     };
 
     let mut top_level_names = Vec::new();
@@ -378,7 +378,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
         match &item.kind {
             ItemKind::Fn(f) => top_level_names.push(&f.name),
             ItemKind::Struct { name, .. } => top_level_names.push(name),
-            ItemKind::Interface { name, .. } => top_level_names.push(name),
+            ItemKind::Trait { name, .. } => top_level_names.push(name),
             ItemKind::Const { name, .. } => top_level_names.push(name),
             ItemKind::Module { name, .. } => top_level_names.push(name),
             ItemKind::Impl { .. } | ItemKind::Import(_) => {}

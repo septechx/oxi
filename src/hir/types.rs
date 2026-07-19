@@ -141,14 +141,14 @@ pub enum ItemKind {
         items: ThinVec<DefId>,
         generic_params: Option<ThinVec<GenericParam>>,
     },
-    Interface {
+    Trait {
         name: Symbol,
         items: ThinVec<DefId>,
         generic_params: Option<ThinVec<GenericParam>>,
     },
     Impl {
         self_ty: Path,
-        interface_ty: Path,
+        trait_ty: Path,
         items: ThinVec<DefId>,
     },
     Const {

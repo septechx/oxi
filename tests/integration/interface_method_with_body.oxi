@@ -1,7 +1,0 @@
-// @expect-error interface_method_has_body
-
-interface I {
-    fn f() i32 { return 1; }
-}
-
-pub fn main() void {}

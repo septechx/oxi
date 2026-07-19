@@ -1,4 +1,4 @@
-interface Dependent<T = i64, U = T> {
+trait Dependent<T = i64, U = T> {
     fn get(self: &Self) T;
 }
 

@@ -277,7 +277,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
     fn is_type_def(&self, def_id: DefId) -> bool {
         matches!(
             self.resolver.defs.get(def_id.0 as usize).map(|d| d.kind),
-            Some(DefKind::Struct | DefKind::Interface)
+            Some(DefKind::Struct | DefKind::Trait)
         )
     }
 
@@ -347,7 +347,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     this.resolve_assoc_items(items);
                 });
             }
-            ItemKind::Interface {
+            ItemKind::Trait {
                 items,
                 generic_params,
                 ..
@@ -367,7 +367,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
             }
             ItemKind::Impl {
                 self_ty,
-                interface,
+                trait_,
                 items,
             } => {
                 let self_ty_res = self.resolve_path(&self_ty.0, self_ty.1);
@@ -386,7 +386,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                         }
                         None => {}
                     }
-                    this.resolve_path(&interface.0, interface.1);
+                    this.resolve_path(&trait_.0, trait_.1);
                     this.resolve_assoc_items(items);
                 });
             }

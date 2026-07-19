@@ -185,7 +185,7 @@ pub fn compile_items<'a, 'ctx>(
                 )?;
             }
             ItemKind::Struct { .. } => (), // Structs are compiled during the first pass
-            ItemKind::Interface { .. } => todo!(),
+            ItemKind::Trait { .. } => todo!(),
             ItemKind::Impl { .. } => todo!(),
             ItemKind::Import(_) => todo!(),
             ItemKind::Module { .. } => {}

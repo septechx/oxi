@@ -41,7 +41,7 @@ pub struct Item {
     pub node_id: NodeId,
     /// Visibility modifier for this item.
     ///
-    /// For most item kinds (static, struct, interface, function, import), this is the visibility
+    /// For most item kinds (static, struct, trait, function, import), this is the visibility
     /// as written in the source code (defaults to private if not specified).
     ///
     /// For [`ItemKind::Impl`], this field is a placeholder value since impl blocks do not have
@@ -64,14 +64,14 @@ pub enum ItemKind {
         items: ThinVec<AssocItem>,
         generic_params: Option<GenericParams>,
     },
-    Interface {
+    Trait {
         name: Ident,
         items: ThinVec<AssocItem>,
         generic_params: Option<GenericParams>,
     },
     Impl {
         self_ty: (Path, NodeId),
-        interface: (Path, NodeId),
+        trait_: (Path, NodeId),
         items: ThinVec<AssocItem>,
     },
     Fn(Fn),

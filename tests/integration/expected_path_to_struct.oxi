@@ -2,8 +2,8 @@
 
 struct Foo {}
 
-interface MyInterface {}
+trait MyTrait {}
 
-impl MyInterface for Foo::Bar {
+impl MyTrait for Foo::Bar {
     fn bar() void {}
 }

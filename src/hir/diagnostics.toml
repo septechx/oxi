@@ -6,10 +6,10 @@ message = "Invalid {kind} operator"
 level = "Error"
 message = "Expected path to struct, found `{path}`"
 
-[expected_path_to_interface]
+[expected_path_to_trait]
 level = "Error"
-message = "Expected path to interface, found `{path}`"
+message = "Expected path to trait, found `{path}`"
 
-[expected_type_found_interface]
+[expected_type_found_trait]
 level = "Error"
-message = "Expected type, found interface `{iface}`"
+message = "Expected type, found trait `{trait}`"

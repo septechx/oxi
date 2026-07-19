@@ -22,9 +22,9 @@ message = "Struct methods must have a body"
 level = "Error"
 message = "Field `{field}` has already been defined in struct `{struct}`"
 
-[interface_method_has_body]
+[trait_method_has_body]
 level = "Error"
-message = "Expected interface method to not have a body"
+message = "Expected trait method to not have a body"
 
 [expected_term_or_body_after_signature]
 level = "Fatal"

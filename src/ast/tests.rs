@@ -36,7 +36,7 @@ impl NodeCounts {
         let kind_name = match &item.kind {
             ItemKind::Const { .. } => "ConstItem",
             ItemKind::Struct { .. } => "StructDeclItem",
-            ItemKind::Interface { .. } => "InterfaceDeclItem",
+            ItemKind::Trait { .. } => "TraitDeclItem",
             ItemKind::Impl { .. } => "ImplItem",
             ItemKind::Fn(_) => "FnDeclItem",
             ItemKind::Import(_) => "ImportItem",
@@ -823,9 +823,9 @@ fn test_struct_decl_item_with_methods() {
 }
 
 #[test]
-fn test_interface_decl_item() {
+fn test_trait_decl_item() {
     let item = Item {
-        kind: ItemKind::Interface {
+        kind: ItemKind::Trait {
             generic_params: None,
             name: dummy_ident("Foo"),
             items: thin_vec![AssocItem {
@@ -850,7 +850,7 @@ fn test_interface_decl_item() {
     let mut visitor = NodeCounterVisitor::new();
     item.visit(&mut visitor);
     visitor.assert_visited("item", "Item", 1);
-    visitor.assert_visited("item", "InterfaceDeclItem", 1);
+    visitor.assert_visited("item", "TraitDeclItem", 1);
     visitor.assert_visited("type", "Type", 1);
     visitor.assert_visited("type", "Never", 1);
 }
@@ -1170,7 +1170,7 @@ fn test_comprehensive_all_item_and_statement_types() {
                 node_id: NodeId::default(),
             },
             Item {
-                kind: ItemKind::Interface {
+                kind: ItemKind::Trait {
                     generic_params: None,
                     name: dummy_ident("Bar"),
                     items: thin_vec![AssocItem {
@@ -1251,7 +1251,7 @@ fn test_comprehensive_all_item_and_statement_types() {
     visitor.assert_all_visited(&[
         ("item", "ImportItem", 1),
         ("item", "StructDeclItem", 1),
-        ("item", "InterfaceDeclItem", 1),
+        ("item", "TraitDeclItem", 1),
         ("item", "FnDeclItem", 1),
         ("stmt", "LetStmt", 1),
         ("expr", "BlockExpr", 1),
@@ -1365,7 +1365,7 @@ fn test_impl_item() {
     let item = Item {
         kind: ItemKind::Impl {
             self_ty: (Path::from_ident(dummy_ident("Foo")), NodeId::default()),
-            interface: (Path::from_ident(dummy_ident("Bar")), NodeId::default()),
+            trait_: (Path::from_ident(dummy_ident("Bar")), NodeId::default()),
             items: thin_vec![AssocItem {
                 kind: AssocItemKind::Fn(Fn {
                     generic_params: None,

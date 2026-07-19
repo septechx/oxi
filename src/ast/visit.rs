@@ -179,7 +179,7 @@ impl Visitable for Item {
                     }
                     items.visit(visitor);
                 }
-                ItemKind::Interface {
+                ItemKind::Trait {
                     items,
                     generic_params,
                     ..
@@ -191,13 +191,13 @@ impl Visitable for Item {
                 }
                 ItemKind::Impl {
                     self_ty,
-                    interface,
+                    trait_,
                     items,
                 } => {
                     for segment in &self_ty.0.segments {
                         segment.generic_params.visit(visitor);
                     }
-                    for segment in &interface.0.segments {
+                    for segment in &trait_.0.segments {
                         segment.generic_params.visit(visitor);
                     }
                     items.visit(visitor);
@@ -237,7 +237,7 @@ impl Visitable for Item {
                     }
                     items.visit_mut(visitor);
                 }
-                ItemKind::Interface {
+                ItemKind::Trait {
                     items,
                     generic_params,
                     ..
@@ -249,13 +249,13 @@ impl Visitable for Item {
                 }
                 ItemKind::Impl {
                     self_ty,
-                    interface,
+                    trait_,
                     items,
                 } => {
                     for segment in &mut self_ty.0.segments {
                         segment.generic_params.visit_mut(visitor);
                     }
-                    for segment in &mut interface.0.segments {
+                    for segment in &mut trait_.0.segments {
                         segment.generic_params.visit_mut(visitor);
                     }
                     items.visit_mut(visitor);

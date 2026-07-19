@@ -131,7 +131,7 @@ fn every_token_kind_used_at_least_once() {
         TokenKind::Const,
         TokenKind::Mut,
         TokenKind::Extern,
-        TokenKind::Interface,
+        TokenKind::Trait,
         TokenKind::Macro,
         TokenKind::If,
         TokenKind::Else,
@@ -203,7 +203,7 @@ fn every_token_kind_used_at_least_once() {
             pub extern fn main(i32, i32) i32;
             const X: i32 = 42;
             struct Foo { a: i32, }
-            interface I { fn f(self: &Self) i32; }
+            trait I { fn f(self: &Self) i32; }
             impl I for Foo { fn f(self: &Self) i32 { return self.a; } }
             mod bar;
             import bar::baz;

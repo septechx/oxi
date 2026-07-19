@@ -112,27 +112,27 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         let qpath = self.lower_qpath(path, ty.node_id);
                         if let QPath::Resolved(resolved) = &qpath
                             && let Res::Def(def_id) = resolved.res
-                            && self.resolver.defs[def_id.0 as usize].kind == DefKind::Interface
+                            && self.resolver.defs[def_id.0 as usize].kind == DefKind::Trait
                             && let Some(module_id) = self
                                 .current_owner
                                 .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
                                 .copied()
                         {
-                            let iface_name = self
+                            let trait_name = self
                                 .ctx
                                 .interner
                                 .lookup(
                                     self.resolver.defs[def_id.0 as usize]
                                         .name
-                                        .expect("interface def should have a name"),
+                                        .expect("trait def should have a name"),
                                 )
                                 .to_string();
                             builders::emit_at(
                                 self.ctx,
                                 ty.span,
                                 module_id,
-                                diag::ExpectedTypeFoundInterface,
-                                diag_params! { iface = iface_name },
+                                diag::ExpectedTypeFoundTrait,
+                                diag_params! { trait = trait_name },
                             );
                         }
                         TyKind::Path(qpath)

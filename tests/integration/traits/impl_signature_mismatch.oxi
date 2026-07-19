@@ -1,6 +1,6 @@
 // @expect-error signature_mismatch
 
-interface I {
+trait I {
     fn f(self: &Self) i32;
 }
 

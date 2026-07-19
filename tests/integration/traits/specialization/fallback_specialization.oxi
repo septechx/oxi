@@ -4,7 +4,7 @@ struct Foo {
     data: i64,
 }
 
-interface Add<T = Self> {
+trait Add<T = Self> {
     fn add(self: &Self, rhs: &T) T;
 }
 

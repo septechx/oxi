@@ -379,12 +379,7 @@ pub fn create_token_lookups() {
         // Items (top-level definitions)
         item(T::Const, parse_const_item, &mut bp_lu, &mut item_lu);
         item(T::Struct, parse_struct_decl_item, &mut bp_lu, &mut item_lu);
-        item(
-            T::Interface,
-            parse_interface_decl_item,
-            &mut bp_lu,
-            &mut item_lu,
-        );
+        item(T::Trait, parse_trait_decl_item, &mut bp_lu, &mut item_lu);
         item(T::Impl, parse_impl_item, &mut bp_lu, &mut item_lu);
         item(T::Fn, parse_fn_decl_item, &mut bp_lu, &mut item_lu);
         item(T::Import, parse_import_item, &mut bp_lu, &mut item_lu);

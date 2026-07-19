@@ -1,4 +1,4 @@
-// @expect-error impl_expected_path_to_interface
+// @expect-error impl_expected_path_to_trait
 
 struct S {}
 
