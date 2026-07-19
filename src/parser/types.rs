@@ -1,24 +1,20 @@
 use anyhow::{Result, anyhow, bail};
+use fxhash::FxHashMap;
 use parking_lot::Once;
 use std::sync::OnceLock;
 use thin_vec::ThinVec;
 
 use colored::Colorize;
 
-use crate::{
-    ast::{Mutability, NodeId, Type, TypeKind},
-    hashmap::FxHashMap,
-    lexer::token::TokenKind::{self, self as T},
-    parser::{
-        Parser,
-        lookups::{
-            BindingPower::{self, self as BP},
-            BpLookup,
-        },
-        utils::parse_path,
-    },
-    span::Span,
+use crate::ast::{Mutability, NodeId, Type, TypeKind};
+use crate::lexer::token::TokenKind::{self, self as T};
+use crate::parser::Parser;
+use crate::parser::lookups::{
+    BindingPower::{self, self as BP},
+    BpLookup,
 };
+use crate::parser::utils::parse_path;
+use crate::span::Span;
 
 type TypeNudHandler = fn(&mut Parser) -> Result<Type>;
 type TypeLedHandler = fn(&mut Parser, Type, BindingPower) -> Result<Type>;

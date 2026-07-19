@@ -8,8 +8,8 @@ use crate::context::with_ctx_mut;
 use crate::diag_params;
 use crate::errors::builders;
 use crate::errors::widgets::{CodeWidget, HighlightType, LocationWidget};
-use crate::hashmap::FxHashMap;
 use crate::hir::ModuleId;
+use fxhash::FxHashMap;
 
 include_diagnostics!("diagnostics.toml");
 

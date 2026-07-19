@@ -12,13 +12,11 @@ use std::path::PathBuf;
 use anyhow::bail;
 use thin_vec::{ThinVec, thin_vec};
 
-use crate::{
-    context::Ctx,
-    hir::path_to_mod,
-    interner::{Interner, Symbol},
-    lexer::token::{Token, TokenKind},
-    span::Span,
-};
+use crate::context::Ctx;
+use crate::hir::path_to_mod;
+use crate::interner::{Interner, Symbol};
+use crate::lexer::token::{Token, TokenKind};
+use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct Ast {

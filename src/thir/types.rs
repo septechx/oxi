@@ -1,12 +1,12 @@
 use thin_vec::ThinVec;
 
 use crate::ast::{Literal, Mutability};
-use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{BinOp, DefId, HirId, UnOp};
 use crate::interner::Symbol;
 use crate::span::Span;
 use crate::thir::scope::Scope;
 use crate::typeck::{Ty, TyVarId, TypeckOutputs};
+use fxhash::{FxHashMap, FxHashSet};
 
 crate::newtype_ids!(ExprId, StmtId, BlockId, LocalVarId);
 

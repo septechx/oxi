@@ -14,10 +14,10 @@ use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
-use crate::hashmap::FxHashMap;
 use crate::hir::{self, Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
+use fxhash::FxHashMap;
 
 include_diagnostics!("diagnostics.toml");
 

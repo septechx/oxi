@@ -14,8 +14,6 @@
 //! # fn main() { }
 //! ```
 
-#![allow(clippy::unwrap_used)]
-
 mod random_state;
 
 use core::default::Default;

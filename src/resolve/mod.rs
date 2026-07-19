@@ -12,9 +12,9 @@ use thin_vec::{ThinVec, thin_vec};
 
 use crate::ast::{Ast, ImportTree, NodeId, NodeMap, Visibility};
 use crate::context::Ctx;
-use crate::hashmap::FxHashMap;
 use crate::hir::{Def, DefId, DefKind, ModuleId, PrimTy};
 use crate::interner::Symbol;
+use fxhash::FxHashMap;
 
 include_diagnostics!("diagnostics.toml");
 

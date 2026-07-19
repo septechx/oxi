@@ -3,7 +3,7 @@ use std::hash::Hash;
 use thin_vec::ThinVec;
 
 use crate::ast::*;
-use crate::hashmap::FxHashMap;
+use fxhash::FxHashMap;
 
 pub enum VisitAction {
     /// Descend into children

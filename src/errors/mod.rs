@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Formatter};
 use colored::Colorize;
 
 use crate::errors::widgets::Widget;
-use crate::hashmap::FxHashMap;
+use fxhash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorLevel {

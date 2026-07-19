@@ -2,7 +2,6 @@ use thin_vec::ThinVec;
 
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
 use crate::interner::Symbol;
 use crate::resolve::Res;
@@ -11,6 +10,7 @@ use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
 use crate::typeck::{Typeck, diag};
+use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_coherence(&mut self) {

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::hashmap::FxHashMap;
 use crate::hir::ModuleId;
 use crate::span::Span;
+use fxhash::FxHashMap;
 
 #[derive(Debug, Clone)]
 pub struct SourceMap {

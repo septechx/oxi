@@ -3,11 +3,11 @@ use thin_vec::ThinVec;
 use crate::ast::{self, Ident, NodeId, Visibility};
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hashmap::FxHashMap;
 use crate::hir::owner::{HirId, MaybeOwner, OwnerInfo, OwnerNodes, ParentedNode};
 use crate::hir::{AstLoweringContext, BodyId, Crate, DefId, ItemLocalId, OwnerId};
 use crate::hir::{diag, types::*};
 use crate::span::Span;
+use fxhash::FxHashMap;
 
 impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     pub(super) fn lower_item(&mut self, def_id: DefId, item: &'a ast::Item, hir_crate: &mut Crate) {

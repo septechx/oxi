@@ -6,7 +6,6 @@ use crate::ast::{Ident, Literal, Mutability};
 use crate::context::Ctx;
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
     ItemKind, MaybeOwner, ModuleId, Node, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
@@ -20,6 +19,7 @@ use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
 use crate::typeck::{Adjustment, CoherenceTable, MemberRes, MethodKind, TyVarId, Typeck, diag};
+use fxhash::{FxHashMap, FxHashSet};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
 // catch uses of `break` outside of loops

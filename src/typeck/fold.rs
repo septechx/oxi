@@ -1,6 +1,6 @@
-use crate::hashmap::FxHashMap;
 use crate::typeck::Ty;
 use crate::typeck::infctx::TyVarId;
+use fxhash::FxHashMap;
 
 pub fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
 where

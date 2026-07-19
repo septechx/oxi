@@ -1,17 +1,16 @@
-use crate::{
-    ast::{
-        AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree,
-        ImportTreeKind, Item, ItemKind, Literal, Mutability, NodeId, Path, RangeKind, Stmt,
-        StmtKind, Type, TypeKind, Visibility,
-        visit::{VisitAction, Visitable, Visitor, VisitorMut},
-    },
-    context::with_ctx_mut,
-    hashmap::FxHashMap,
-    hir::ModuleId,
-    lexer::token::{Token, TokenKind},
-    span::Span,
-};
+use fxhash::FxHashMap;
 use thin_vec::{ThinVec, thin_vec};
+
+use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
+use crate::ast::{
+    AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, ImportTree, ImportTreeKind,
+    Item, ItemKind, Literal, Mutability, NodeId, Path, RangeKind, Stmt, StmtKind, Type, TypeKind,
+    Visibility,
+};
+use crate::context::with_ctx_mut;
+use crate::hir::ModuleId;
+use crate::lexer::token::{Token, TokenKind};
+use crate::span::Span;
 
 // Since this is only used for testing, using a string instead of an enum is fine.
 pub struct NodeCounts {

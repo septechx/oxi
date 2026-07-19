@@ -1,11 +1,11 @@
 use thin_vec::ThinVec;
 
-use crate::hashmap::{FxHashMap, FxHashSet};
 use crate::hir::{HirId, ModuleId};
 use crate::span::Span;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
+use fxhash::{FxHashMap, FxHashSet};
 
 #[derive(Debug)]
 pub struct Snapshot {

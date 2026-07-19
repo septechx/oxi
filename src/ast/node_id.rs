@@ -1,4 +1,4 @@
-use crate::hashmap::FxHashMap;
+use fxhash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub u32);

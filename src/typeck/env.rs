@@ -1,6 +1,6 @@
-use crate::hashmap::FxHashMap;
 use crate::hir::HirId;
 use crate::typeck::types::Scheme;
+use fxhash::FxHashMap;
 
 #[derive(Debug)]
 pub struct ScopeEnv {

@@ -12,9 +12,9 @@ use thin_vec::ThinVec;
 
 use crate::ast::{Ast, NodeId, NodeMap};
 use crate::context::Ctx;
-use crate::hashmap::FxHashMap;
 use crate::interner::{Symbol, sym};
 use crate::resolve::{ModuleTree, ResolverOutputs};
+use fxhash::FxHashMap;
 
 pub use def::*;
 pub use owner::{Crate, HirId, MaybeOwner, OwnerInfo};

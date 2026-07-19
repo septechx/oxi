@@ -1,7 +1,6 @@
 use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
-use crate::hashmap::FxHashMap;
 use crate::hir::{self, PrimTy, QPath, UnOp};
 use crate::hir::{BinOp, HirId};
 use crate::resolve::Res;
@@ -9,6 +8,7 @@ use crate::span::Span;
 use crate::thir::scope::{Scope, ScopeKind, ScopeTree};
 use crate::thir::*;
 use crate::typeck::{Adjustment, Ty, TyVarId, TypeckOutputs};
+use fxhash::FxHashMap;
 
 pub fn lower_body(
     params: &ThinVec<hir::Param>,

@@ -2,19 +2,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use fxhash::FxHashMap;
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::validate::validate_ast,
-    ast::{Ast, Item, ItemKind},
-    context::Ctx,
-    diag_params,
-    errors::builders,
-    hashmap::FxHashMap,
-    lexer::tokenize,
-    parser::parse,
-    resolve::{Resolver, diag},
-};
+use crate::ast::validate::validate_ast;
+use crate::ast::{Ast, Item, ItemKind};
+use crate::context::Ctx;
+use crate::diag_params;
+use crate::errors::builders;
+use crate::lexer::tokenize;
+use crate::parser::parse;
+use crate::resolve::{Resolver, diag};
 
 #[derive(Debug)]
 pub struct ModuleTree {

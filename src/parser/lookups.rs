@@ -1,14 +1,12 @@
 use std::sync::OnceLock;
 
+use fxhash::FxHashMap;
 use parking_lot::Once;
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::{Attribute, Expr, Item},
-    hashmap::FxHashMap,
-    lexer::token::TokenKind::{self, self as T},
-    parser::{Parser, expr::*, modifiers::Modifier, stmt::*},
-};
+use crate::ast::{Attribute, Expr, Item};
+use crate::lexer::token::TokenKind::{self, self as T};
+use crate::parser::{Parser, expr::*, modifiers::Modifier, stmt::*};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

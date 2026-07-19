@@ -7,11 +7,11 @@ use crate::ast::{
 };
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, DefKind};
 use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver, diag};
+use fxhash::FxHashMap;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
     pub(super) fn late_resolve(&mut self) {

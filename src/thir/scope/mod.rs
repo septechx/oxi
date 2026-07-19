@@ -1,7 +1,7 @@
 mod builder;
 
-use crate::hashmap::FxHashMap;
 use crate::hir::{DefId, HirId, ItemLocalId};
+use fxhash::FxHashMap;
 
 pub use builder::build_scope_trees;
 

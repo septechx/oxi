@@ -1,7 +1,7 @@
-use crate::hashmap::FxHashMap;
 use crate::hir::{BodyId, Expr, ExprKind, HirId, MaybeOwner, QPath, Stmt, StmtKind};
 use crate::span::Span;
 use crate::typeck::{MemberRes, Typeck};
+use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn rewrite_member_access(&mut self) {

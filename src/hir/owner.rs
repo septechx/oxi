@@ -1,6 +1,6 @@
-use crate::hashmap::FxHashMap;
 use crate::hir::types::{Body, Node, OwnerNode};
 use crate::hir::{BodyId, DefId, ItemLocalId, OwnerId};
+use fxhash::FxHashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HirId {
