@@ -309,6 +309,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxic_diag_lint"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "oxic_test"
 version = "0.1.0"
 dependencies = [

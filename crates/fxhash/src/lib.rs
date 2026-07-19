@@ -279,7 +279,7 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
 ///
 /// ```
 /// use std::hash::BuildHasher;
-/// use oxic::hashmap::FxBuildHasher;
+/// use fxhash::FxBuildHasher;
 /// assert_ne!(FxBuildHasher.hash_one(1), FxBuildHasher.hash_one(2));
 /// ```
 #[derive(Copy, Clone, Default)]

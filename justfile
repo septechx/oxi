@@ -12,7 +12,7 @@ run-test *ARGS:
     env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- tests/integration/{{ARGS}}
 
 test FILTER="":
-    env OXI_ROOT="$(pwd)" cargo test {{FILTER}}
+    env OXI_ROOT="$(pwd)" cargo test --workspace {{FILTER}}
 
 check:
     cargo check
@@ -25,7 +25,7 @@ install PREFIX="/usr": (build "release")
     sudo rsync -a --delete lib/oxi/ {{PREFIX}}/lib/oxi
 
 lint:
-    cargo clippy --all-targets --all-features -- -Dwarnings
+    cargo clippy --all-targets --all-features --workspace -- -Dwarnings
     cargo fmt -- --check
     cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- src/
 
