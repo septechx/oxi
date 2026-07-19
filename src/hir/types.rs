@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, Literal, Mutability, Visibility};
+use crate::ast::{Ident, Literal, Mutability, Visibility};
 use crate::context::Ctx;
 use crate::hir::owner::HirId;
 use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
@@ -156,11 +156,6 @@ pub enum ItemKind {
         ty: Ty,
         body_id: Option<BodyId>,
     },
-    Module {
-        name: Symbol,
-        body: Option<Block>,
-    },
-    Import(ast::ImportTree),
 }
 
 #[derive(Debug, Clone)]

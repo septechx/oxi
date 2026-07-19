@@ -103,7 +103,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
-                    ItemKind::Module { .. } | ItemKind::Import(_) => {}
                 },
                 Node::AssocItem(assoc) => {
                     let AssocItemKind::Fn(fun) = &assoc.kind;
