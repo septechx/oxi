@@ -1,5 +1,3 @@
-use std::assert_matches;
-
 use thin_vec::ThinVec;
 
 use crate::ast::{Ident, Mutability};
@@ -10,7 +8,7 @@ use crate::resolve::Res;
 use crate::span::Span;
 use crate::thir::scope::{Scope, ScopeKind, ScopeTree};
 use crate::thir::*;
-use crate::typeck::{Adjustment, Ty, TypeckOutputs};
+use crate::typeck::{Adjustment, Ty, TyVarId, TypeckOutputs};
 
 pub fn lower_body(
     params: &ThinVec<hir::Param>,
@@ -24,7 +22,7 @@ pub fn lower_body(
         lowerer.locals.insert(param.hir_id, local_var);
         lowerer.params.push(Param {
             name: param.name,
-            ty: hir_ty_to_ty(&param.ty),
+            ty: hir_ty_to_ty(&param.ty, &typeck.hir_id_to_ty_var),
             hir_id: param.hir_id,
             local_var,
         });
@@ -193,7 +191,7 @@ impl<'a> ThirLowerer<'a> {
                 self.lower_field(base, *index, ty, span, hir_id)
             }
             hir::ExprKind::Index { base, index } => self.lower_index(base, index, ty, span, hir_id),
-            hir::ExprKind::StructInit { def, fields } => {
+            hir::ExprKind::StructInit { def, fields, .. } => {
                 self.lower_struct_init(fields, *def, ty, span, hir_id)
             }
             hir::ExprKind::ArrayInit { contents, .. } => {
@@ -222,7 +220,7 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let source = self.lower_expr(expr);
-        let target_ty = hir_ty_to_ty(target);
+        let target_ty = hir_ty_to_ty(target, &self.typeck.hir_id_to_ty_var);
         self.alloc_expr(
             ExprKind::Cast {
                 source,
@@ -273,10 +271,10 @@ impl<'a> ThirLowerer<'a> {
         let cond_id = self.lower_expr(cond);
         let then_id = self.lower_block_expr(then_branch);
         let else_id = else_branch.map(|expr| {
-            assert_matches!(
+            assert!(matches!(
                 expr.kind,
                 hir::ExprKind::Block(_) | hir::ExprKind::If { .. }
-            );
+            ));
             self.lower_expr(expr)
         });
         self.alloc_expr(
@@ -344,7 +342,7 @@ impl<'a> ThirLowerer<'a> {
                             .cloned()
                             .unwrap_or(Ty::Error)
                     } else {
-                        hir_ty_to_ty(ty)
+                        hir_ty_to_ty(ty, &self.typeck.hir_id_to_ty_var)
                     };
                     let remainder_scope = self
                         .scope_tree
@@ -484,17 +482,7 @@ impl<'a> ThirLowerer<'a> {
         let mut params = ThinVec::with_capacity(1 + args.len());
         params.push(recv_id);
         params.extend(args);
-        let struct_scheme = self
-            .typeck
-            .item_schemes
-            .get(&def_id)
-            .expect("struct exists");
-        let path_id = self.alloc_expr(
-            ExprKind::Path { def_id },
-            struct_scheme.body.clone(),
-            span,
-            hir_id,
-        );
+        let path_id = self.alloc_expr(ExprKind::Path { def_id }, Ty::MethodCallee, span, hir_id);
         self.alloc_expr(
             ExprKind::Call {
                 callee: path_id,
@@ -631,27 +619,54 @@ impl<'a> ThirLowerer<'a> {
     }
 }
 
-fn hir_ty_to_ty(hir_ty: &hir::Ty) -> Ty {
-    match &hir_ty.kind {
+fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) -> Ty {
+    let ty = match &hir_ty.kind {
         hir::TyKind::Error | hir::TyKind::Infer => Ty::Error,
         hir::TyKind::Never => Ty::Never,
         hir::TyKind::PrimTy(prim) => Ty::Prim(*prim),
-        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner).into_box(), *m),
-        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner).into_box()),
-        hir::TyKind::Array(inner, size) => Ty::Array(hir_ty_to_ty(inner).into_box(), *size),
+        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *m),
+        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box()),
+        hir::TyKind::Array(inner, size) => {
+            Ty::Array(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *size)
+        }
         hir::TyKind::Fn { params, ret } => Ty::Fn {
-            params: params.iter().map(hir_ty_to_ty).collect(),
-            ret: hir_ty_to_ty(ret).into_box(),
+            params: params
+                .iter()
+                .map(|p| hir_ty_to_ty(p, hir_id_to_ty_var))
+                .collect(),
+            ret: hir_ty_to_ty(ret, hir_id_to_ty_var).into_box(),
         },
-        hir::TyKind::Tuple(elements) => Ty::Tuple(elements.iter().map(hir_ty_to_ty).collect()),
+        hir::TyKind::Tuple(elements) => Ty::Tuple(
+            elements
+                .iter()
+                .map(|e| hir_ty_to_ty(e, hir_id_to_ty_var))
+                .collect(),
+        ),
         hir::TyKind::Path(qpath) => match qpath {
             QPath::Resolved(path) => match &path.res {
-                Res::Def(def_id) => Ty::Adt(*def_id),
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    let generics = path
+                        .segments
+                        .last()
+                        .and_then(|seg| seg.generic_params.as_ref())
+                        .as_ref()
+                        .map(|args| {
+                            args.iter()
+                                .map(|arg| hir_ty_to_ty(arg, hir_id_to_ty_var))
+                                .collect()
+                        });
+                    Ty::Adt(*def_id, generics)
+                }
                 Res::PrimTy(prim) => Ty::Prim(*prim),
-                Res::SelfTyAlias { alias_to } => Ty::Adt(*alias_to),
                 _ => Ty::Error,
             },
             QPath::TypeRelative { .. } => Ty::Error,
         },
-    }
+        hir::TyKind::GenericParam(hir_id, _) => hir_id_to_ty_var
+            .get(hir_id)
+            .map(|&ty_var| Ty::Var(ty_var))
+            .unwrap_or(Ty::Error),
+    };
+    assert!(!ty.is_error());
+    ty
 }

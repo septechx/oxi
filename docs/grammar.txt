@@ -4,7 +4,7 @@ Lit -> 0 | 1 | -1 | ...
      | "a" | "ab" | ...
      | 'a' | 'b' | ...
      | true | false
-Path -> Id [::Id]*
+Path -> Id [::< [Ty],* >]? [::Id [::< [Ty],* >]?]*
 ITree -> Path [as Id]?
        | Path::{[ITree],+}
        | Path::*
@@ -42,11 +42,13 @@ Expr -> Lit
       | loop { [Stmt]* }
 Stmt -> Expr;
       | let [mut]? Id [: Ty]? [= Expr]?;
-Assoc -> [pub]? fn Id([Id: Ty],*) Ty { [Stmt]* [Expr]? }
+Assoc -> [pub]? fn Id [< [Id],* >]? ([Id: Ty],*) Ty { [Stmt]* [Expr]? }
 Item -> [pub]? const Id: Ty = Expr;
-      | [pub]? struct Id { [[pub]? Id: Ty],* [Assoc]* }
-      | [pub]? interface Id { [Assoc]* }
+      | [pub]? struct Id [< [Id],* >]? { [[pub]? Id: Ty],* [Assoc]* }
+      | [pub]? interface Id [< [Id],* >]? { [Assoc]* }
       | impl Path for Path { [Assoc]* }
-      | [pub]? [extern]? fn Id([Id: Ty],*) Ty [{ [Stmt]* [Expr]? }]|[;]
+      | [pub]? [extern]? fn Id [< [Id],* >]? ([Id: Ty],*) Ty { [Stmt]* [Expr]? }
+      | [pub]? [extern]? fn Id [< [Id],* >]? ([Id: Ty],*) Ty;
       | [pub]? import ITree;
       | [pub]? mod Id [{ [Item]* }]?;
+Program -> [Item]*

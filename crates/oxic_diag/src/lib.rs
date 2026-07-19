@@ -1,14 +1,20 @@
-#![feature(proc_macro_tracked_path)]
+#![cfg_attr(feature = "nightly", feature(proc_macro_tracked_path))]
 
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use proc_macro::{Span, TokenStream, tracked::path as track_path};
+use proc_macro::{Span, TokenStream};
 use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
 use quote::quote;
 use serde::Deserialize;
 use syn::{Ident, LitStr, parse_macro_input};
+
+#[cfg(feature = "nightly")]
+use proc_macro::tracked::path as track_path;
+
+#[cfg(not(feature = "nightly"))]
+fn track_path(_path: &Path) {}
 
 #[derive(Deserialize)]
 struct Diagnostic {

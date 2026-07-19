@@ -1,0 +1,13 @@
+struct Pair<T = i64, U = T> {
+    first: T,
+    second: U,
+}
+
+fn get_second(p: Pair) i64 {
+    p.second
+}
+
+pub fn main() void {
+    let p = Pair { first: 12, second: 24 };
+    let v = get_second(p);
+}

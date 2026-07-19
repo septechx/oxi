@@ -1,0 +1,8 @@
+struct Pair<T = i64, U = T> {
+    first: T,
+    second: U,
+}
+
+pub fn main() void {
+    let p = Pair { first: 12, second: 24 };
+}

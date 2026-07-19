@@ -1,0 +1,15 @@
+// @expect-error unexpected_generic_params
+
+struct Foo {
+    data: u32,
+}
+
+interface MyInterface<T> {
+    fn do_something(self: &Self) void;
+}
+
+impl MyInterface::<u32, bool> for Foo {
+    fn do_something(self: &Self) void {}
+}
+
+pub fn main() void {}

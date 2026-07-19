@@ -1,6 +1,13 @@
+use std::cell::RefCell;
+
 use crate::errors::ErrorCollector;
 use crate::interner::Interner;
 use crate::span::sourcemaps::SourceMapManager;
+
+// TODO: Make this not global
+thread_local! {
+    static CTX: RefCell<Ctx> = RefCell::new(Ctx::new());
+}
 
 #[derive(Debug)]
 pub struct Ctx {
@@ -30,9 +37,9 @@ impl Default for Ctx {
 }
 
 pub fn with_ctx<T>(callback: impl FnOnce(&Ctx) -> T) -> T {
-    crate::CTX.with_borrow(callback)
+    CTX.with_borrow(callback)
 }
 
 pub fn with_ctx_mut<T>(callback: impl FnOnce(&mut Ctx) -> T) -> T {
-    crate::CTX.with_borrow_mut(callback)
+    CTX.with_borrow_mut(callback)
 }

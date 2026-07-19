@@ -60,10 +60,9 @@ pub enum Res<Id = NodeId> {
     /// Module-level def
     Def(DefId),
     /// Local definition in function body
-    ///
-    /// Id is generic to allow for AST NodeId's during name resolution and then HIR HirId's during
-    /// AST lowering
     Local(Id),
+    /// Generic type parameter
+    GenericParam(Id),
     /// Primitive type, like `i32`
     PrimTy(PrimTy),
     /// Self param in struct or impl

@@ -1,5 +1,3 @@
-use crate::elogln;
-
 pub mod sourcemaps;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -9,11 +7,11 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(mut low: u32, mut high: u32) -> Self {
-        if low > high {
-            elogln!("Warning: Span created with low > high: {} > {}", low, high);
-            std::mem::swap(&mut low, &mut high);
-        }
+    pub fn new(low: u32, high: u32) -> Self {
+        assert!(
+            low <= high,
+            "Span::new called with inverted bounds: low={low} > high={high}"
+        );
 
         Self {
             low,

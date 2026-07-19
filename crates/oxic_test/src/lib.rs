@@ -1,4 +1,4 @@
-#![feature(proc_macro_tracked_path)]
+#![cfg_attr(feature = "nightly", feature(proc_macro_tracked_path))]
 
 mod parser;
 
@@ -6,11 +6,16 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::Result;
-use proc_macro::tracked::path as track_path;
 use proc_macro::{Span, TokenStream};
 use proc_macro2::{Span as Span2, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{Ident, LitStr};
+
+#[cfg(feature = "nightly")]
+use proc_macro::tracked::path as track_path;
+
+#[cfg(not(feature = "nightly"))]
+fn track_path(_path: &Path) {}
 
 #[proc_macro]
 pub fn oxic_test(_input: TokenStream) -> TokenStream {

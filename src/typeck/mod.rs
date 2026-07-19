@@ -1,21 +1,21 @@
-mod check;
-mod coherence;
-mod collect;
 mod env;
+mod fold;
 mod infctx;
-mod method;
-mod rewrite;
+mod passes;
 mod unify;
 
 mod types;
 pub use types::*;
 
+pub(super) use infctx::TyVarId;
+
 use oxic_diag::include_diagnostics;
+use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
 use crate::hashmap::FxHashMap;
-use crate::hir::{Crate, DefId, HirId, ModuleId};
+use crate::hir::{self, Crate, DefId, HirId, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
 
@@ -49,14 +49,16 @@ struct Typeck<'ctx, 'hir, 'res> {
     coherence: CoherenceTable,
     /// maps (struct def id) -> (maps (method name) -> (method def id))
     inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> (interface def id, method def id))
-    interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
+    /// maps (struct def id) -> (maps (method name) -> [(interface def id, method def id)])
+    interface_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (def id) -> (module id)
     def_to_module: FxHashMap<DefId, ModuleId>,
     /// maps (expr hir id) -> (adjustments)
     adjustments: FxHashMap<HirId, Vec<Adjustment>>,
+    /// maps (generic param hir id) -> (type variable id)
+    hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -74,6 +76,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             item_schemes: FxHashMap::default(),
             def_to_module,
             adjustments: FxHashMap::default(),
+            hir_id_to_ty_var: FxHashMap::default(),
         }
     }
 
@@ -94,6 +97,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             interface_methods: self.interface_methods,
             item_schemes: self.item_schemes,
             adjustments: self.adjustments,
+            hir_id_to_ty_var: self.hir_id_to_ty_var,
         }
     }
 }
@@ -128,12 +132,14 @@ pub struct TypeckOutputs {
     pub coherence: CoherenceTable,
     /// maps (struct def id) -> (maps (method name) -> (method def id))
     pub inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> (interface def id, method def id))
-    pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, (DefId, DefId)>>,
+    /// maps (struct def id) -> (maps (method name) -> [(interface def id, method def id)])
+    pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     pub item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
     pub adjustments: FxHashMap<HirId, Vec<Adjustment>>,
+    /// maps (generic param hir id) -> (type variable id)
+    pub hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
 }
 
 impl TypeckOutputs {
@@ -159,17 +165,37 @@ pub enum MethodKind {
 
 #[derive(Debug, Default)]
 pub struct CoherenceTable {
-    /// maps (interface def id, struct def id) -> (impl def id)
-    pub impls: FxHashMap<(DefId, DefId), DefId>,
+    /// maps (interface def id, struct def id) -> [impl def id]
+    pub impls: FxHashMap<(DefId, DefId), Vec<DefId>>,
     /// maps (interface def id) -> (maps (method name) -> (mdethod def id))
     pub interface_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning interface def id)
     pub method_to_interface: FxHashMap<DefId, DefId>,
-    /// maps (struct def id) -> (maps (field name) -> (type, index))
-    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (Ty, usize)>>,
+    /// maps (struct def id) -> (maps (field name) -> (HIR type, index))
+    pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
+    /// maps (def id) -> (generic param info)
+    pub generic_params: FxHashMap<DefId, GenericParamInfo>,
+    /// maps (impl def id) -> resolved interface generic args (for duplicate detection)
+    pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
+    /// maps (assoc item def id) -> (parent struct/interface def id)
+    pub assoc_to_parent: FxHashMap<DefId, DefId>,
+}
+
+#[derive(Debug, Default)]
+pub struct GenericParamInfo {
+    pub hir_ids: Vec<HirId>,
+    pub defaults: ThinVec<Option<hir::Ty>>,
 }
 
 impl CoherenceTable {
+    pub fn has_conflicting_impl(&self, existing: &[DefId], new_args: &Option<ThinVec<Ty>>) -> bool {
+        existing.iter().any(|&existing_def_id| {
+            self.impl_resolved_generic_args
+                .get(&existing_def_id)
+                .is_some_and(|existing_args| existing_args == new_args)
+        })
+    }
+
     pub(super) fn register_interface(&mut self, interface: DefId, methods: Vec<(Symbol, DefId)>) {
         // or_default() will always be called
         let entry = self.interface_methods.entry(interface).or_default();

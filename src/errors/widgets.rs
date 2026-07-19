@@ -81,46 +81,7 @@ pub struct CodeWidget {
 }
 
 impl CodeWidget {
-    pub fn new(span: Span, module_id: ModuleId, highlight_type: HighlightType) -> Result<Self> {
-        let (start_line, start_col, span_len) = crate::CTX.with(|ctx| {
-            let maps = &ctx.borrow().source_maps;
-            let sm = maps
-                .get_source(module_id)
-                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
-            let (_, line, column, length) = sm.span_to_source_location(&span);
-            Ok::<_, anyhow::Error>((line, column, length))
-        })?;
-
-        let (end_line, end_col) = crate::CTX.with(|ctx| {
-            let maps = &ctx.borrow().source_maps;
-            let sm = maps
-                .get_source(module_id)
-                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))?;
-            Ok::<_, anyhow::Error>(sm.span_end_location(&span))
-        })?;
-
-        let source_lines = crate::CTX.with(|ctx| {
-            let maps = &ctx.borrow().source_maps;
-            let sm = maps
-                .get_source(module_id)
-                .expect("source map for module_id must exist");
-            sm.get_lines(start_line, end_line)
-                .into_iter()
-                .map(|(ln, s)| (ln, s.to_string()))
-                .collect()
-        });
-
-        Ok(Self {
-            span_start: (start_line, start_col),
-            span_end: (end_line, end_col),
-            span_len,
-            source_lines,
-            message: None,
-            highlight_type,
-        })
-    }
-
-    pub fn new_with_ctx(
+    pub fn new(
         span: Span,
         module_id: ModuleId,
         highlight_type: HighlightType,
@@ -312,18 +273,7 @@ pub struct LocationWidget {
 }
 
 impl LocationWidget {
-    pub fn new(span: Span, module_id: ModuleId) -> Result<Self> {
-        let (file, line, column, _) = crate::CTX.with(|ctx| {
-            let maps = &ctx.borrow().source_maps;
-            maps.get_source(module_id)
-                .map(|sm| sm.span_to_source_location(&span))
-                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
-        })?;
-
-        Ok(Self { line, column, file })
-    }
-
-    pub fn new_with_ctx(span: Span, module_id: ModuleId, ctx: &Ctx) -> Result<Self> {
+    pub fn new(span: Span, module_id: ModuleId, ctx: &Ctx) -> Result<Self> {
         let (file, line, column, _) = ctx
             .source_maps
             .get_source(module_id)
@@ -360,21 +310,7 @@ pub struct InfoWidget {
 }
 
 impl InfoWidget {
-    pub fn new(span: Span, module_id: ModuleId, content: impl Into<Box<str>>) -> Result<Self> {
-        let (_, line, ..) = crate::CTX.with(|ctx| {
-            let maps = &ctx.borrow().source_maps;
-            maps.get_source(module_id)
-                .map(|sm| sm.span_to_source_location(&span))
-                .ok_or_else(|| anyhow::anyhow!("Source map not found for module id {module_id}"))
-        })?;
-
-        Ok(Self {
-            line,
-            content: content.into(),
-        })
-    }
-
-    pub fn new_with_ctx(
+    pub fn new(
         span: Span,
         module_id: ModuleId,
         content: impl Into<Box<str>>,

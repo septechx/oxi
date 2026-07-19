@@ -40,17 +40,12 @@ impl AstValidator {
                         format!("First definition of `{}` here", ident_str).as_str(),
                     )
                     .add_widget(
-                        LocationWidget::new_with_ctx(first_span, self.module_id, ctx)
+                        LocationWidget::new(first_span, self.module_id, ctx)
                             .expect("failed to create error"),
                     )
                     .add_widget(
-                        CodeWidget::new_with_ctx(
-                            first_span,
-                            self.module_id,
-                            HighlightType::Info,
-                            ctx,
-                        )
-                        .expect("failed to create error"),
+                        CodeWidget::new(first_span, self.module_id, HighlightType::Info, ctx)
+                            .expect("failed to create error"),
                     );
                     ctx.errors.add(err, ctx.enable_printing);
                 });
@@ -267,11 +262,11 @@ impl Visitor for AstValidator {
                                 "First initialization of `{}` here",
                             )
                             .add_widget(
-                                LocationWidget::new_with_ctx(first_span, self.module_id, ctx)
+                                LocationWidget::new(first_span, self.module_id, ctx)
                                     .expect("failed to create error"),
                             )
                             .add_widget(
-                                CodeWidget::new_with_ctx(
+                                CodeWidget::new(
                                     first_span,
                                     self.module_id,
                                     HighlightType::Info,

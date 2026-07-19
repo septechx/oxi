@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use thin_vec::ThinVec;
 
-use crate::ast::{self, Ident, Literal, Mutability, Visibility, idents_to_string};
+use crate::ast::{Ident, Literal, Mutability, Visibility};
 use crate::context::Ctx;
 use crate::hir::owner::HirId;
 use crate::hir::{BodyId, DefId, OwnerId, PrimTy};
@@ -75,6 +75,8 @@ pub enum Node {
     Param(Box<Param>),
     /// A local variable binding
     Local(Box<Local>),
+    /// A generic type parameter
+    GenericParam(Box<GenericParam>),
     /// The crate root
     Crate,
     Err(Span),
@@ -91,6 +93,7 @@ impl Node {
             Node::Block(block) => Some(block.span),
             Node::Param(param) => Some(param.span),
             Node::Local(local) => Some(local.span),
+            Node::GenericParam(param) => Some(param.span),
             Node::Crate => None,
             Node::Err(span) => Some(*span),
         }
@@ -136,10 +139,12 @@ pub enum ItemKind {
         name: Symbol,
         fields: ThinVec<StructField>,
         items: ThinVec<DefId>,
+        generic_params: Option<ThinVec<GenericParam>>,
     },
     Interface {
         name: Symbol,
         items: ThinVec<DefId>,
+        generic_params: Option<ThinVec<GenericParam>>,
     },
     Impl {
         self_ty: Path,
@@ -151,11 +156,6 @@ pub enum ItemKind {
         ty: Ty,
         body_id: Option<BodyId>,
     },
-    Module {
-        name: Symbol,
-        body: Option<Block>,
-    },
-    Import(ast::ImportTree),
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +193,7 @@ pub struct FnSig {
 pub struct Fn {
     pub sig: FnSig,
     pub decl: FnDecl,
+    pub generic_params: Option<ThinVec<GenericParam>>,
     pub body_id: Option<BodyId>,
 }
 
@@ -202,6 +203,14 @@ pub struct Param {
     pub name: Symbol,
     pub ty: Ty,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub hir_id: HirId,
+    pub name: Symbol,
+    pub span: Span,
+    pub default: Option<Ty>,
 }
 
 #[derive(Debug, Clone)]
@@ -264,6 +273,7 @@ pub enum ExprKind {
     /// Struct literal: Struct { field: value, ... }
     StructInit {
         def: DefId,
+        generic_args: Option<ThinVec<Ty>>,
         fields: ThinVec<(Ident, Expr)>,
     },
     /// Array literal: [value1, value2, ... ]
@@ -360,12 +370,57 @@ pub struct Ty {
     pub span: Span,
 }
 
+impl Ty {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        match &self.kind {
+            TyKind::Error => String::new(),
+            TyKind::PrimTy(prim_ty) => prim_ty.name_str().to_string(),
+            TyKind::Path(path) => path.display(ctx),
+            TyKind::GenericParam(_, name) => ctx.interner.lookup(*name).to_string(),
+            TyKind::Ptr(ty, mutability) => {
+                format!(
+                    "&{} {}",
+                    if *mutability == Mutability::Mutable {
+                        "mut"
+                    } else {
+                        ""
+                    },
+                    ty.display(ctx)
+                )
+            }
+            TyKind::Slice(ty) => format!("[{}]", ty.display(ctx)),
+            TyKind::Array(ty, size) => format!("[{}; {}]", ty.display(ctx), size),
+            TyKind::Fn { params, ret } => format!(
+                "({}) -> {}",
+                params
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                ret.display(ctx)
+            ),
+            TyKind::Tuple(types) => format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|t| t.display(ctx))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TyKind::Infer => "_".to_string(),
+            TyKind::Never => "!".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TyKind {
     Error,
     PrimTy(PrimTy),
     /// A named type
     Path(QPath),
+    /// A generic type parameter
+    GenericParam(HirId, Symbol),
     /// Pointer type: &T or &mut T
     Ptr(Box<Ty>, Mutability),
     /// Slice type: [T]
@@ -388,13 +443,39 @@ pub enum TyKind {
 #[derive(Debug, Clone)]
 pub struct Path {
     pub res: Res<HirId>,
-    pub segments: ThinVec<Ident>,
+    pub segments: ThinVec<PathSegment>,
     pub span: Span,
 }
 
 impl Path {
     pub fn display(&self, ctx: &Ctx) -> String {
-        idents_to_string(&self.segments, &ctx.interner)
+        self.segments
+            .iter()
+            .map(|s| s.display(ctx))
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PathSegment {
+    pub ident: Ident,
+    pub generic_params: Option<ThinVec<Ty>>,
+}
+
+impl PathSegment {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        let ident = ctx.interner.lookup(self.ident.value);
+        if let Some(params) = &self.generic_params {
+            let params_str = params
+                .iter()
+                .map(|t| t.display(ctx))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}::<{}>", ident, params_str)
+        } else {
+            ident.to_string()
+        }
     }
 }
 
@@ -404,7 +485,21 @@ pub enum QPath {
     /// Fully resolved path
     Resolved(Path),
     /// Type-relative path: `T::Assoc`
-    TypeRelative { qself: Box<QPath>, segment: Ident },
+    TypeRelative {
+        qself: Box<QPath>,
+        segment: PathSegment,
+    },
+}
+
+impl QPath {
+    pub fn display(&self, ctx: &Ctx) -> String {
+        match self {
+            QPath::Resolved(path) => path.display(ctx),
+            QPath::TypeRelative { qself, segment } => {
+                format!("{}::{}", qself.display(ctx), segment.display(ctx))
+            }
+        }
+    }
 }
 
 pub trait FromToken<T> {

@@ -3,8 +3,9 @@ use thin_vec::ThinVec;
 
 use crate::{
     ast::{
-        AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, Ident, ImportTree, ImportTreeKind,
-        Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type, TypeKind, Visibility,
+        AssocItem, AssocItemKind, Attribute, Block, Expr, Fn, GenericParam, GenericParams, Ident,
+        ImportTree, ImportTreeKind, Item, ItemKind, Mutability, NodeId, Stmt, StmtKind, Type,
+        TypeKind, Visibility,
     },
     diag_params,
     errors::builders,
@@ -101,6 +102,8 @@ pub fn parse_struct_decl_item(
     let mut fields: ThinVec<(Ident, Type, Visibility)> = ThinVec::new();
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     let name = parser.expect_identifier()?;
+
+    let generic_params = parse_optional_generic_params(parser)?;
 
     parser.expect(TokenKind::OpenCurly)?;
 
@@ -207,6 +210,7 @@ pub fn parse_struct_decl_item(
             name,
             fields,
             items,
+            generic_params,
         },
         node_id: NodeId::default(),
         attributes,
@@ -222,6 +226,8 @@ pub fn parse_interface_decl_item(
 ) -> Result<Item> {
     let interface_token = parser.expect(TokenKind::Interface)?;
     let name = parser.expect_identifier()?;
+
+    let generic_params = parse_optional_generic_params(parser)?;
 
     let mut items: ThinVec<AssocItem> = ThinVec::new();
     parser.expect(TokenKind::OpenCurly)?;
@@ -272,7 +278,11 @@ pub fn parse_interface_decl_item(
     };
 
     Ok(Item {
-        kind: ItemKind::Interface { items, name },
+        kind: ItemKind::Interface {
+            items,
+            name,
+            generic_params,
+        },
         node_id: NodeId::default(),
         attributes,
         span,
@@ -295,6 +305,8 @@ pub fn parse_fn_decl_item(
     }
 
     let name = parser.expect_identifier()?;
+
+    let generic_params = parse_optional_generic_params(parser)?;
 
     parser.expect(TokenKind::OpenParen)?;
     let mut parameters: ThinVec<(Ident, Type, NodeId)> = ThinVec::new();
@@ -366,6 +378,7 @@ pub fn parse_fn_decl_item(
             name,
             return_type,
             is_extern: extern_mod.is_some(),
+            generic_params,
         }),
         node_id: NodeId::default(),
         attributes,
@@ -637,4 +650,41 @@ fn parse_expr_stmt(parser: &mut Parser) -> Result<Stmt> {
         span,
         node_id: NodeId::default(),
     })
+}
+
+fn parse_optional_generic_params(parser: &mut Parser) -> Result<Option<GenericParams>> {
+    if parser.current_token().kind == TokenKind::Less {
+        let start_span = parser.expect(TokenKind::Less)?.span;
+        let mut params = ThinVec::new();
+        loop {
+            if parser.current_token().kind == TokenKind::More {
+                break;
+            }
+            if !params.is_empty() {
+                parser.expect(TokenKind::Comma)?;
+                if parser.current_token().kind == TokenKind::More {
+                    break;
+                }
+            }
+            let name = parser.expect_identifier()?;
+            let default = if parser.current_token().kind == TokenKind::Equals {
+                parser.advance();
+                Some(parse_type(parser, BindingPower::DefaultBp)?)
+            } else {
+                None
+            };
+            params.push(GenericParam {
+                name,
+                default,
+                node_id: NodeId::default(),
+            });
+        }
+        let end_span = parser.expect(TokenKind::More)?.span;
+        Ok(Some(GenericParams {
+            params,
+            span: Span::new(start_span.start(), end_span.end()),
+        }))
+    } else {
+        Ok(None)
+    }
 }

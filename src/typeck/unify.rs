@@ -46,6 +46,7 @@ pub fn unify(
     match (&a, &b) {
         (Ty::Error, _) | (_, Ty::Error) => Ok(()),
         (Ty::Never, _) | (_, Ty::Never) => Ok(()),
+        (Ty::MethodCallee, _) | (_, Ty::MethodCallee) => Ok(()),
         (Ty::Var(v), t) | (t, Ty::Var(v)) => bind(icx, *v, t, span, module_id),
         (Ty::Prim(p1), Ty::Prim(p2)) => {
             if p1 == p2 {
@@ -62,15 +63,16 @@ pub fn unify(
             }
         }
         (Ty::Slice(i1), Ty::Slice(i2)) => unify(icx, i1, i2, span, module_id),
-        (Ty::Adt(d1), Ty::Adt(d2)) => {
+        (Ty::Adt(d1, g1), Ty::Adt(d2, g2)) => {
             if d1 == d2 {
-                Ok(())
-            } else {
-                Err(mismatch(a, b, span, module_id))
-            }
-        }
-        (Ty::Interface(d1), Ty::Interface(d2)) => {
-            if d1 == d2 {
+                if let (Some(g1), Some(g2)) = (g1, g2) {
+                    if g1.len() != g2.len() {
+                        return Err(mismatch(a, b, span, module_id));
+                    }
+                    for (a, b) in g1.iter().zip(g2) {
+                        unify(icx, a, b, span, module_id)?;
+                    }
+                }
                 Ok(())
             } else {
                 Err(mismatch(a, b, span, module_id))
@@ -183,7 +185,14 @@ fn occurs(icx: &InferCtx, var: TyVarId, to: &Ty) -> bool {
             params.iter().any(|param| occurs(icx, var, param)) || occurs(icx, var, ret)
         }
         Ty::Tuple(elements) => elements.iter().any(|element| occurs(icx, var, element)),
-        Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => false,
+        Ty::Adt(_, generics) => {
+            if let Some(generics) = generics {
+                generics.iter().any(|ty| occurs(icx, var, ty))
+            } else {
+                false
+            }
+        }
+        Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => false,
     }
 }
 
@@ -315,8 +324,8 @@ mod tests {
     fn unify_same_adt() {
         let mut icx = InferCtx::default();
         icx.push_level();
-        let a = Ty::Adt(DefId(7));
-        let b = Ty::Adt(DefId(7));
+        let a = Ty::Adt(DefId(7), None);
+        let b = Ty::Adt(DefId(7), None);
         assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_ok());
     }
 
@@ -324,8 +333,8 @@ mod tests {
     fn unify_different_adts_fails() {
         let mut icx = InferCtx::default();
         icx.push_level();
-        let a = Ty::Adt(DefId(7));
-        let b = Ty::Adt(DefId(8));
+        let a = Ty::Adt(DefId(7), None);
+        let b = Ty::Adt(DefId(8), None);
         assert!(unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_err());
     }
 
@@ -334,10 +343,10 @@ mod tests {
         let mut icx = InferCtx::default();
         icx.push_level();
         let param = Ty::Ptr(
-            Box::new(Ty::Adt(DefId(3))),
+            Box::new(Ty::Adt(DefId(3), None)),
             crate::ast::Mutability::Constant,
         );
-        let arg = Ty::Adt(DefId(3));
+        let arg = Ty::Adt(DefId(3), None);
         let inner = match &param {
             Ty::Ptr(i, _) => i.as_ref().clone(),
             _ => unreachable!(),

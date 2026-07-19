@@ -3,20 +3,28 @@ use thin_vec::ThinVec;
 use crate::ast::Mutability;
 use crate::hir::{self, DefId, PrimTy, QPath, TyKind};
 use crate::resolve::Res;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
     Var(TyVarId),
     Prim(PrimTy),
     Ptr(Box<Ty>, Mutability),
     Slice(Box<Ty>),
     Array(Box<Ty>, usize),
-    Fn { params: ThinVec<Ty>, ret: Box<Ty> },
+    Fn {
+        params: ThinVec<Ty>,
+        ret: Box<Ty>,
+    },
     Tuple(ThinVec<Ty>),
-    Adt(DefId),
-    Interface(DefId),
+    Adt(DefId, Option<ThinVec<Ty>>),
     Never,
+    /// Dummy type for the synthetic `Path` callee created during THIR lowering
+    /// of method calls. This callee `Path` expression is never type-checked, it
+    /// unifies with everything. Downstream consumers (IR emission, etc.) resolve
+    /// the actual method `DefId` via `TypeckOutputs::member_res`.
+    MethodCallee,
     Error,
 }
 
@@ -45,21 +53,37 @@ impl Ty {
             ),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(path) => match path.res {
-                    Res::Def(def_id) => {
-                        // We don't know if it's a struct or interface. Tag it as Adt
-                        // and fix it downstream
-                        Ty::Adt(def_id)
+                    Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                        let generic_params = Self::hir_generic_params(icx, path);
+                        Ty::Adt(def_id, generic_params)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
-                    Res::SelfTyAlias { alias_to } => {
-                        // Same as Res::Def
-                        Ty::Adt(alias_to)
+                    Res::GenericParam(hir_id) => {
+                        let ty_var = icx.hir_id_to_ty_var.get(&hir_id).expect("hir id exists");
+                        Ty::Var(*ty_var)
                     }
                     Res::Local(_) | Res::Err => Ty::Error,
                 },
                 QPath::TypeRelative { .. } => Ty::Error,
             },
+            TyKind::GenericParam(hir_id, _) => {
+                let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
+                Ty::Var(*ty_var)
+            }
         }
+    }
+
+    pub(super) fn hir_generic_params(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+        // TODO: Handle generic args in spots other than the last segment.
+        // Currently Adt's can only have generic args in the last segment, but
+        // when support for associated types is added, this will need to be
+        // implemented.
+        path.segments
+            .last()
+            .expect("path has segments")
+            .generic_params
+            .as_ref()
+            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect())
     }
 
     pub fn is_numeric(&self, icx: &InferCtx) -> bool {
@@ -81,20 +105,14 @@ impl Ty {
     }
 
     pub fn reject_vars(self) -> Self {
-        match self {
+        fold_ty(&self, &mut |ty| match ty {
             Ty::Var(_) => Ty::Error,
-            Ty::Ptr(inner, m) => Ty::Ptr(Box::new(inner.reject_vars()), m),
-            Ty::Slice(inner) => Ty::Slice(Box::new(inner.reject_vars())),
-            Ty::Array(inner, size) => Ty::Array(Box::new(inner.reject_vars()), size),
-            Ty::Fn { params, ret } => Ty::Fn {
-                params: params.into_iter().map(|p| p.reject_vars()).collect(),
-                ret: Box::new(ret.reject_vars()),
-            },
-            Ty::Tuple(elements) => {
-                Ty::Tuple(elements.into_iter().map(|e| e.reject_vars()).collect())
-            }
-            other => other,
-        }
+            ty => ty,
+        })
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Ty::Error)
     }
 }
 

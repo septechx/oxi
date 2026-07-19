@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use anyhow::Result;
 use thin_vec::thin_vec;
 
-use crate::ast::Ast;
 use crate::ast::validate::validate_ast;
 use crate::context::with_ctx_mut;
 use crate::hir::AstLoweringContext;
@@ -15,33 +14,22 @@ use crate::thir::lower_thir;
 use crate::thir::scope::build_scope_trees;
 use crate::typeck::typeck_crate;
 
-pub fn frontend_stage(
-    source_path: &PathBuf,
-    source: String,
-    check_for_errors: impl Fn() -> Result<()>,
-) -> Result<Ast> {
-    let (tokens, module_id) = with_ctx_mut(|ctx| tokenize(ctx, source, source_path))?;
-    check_for_errors()?;
-
-    let mut ast = with_ctx_mut(|ctx| parse(ctx, tokens, source_path))?;
-    check_for_errors()?;
-
-    validate_ast(&ast, module_id);
-    check_for_errors()?;
-
-    with_ctx_mut(|ctx| {
-        Resolver::assign_node_ids(ctx, &mut ast);
-    });
-
-    Ok(ast)
-}
-
+// TODO: Query based instead of batch
 pub fn compile_source(
     root_path: PathBuf,
     root_source: String,
     check_for_errors: impl Fn() -> Result<()>,
 ) -> Result<()> {
-    let root_ast = frontend_stage(&root_path, root_source, &check_for_errors)?;
+    let (tokens, module_id) = with_ctx_mut(|ctx| tokenize(ctx, root_source, &root_path))?;
+    check_for_errors()?;
+
+    let mut root_ast = with_ctx_mut(|ctx| parse(ctx, tokens, &root_path))?;
+    check_for_errors()?;
+
+    validate_ast(&root_ast, module_id);
+    check_for_errors()?;
+
+    with_ctx_mut(|ctx| Resolver::assign_node_ids(ctx, &mut root_ast));
 
     let mut asts = thin_vec![root_ast];
     let mut paths = vec![root_path];
@@ -67,7 +55,10 @@ pub fn compile_source(
     typeck.assert_no_errors();
 
     let scope_trees = build_scope_trees(&hir_crate);
-    let _thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
+    thir_crate.assert_no_free_vars(&typeck);
+
+    println!("{:#?}", thir_crate);
 
     Ok(())
 }

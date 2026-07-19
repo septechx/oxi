@@ -20,11 +20,29 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     name,
                     fields,
                     items,
-                } => this.lower_struct(def_id, name, fields, items, item.span, item.visibility),
+                    generic_params,
+                } => this.lower_struct(
+                    def_id,
+                    name,
+                    fields,
+                    items,
+                    generic_params.as_ref(),
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
-                ast::ItemKind::Interface { name, items } => {
-                    this.lower_interface(def_id, name, items, item.span, item.visibility)
-                }
+                ast::ItemKind::Interface {
+                    name,
+                    items,
+                    generic_params,
+                } => this.lower_interface(
+                    def_id,
+                    name,
+                    items,
+                    generic_params.as_ref(),
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Impl {
                     self_ty,
                     interface,
@@ -156,11 +174,34 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         def_id: DefId,
         name: &'a Ident,
         items: &'a ThinVec<ast::AssocItem>,
+        generic_params: Option<&ast::GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
+
+        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
+            params
+                .iter()
+                .map(
+                    |ast::GenericParam {
+                         name,
+                         node_id,
+                         default,
+                     }| {
+                        let param_hir_id = self.next_hir_id();
+                        self.register_local(*node_id, param_hir_id);
+                        GenericParam {
+                            hir_id: param_hir_id,
+                            name: name.value,
+                            span: name.span,
+                            default: default.as_ref().map(|ty| self.lower_type(ty)),
+                        }
+                    },
+                )
+                .collect()
+        });
 
         let items: ThinVec<DefId> = items
             .iter()
@@ -182,6 +223,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Interface {
                             name: name.value,
+                            generic_params,
                             items,
                         },
                         span,
@@ -193,17 +235,41 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn lower_struct(
         &mut self,
         def_id: DefId,
         name: &'a Ident,
         fields: &'a ThinVec<(Ident, ast::Type, Visibility)>,
         items: &'a ThinVec<ast::AssocItem>,
+        generic_params: Option<&ast::GenericParams>,
         span: Span,
         visibility: Visibility,
     ) -> OwnerInfo {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
+
+        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
+            params
+                .iter()
+                .map(
+                    |ast::GenericParam {
+                         name,
+                         node_id,
+                         default,
+                     }| {
+                        let param_hir_id = self.next_hir_id();
+                        self.register_local(*node_id, param_hir_id);
+                        GenericParam {
+                            hir_id: param_hir_id,
+                            name: name.value,
+                            span: name.span,
+                            default: default.as_ref().map(|ty| self.lower_type(ty)),
+                        }
+                    },
+                )
+                .collect()
+        });
 
         let fields: ThinVec<StructField> = fields
             .iter()
@@ -234,6 +300,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         owner_id,
                         kind: ItemKind::Struct {
                             name: name.value,
+                            generic_params,
                             fields,
                             items,
                         },
@@ -301,6 +368,31 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
 
+        let generic_params =
+            f.generic_params
+                .as_ref()
+                .map(|ast::GenericParams { params, .. }| {
+                    params
+                        .iter()
+                        .map(
+                            |ast::GenericParam {
+                                 name,
+                                 node_id,
+                                 default,
+                             }| {
+                                let param_hir_id = self.next_hir_id();
+                                self.register_local(*node_id, param_hir_id);
+                                GenericParam {
+                                    hir_id: param_hir_id,
+                                    name: name.value,
+                                    span: name.span,
+                                    default: default.as_ref().map(|ty| self.lower_type(ty)),
+                                }
+                            },
+                        )
+                        .collect()
+                });
+
         let params: ThinVec<Param> = f
             .parameters
             .iter()
@@ -330,6 +422,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 is_extern: f.is_extern,
             },
             decl: FnDecl { params, ret },
+            generic_params,
             body_id,
         };
 

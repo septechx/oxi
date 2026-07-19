@@ -1,0 +1,9 @@
+struct Triple<T = i64, U = f32, V = T> {
+    a: T,
+    b: U,
+    c: V,
+}
+
+pub fn main() void {
+    let t = Triple::<u32> { a: 1, b: 2.0, c: 3 };
+}

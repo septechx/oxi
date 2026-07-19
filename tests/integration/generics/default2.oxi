@@ -1,0 +1,18 @@
+struct Foo<T = i64> {
+    data: T,
+}
+
+interface Add<T = Self> {
+    fn add(self: &Self, rhs: &T) T;
+}
+
+impl Add for Foo {
+    fn add(self: &Self, rhs: &Self) Self {
+        Self { data: self.data + rhs.data }
+    }
+}
+
+pub fn main() void {
+    let foo = Foo { data: 12 };
+    let bar = foo.add(&Foo { data: 1 });
+}

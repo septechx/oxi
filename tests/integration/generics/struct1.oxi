@@ -1,0 +1,7 @@
+struct Foo<T> { 
+    val: T,
+}
+
+fn main() void {
+    let x: Foo::<isize> = Foo { val: 42 };
+}

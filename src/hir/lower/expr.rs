@@ -135,16 +135,25 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     .collect();
                 ExprKind::Call { callee, params }
             }
-            ast::ExprKind::StructInstantiation { fields, .. } => {
+            ast::ExprKind::StructInstantiation { path, fields } => {
                 let def = match self.resolve_def_id(&expr.node_id) {
                     Some(def_id) => def_id,
                     _ => return ExprKind::Error,
                 };
+                let generic_args = path
+                    .segments
+                    .last()
+                    .and_then(|seg| seg.generic_params.as_ref())
+                    .map(|params| params.iter().map(|ty| self.lower_type(ty)).collect());
                 let fields = fields
                     .iter()
                     .map(|(name, expr)| (*name, self.lower_expr(expr)))
                     .collect();
-                ExprKind::StructInit { def, fields }
+                ExprKind::StructInit {
+                    def,
+                    generic_args,
+                    fields,
+                }
             }
             ast::ExprKind::Array { contents } => {
                 let contents = contents.iter().map(|expr| self.lower_expr(expr)).collect();

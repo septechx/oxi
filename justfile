@@ -8,6 +8,9 @@ build MODE="release":
 run *ARGS:
     env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- {{ARGS}}
 
+run-test *ARGS:
+    env OXI_ROOT="$(pwd)" RUST_BACKTRACE=1 cargo run -- tests/integration/{{ARGS}}
+
 test FILTER="":
     env OXI_ROOT="$(pwd)" cargo test {{FILTER}}
 
@@ -25,3 +28,9 @@ lint:
     cargo clippy --all-targets --all-features -- -Dwarnings
     cargo fmt -- --check
     cargo run --manifest-path crates/oxic_diag_lint/Cargo.toml -- src/
+
+coverage FORMAT="Html":
+    cargo tarpaulin --out {{FORMAT}}
+
+coverage-open: (coverage "Html")
+    xdg-open tarpaulin-report.html

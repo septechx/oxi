@@ -2,12 +2,12 @@ use anyhow::Result;
 use thin_vec::ThinVec;
 
 use crate::{
-    ast::{Ident, Path, Stmt},
+    ast::{Ident, Path, PathSegment, Stmt, Type},
     context::Ctx,
     diag_params,
     errors::builders,
     lexer::token::{Token, TokenKind},
-    parser::{Parser, diag, stmt::parse_stmt},
+    parser::{Parser, diag, lookups::BindingPower, stmt::parse_stmt, types::parse_type},
     span::Span,
 };
 
@@ -26,15 +26,15 @@ pub fn parse_path(parser: &mut Parser) -> Result<Path> {
     let start = parser.current_token().span;
     let mut segments = ThinVec::new();
 
-    let segment = parser.expect_identifier()?;
+    let segment = parse_path_segment(parser)?;
     let mut last = segment.span.end();
     segments.push(segment);
 
     while parser.current_token().kind == TokenKind::ColonColon
-        && parser.peek().kind == TokenKind::Identifier
+        && matches!(parser.peek().kind, TokenKind::Identifier | TokenKind::More)
     {
         parser.advance();
-        let segment = parser.expect_identifier()?;
+        let segment = parse_path_segment(parser)?;
         last = segment.span.end();
         segments.push(segment);
     }
@@ -43,6 +43,45 @@ pub fn parse_path(parser: &mut Parser) -> Result<Path> {
         segments,
         span: Span::new(start.start(), last),
     })
+}
+
+fn parse_path_segment(parser: &mut Parser) -> Result<PathSegment> {
+    let ident = parser.expect_identifier()?;
+    let span_start = ident.span.start();
+    let mut span_end = ident.span.end();
+    let generic_params = if parser.peek().kind == TokenKind::Less {
+        parser.expect(TokenKind::ColonColon)?;
+        let params = parse_generic_params(parser)?;
+        span_end = params
+            .last()
+            .map(|param| param.span)
+            .unwrap_or_else(|| ident.span)
+            .end();
+        Some(params)
+    } else {
+        None
+    };
+    let span = Span::new(span_start, span_end);
+    Ok(PathSegment {
+        ident,
+        generic_params,
+        span,
+    })
+}
+
+fn parse_generic_params(parser: &mut Parser) -> Result<ThinVec<Type>> {
+    parser.expect(TokenKind::Less)?;
+    let mut args = ThinVec::new();
+    while parser.current_token().kind != TokenKind::More {
+        args.push(parse_type(parser, BindingPower::DefaultBp)?);
+        if parser.current_token().kind == TokenKind::Comma {
+            parser.advance();
+        } else if parser.current_token().kind != TokenKind::More {
+            unexpected_token(parser.ctx, parser.current_token(), "',' or '>'");
+        }
+    }
+    parser.expect(TokenKind::More)?;
+    Ok(args)
 }
 
 pub fn parse_rename(parser: &mut Parser) -> Result<Option<Ident>> {

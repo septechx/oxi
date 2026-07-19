@@ -2,13 +2,8 @@ use std::hash::Hash;
 
 use thin_vec::ThinVec;
 
-use crate::{
-    ast::{
-        AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Item, ItemKind, Literal, Stmt,
-        StmtKind, Type, TypeKind,
-    },
-    hashmap::FxHashMap,
-};
+use crate::ast::*;
+use crate::hashmap::FxHashMap;
 
 pub enum VisitAction {
     /// Descend into children
@@ -170,16 +165,41 @@ impl Visitable for Item {
                     value.visit(visitor);
                     ty.visit(visitor);
                 }
-                ItemKind::Struct { fields, items, .. } => {
+                ItemKind::Struct {
+                    fields,
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit(visitor);
+                    }
                     for field in fields {
                         field.1.visit(visitor);
                     }
                     items.visit(visitor);
                 }
-                ItemKind::Interface { items, .. } => {
+                ItemKind::Interface {
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit(visitor);
+                    }
                     items.visit(visitor);
                 }
-                ItemKind::Impl { items, .. } => {
+                ItemKind::Impl {
+                    self_ty,
+                    interface,
+                    items,
+                } => {
+                    for segment in &self_ty.0.segments {
+                        segment.generic_params.visit(visitor);
+                    }
+                    for segment in &interface.0.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                     items.visit(visitor);
                 }
                 ItemKind::Fn(f) => f.visit(visitor),
@@ -203,16 +223,41 @@ impl Visitable for Item {
                     value.visit_mut(visitor);
                     ty.visit_mut(visitor);
                 }
-                ItemKind::Struct { fields, items, .. } => {
+                ItemKind::Struct {
+                    fields,
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit_mut(visitor);
+                    }
                     for field in fields {
                         field.1.visit_mut(visitor);
                     }
                     items.visit_mut(visitor);
                 }
-                ItemKind::Interface { items, .. } => {
+                ItemKind::Interface {
+                    items,
+                    generic_params,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit_mut(visitor);
+                    }
                     items.visit_mut(visitor);
                 }
-                ItemKind::Impl { items, .. } => {
+                ItemKind::Impl {
+                    self_ty,
+                    interface,
+                    items,
+                } => {
+                    for segment in &mut self_ty.0.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
+                    for segment in &mut interface.0.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                     items.visit_mut(visitor);
                 }
                 ItemKind::Fn(f) => f.visit_mut(visitor),
@@ -262,6 +307,9 @@ impl Visitable for AssocItemKind {
 
 impl Visitable for Fn {
     fn visit(&self, visitor: &mut impl Visitor) {
+        if let Some(params) = &self.generic_params {
+            params.visit(visitor);
+        }
         for arg in &self.parameters {
             arg.1.visit(visitor);
         }
@@ -272,6 +320,9 @@ impl Visitable for Fn {
     }
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        if let Some(params) = &mut self.generic_params {
+            params.visit_mut(visitor);
+        }
         for arg in &mut self.parameters {
             arg.1.visit_mut(visitor);
         }
@@ -289,6 +340,34 @@ impl Visitable for Block {
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         self.stmts.visit_mut(visitor);
+    }
+}
+
+impl Visitable for GenericParams {
+    fn visit(&self, visitor: &mut impl Visitor) {
+        for param in &self.params {
+            param.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        for param in &mut self.params {
+            param.visit_mut(visitor);
+        }
+    }
+}
+
+impl Visitable for GenericParam {
+    fn visit(&self, visitor: &mut impl Visitor) {
+        if let Some(ty) = &self.default {
+            ty.visit(visitor);
+        }
+    }
+
+    fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
+        if let Some(ty) = &mut self.default {
+            ty.visit_mut(visitor);
+        }
     }
 }
 
@@ -356,8 +435,10 @@ impl Visitable for Expr {
                     body.visit(visitor);
                 }
                 ExprKind::Loop(b) => b.visit(visitor),
-                ExprKind::Path(_) => {
-                    // Leaf
+                ExprKind::Path(path) => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                 }
                 ExprKind::Binary {
                     left,
@@ -386,7 +467,10 @@ impl Visitable for Expr {
                     assignee.visit(visitor);
                     value.visit(visitor);
                 }
-                ExprKind::StructInstantiation { path: _, fields } => {
+                ExprKind::StructInstantiation { path, fields } => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
                     for field in fields {
                         field.1.visit(visitor);
                     }
@@ -448,8 +532,10 @@ impl Visitable for Expr {
                     body.visit_mut(visitor);
                 }
                 ExprKind::Loop(b) => b.visit_mut(visitor),
-                ExprKind::Path(_) => {
-                    // Leaf
+                ExprKind::Path(path) => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                 }
                 ExprKind::Binary {
                     left,
@@ -478,7 +564,10 @@ impl Visitable for Expr {
                     assignee.visit_mut(visitor);
                     value.visit_mut(visitor);
                 }
-                ExprKind::StructInstantiation { path: _, fields } => {
+                ExprKind::StructInstantiation { path, fields } => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
                     for field in fields {
                         field.1.visit_mut(visitor);
                     }
@@ -536,7 +625,11 @@ impl Visitable for Type {
     fn visit(&self, visitor: &mut impl Visitor) {
         match visitor.visit_type(self) {
             VisitAction::Continue => match &self.kind {
-                TypeKind::Symbol(_) => {}
+                TypeKind::Symbol(path) => {
+                    for segment in &path.segments {
+                        segment.generic_params.visit(visitor);
+                    }
+                }
                 TypeKind::Pointer(ty, _) => ty.visit(visitor),
                 TypeKind::Slice(ty) => ty.visit(visitor),
                 TypeKind::FixedArray(ty, _) => {
@@ -563,7 +656,11 @@ impl Visitable for Type {
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         match visitor.visit_type(self) {
             VisitAction::Continue => match &mut self.kind {
-                TypeKind::Symbol(_) => {}
+                TypeKind::Symbol(path) => {
+                    for segment in &mut path.segments {
+                        segment.generic_params.visit_mut(visitor);
+                    }
+                }
                 TypeKind::Pointer(ty, _) => ty.visit_mut(visitor),
                 TypeKind::Slice(ty) => ty.visit_mut(visitor),
                 TypeKind::FixedArray(ty, _) => {

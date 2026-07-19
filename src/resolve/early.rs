@@ -2,8 +2,8 @@ use thin_vec::ThinVec;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor, VisitorMut};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Expr, Fn, Ident, ImportTree, ImportTreeKind, Item, ItemKind,
-    NodeId, Path, Stmt, Type, Visibility, idents_to_string,
+    AssocItem, AssocItemKind, Ast, Expr, Fn, GenericParams, ImportTree, ImportTreeKind, Item,
+    ItemKind, NodeId, Path, PathSegment, Stmt, Type, Visibility, path_segments_to_string,
 };
 use crate::context::Ctx;
 use crate::diag_params;
@@ -144,8 +144,8 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 let last_seg = pi.import_item.prefix.segments.last().expect("non-empty");
                 let module_prefix =
                     &pi.import_item.prefix.segments[..pi.import_item.prefix.segments.len() - 1];
-                let module_path = idents_to_string(module_prefix, &self.ctx.interner);
-                let name = self.ctx.interner.lookup(last_seg.value).to_string();
+                let module_path = path_segments_to_string(module_prefix, self.ctx);
+                let name = self.ctx.interner.lookup(last_seg.ident.value).to_string();
                 if module_path.is_empty() {
                     builders::emit_at(
                         self.ctx,
@@ -232,8 +232,8 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
         let local_sym = rename
             .as_ref()
             .map(|r| r.value)
-            .unwrap_or(unsafe { segments.last().unwrap_unchecked().value });
-        let target_sym = &segments[segments.len() - 1].value;
+            .unwrap_or(unsafe { segments.last().unwrap_unchecked().ident.value });
+        let target_sym = &segments[segments.len() - 1].ident.value;
 
         let current_module = pi.module.0 as usize;
 
@@ -283,7 +283,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
     fn get_module_node_idx(
         &self,
         current_module: usize,
-        segments: &[Ident],
+        segments: &[PathSegment],
         pi: &PendingImport,
     ) -> Result<usize, CompilationError> {
         match self.resolve_module_path(current_module, segments) {
@@ -333,8 +333,17 @@ impl<'ctx> NodeIdAssigner<'ctx> {
     }
 
     fn assign_to_fn(&mut self, fun: &mut Fn) {
+        if let Some(generic_params) = &mut fun.generic_params {
+            self.assign_to_generic_params(generic_params);
+        }
         for arg in &mut fun.parameters {
             arg.2 = self.next_node_id();
+        }
+    }
+
+    fn assign_to_generic_params(&mut self, generic_params: &mut GenericParams) {
+        for param in &mut generic_params.params {
+            param.node_id = self.next_node_id();
         }
     }
 }
@@ -356,11 +365,25 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
                 interface.1 = self.next_node_id();
                 self.assign_to_assoc_items(items);
             }
-            ItemKind::Struct { items, .. } => {
+            ItemKind::Struct {
+                items,
+                generic_params,
+                ..
+            } => {
                 self.assign_to_assoc_items(items);
+                if let Some(generic_params) = generic_params {
+                    self.assign_to_generic_params(generic_params);
+                }
             }
-            ItemKind::Interface { items, .. } => {
+            ItemKind::Interface {
+                items,
+                generic_params,
+                ..
+            } => {
                 self.assign_to_assoc_items(items);
+                if let Some(generic_params) = generic_params {
+                    self.assign_to_generic_params(generic_params);
+                }
             }
             _ => {}
         }
@@ -439,6 +462,7 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                     item.visibility,
                     item.span,
                 );
+
                 for assoc in items {
                     self.register_struct_method(assoc, struct_def_id);
                 }

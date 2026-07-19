@@ -1,10 +1,19 @@
 use thin_vec::ThinVec;
 
 use crate::hashmap::{FxHashMap, FxHashSet};
-use crate::hir::ModuleId;
+use crate::hir::{HirId, ModuleId};
 use crate::span::Span;
+use crate::typeck::fold::fold_ty;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::UnifyError;
+
+#[derive(Debug)]
+pub struct Snapshot {
+    vars_len: usize,
+    errors_len: usize,
+    roots: FxHashMap<TyVarId, Option<Ty>>,
+    levels: FxHashMap<TyVarId, u32>,
+}
 
 crate::newtype_ids!(TyVarId);
 
@@ -31,6 +40,8 @@ pub struct InferCtx {
     vars: Vec<TyVar>,
     levels: Vec<u32>,
     pub(super) errors: Vec<UnifyError>,
+    pub(super) hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
+    pub(super) generic_defaults: Vec<(TyVarId, Ty)>,
 }
 
 impl InferCtx {
@@ -151,7 +162,13 @@ impl InferCtx {
             Ty::Tuple(elements) => {
                 Ty::Tuple(elements.iter().map(|ty| self.adjust(ty, bound)).collect())
             }
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Adt(def_id, generics) => Ty::Adt(
+                *def_id,
+                generics
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.adjust(ty, bound)).collect()),
+            ),
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
 
@@ -169,7 +186,13 @@ impl InferCtx {
                 ret: self.resolve(ret).into_box(),
             },
             Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| self.resolve(ty)).collect()),
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+            Ty::Adt(def_id, generics) => Ty::Adt(
+                *def_id,
+                generics
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.resolve(ty)).collect()),
+            ),
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
 
@@ -194,7 +217,14 @@ impl InferCtx {
                     self.vars_in(element, out);
                 }
             }
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => {}
+            Ty::Adt(_, generics) => {
+                if let Some(generics) = generics {
+                    for ty in generics {
+                        self.vars_in(&ty, out);
+                    }
+                }
+            }
+            Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => {}
         }
     }
 
@@ -216,32 +246,54 @@ impl InferCtx {
         self.instantiate_with(&scheme.body, &mapping)
     }
 
-    fn instantiate_with(&self, ty: &Ty, mapping: &FxHashMap<TyVarId, TyVarId>) -> Ty {
-        match ty {
-            Ty::Var(var) => match mapping.get(var) {
-                Some(&fresh) => Ty::Var(fresh),
-                None => ty.clone(),
-            },
-            Ty::Ptr(inner, m) => Ty::Ptr(self.instantiate_with(inner, mapping).into_box(), *m),
-            Ty::Slice(inner) => Ty::Slice(self.instantiate_with(inner, mapping).into_box()),
-            Ty::Array(inner, size) => {
-                Ty::Array(self.instantiate_with(inner, mapping).into_box(), *size)
-            }
-            Ty::Fn { params, ret } => Ty::Fn {
-                params: params
-                    .iter()
-                    .map(|ty| self.instantiate_with(ty, mapping))
-                    .collect(),
-                ret: self.instantiate_with(ret, mapping).into_box(),
-            },
-            Ty::Tuple(elements) => Ty::Tuple(
-                elements
-                    .iter()
-                    .map(|ty| self.instantiate_with(ty, mapping))
-                    .collect(),
-            ),
-            Ty::Prim(_) | Ty::Adt(_) | Ty::Interface(_) | Ty::Never | Ty::Error => ty.clone(),
+    pub fn instantiate_with(&self, ty: &Ty, mapping: &FxHashMap<TyVarId, TyVarId>) -> Ty {
+        fold_ty(ty, &mut |ty| match ty {
+            Ty::Var(v) => mapping
+                .get(&v)
+                .map(|&fresh| Ty::Var(fresh))
+                .unwrap_or(Ty::Var(v)),
+            ty => ty,
+        })
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        let roots: FxHashMap<TyVarId, Option<Ty>> = self
+            .vars
+            .iter()
+            .enumerate()
+            .map(|(i, var)| (TyVarId(i as u32), var.root.clone()))
+            .collect();
+        let levels: FxHashMap<TyVarId, u32> = self
+            .vars
+            .iter()
+            .enumerate()
+            .map(|(i, var)| (TyVarId(i as u32), var.level))
+            .collect();
+        Snapshot {
+            vars_len: self.vars.len(),
+            errors_len: self.errors.len(),
+            roots,
+            levels,
         }
+    }
+
+    pub fn rollback(&mut self, snapshot: Snapshot) {
+        for (id, root) in snapshot.roots {
+            if let Some(var) = self.vars.get_mut(id.0 as usize) {
+                var.root = root;
+            }
+        }
+        for (id, level) in snapshot.levels {
+            if let Some(var) = self.vars.get_mut(id.0 as usize) {
+                var.level = level;
+            }
+        }
+        self.vars.truncate(snapshot.vars_len);
+        self.errors.truncate(snapshot.errors_len);
+    }
+
+    pub fn add_generic_default(&mut self, var: TyVarId, default: Ty) {
+        self.generic_defaults.push((var, default));
     }
 
     pub fn vars_with_source(&self, source: TyVarSource) -> Vec<TyVarId> {

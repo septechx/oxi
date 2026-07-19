@@ -47,19 +47,33 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
         let tail = &path.segments[start..];
         tail.iter()
-            .fold(QPath::Resolved(resolved), |qself, &segment| {
+            .fold(QPath::Resolved(resolved), |qself, segment| {
                 QPath::TypeRelative {
                     qself: Box::new(qself),
-                    segment,
+                    segment: self.lower_path_segment(segment),
                 }
             })
     }
 
-    fn lower_resolved_path(&self, path: &ast::Path, res: Res) -> Path {
+    fn lower_resolved_path(&mut self, path: &ast::Path, res: Res) -> Path {
         Path {
             res: self.lower_res(res),
-            segments: path.segments.clone(),
+            segments: path
+                .segments
+                .iter()
+                .map(|s| self.lower_path_segment(s))
+                .collect(),
             span: path.span,
+        }
+    }
+
+    fn lower_path_segment(&mut self, segment: &ast::PathSegment) -> PathSegment {
+        PathSegment {
+            ident: segment.ident,
+            generic_params: segment
+                .generic_params
+                .as_ref()
+                .map(|params| params.iter().map(|ty| self.lower_type(ty)).collect()),
         }
     }
 
@@ -71,6 +85,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 Some(hir_id) => Res::Local(hir_id),
                 None => Res::Err,
             },
+            Res::GenericParam(param_node_id) => match self.lookup_local(param_node_id) {
+                Some(hir_id) => Res::GenericParam(hir_id),
+                None => Res::Err,
+            },
             Res::SelfTyAlias { alias_to } => Res::SelfTyAlias { alias_to },
             Res::Err => Res::Err,
         }
@@ -80,33 +98,46 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let hir_id = self.next_hir_id();
         let kind = match &ty.kind {
             ast::TypeKind::Symbol(path) => {
-                let qpath = self.lower_qpath(path, ty.node_id);
-                if let QPath::Resolved(resolved) = &qpath
-                    && let Res::Def(def_id) = resolved.res
-                    && self.resolver.defs[def_id.0 as usize].kind == DefKind::Interface
-                    && let Some(module_id) = self
-                        .current_owner
-                        .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
-                        .copied()
-                {
-                    let iface_name = self
-                        .ctx
-                        .interner
-                        .lookup(
-                            self.resolver.defs[def_id.0 as usize]
-                                .name
-                                .expect("interface def should have a name"),
-                        )
-                        .to_string();
-                    builders::emit_at(
-                        self.ctx,
-                        ty.span,
-                        module_id,
-                        diag::ExpectedTypeFoundInterface,
-                        diag_params! { iface = iface_name },
-                    );
+                let res = self
+                    .resolver
+                    .res_map
+                    .get(&ty.node_id)
+                    .expect("path resolved");
+                match res.full_res() {
+                    Some(Res::GenericParam(id)) => TyKind::GenericParam(
+                        self.lookup_local(id).expect("local exists"),
+                        path.segments[0].ident.value,
+                    ),
+                    _ => {
+                        let qpath = self.lower_qpath(path, ty.node_id);
+                        if let QPath::Resolved(resolved) = &qpath
+                            && let Res::Def(def_id) = resolved.res
+                            && self.resolver.defs[def_id.0 as usize].kind == DefKind::Interface
+                            && let Some(module_id) = self
+                                .current_owner
+                                .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
+                                .copied()
+                        {
+                            let iface_name = self
+                                .ctx
+                                .interner
+                                .lookup(
+                                    self.resolver.defs[def_id.0 as usize]
+                                        .name
+                                        .expect("interface def should have a name"),
+                                )
+                                .to_string();
+                            builders::emit_at(
+                                self.ctx,
+                                ty.span,
+                                module_id,
+                                diag::ExpectedTypeFoundInterface,
+                                diag_params! { iface = iface_name },
+                            );
+                        }
+                        TyKind::Path(qpath)
+                    }
                 }
-                TyKind::Path(qpath)
             }
             ast::TypeKind::Pointer(inner, mutability) => {
                 TyKind::Ptr(Box::new(self.lower_type(inner)), *mutability)

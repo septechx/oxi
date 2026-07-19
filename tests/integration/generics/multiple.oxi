@@ -1,0 +1,8 @@
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+fn main() void {
+    let p = Pair { first: 1, second: true };
+}
