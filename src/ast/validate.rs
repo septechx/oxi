@@ -183,7 +183,7 @@ impl Visitor for AstValidator {
                     items.iter().map(|item| match &item.kind {
                         AssocItemKind::Fn(f) => &f.name,
                     }),
-                    "trait_ methods",
+                    "trait methods",
                 );
 
                 let old_top_level = self.is_top_level;

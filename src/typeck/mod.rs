@@ -167,7 +167,7 @@ pub enum MethodKind {
 pub struct CoherenceTable {
     /// maps (trait def id, struct def id) -> [impl def id]
     pub impls: FxHashMap<(DefId, DefId), Vec<DefId>>,
-    /// maps (trait def id) -> (maps (method name) -> (mdethod def id))
+    /// maps (trait def id) -> (maps (method name) -> (method def id))
     pub trait_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning trait def id)
     pub method_to_trait: FxHashMap<DefId, DefId>,
