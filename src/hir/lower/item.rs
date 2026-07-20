@@ -34,10 +34,14 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     name,
                     generic_params,
                     type_,
-                } => {
-                    _ = (name, generic_params, type_);
-                    todo!("AST -> HIR lowering for types");
-                }
+                } => this.lower_type_alias(
+                    def_id,
+                    name,
+                    type_,
+                    generic_params.as_ref(),
+                    item.span,
+                    item.visibility,
+                ),
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
                 ast::ItemKind::Trait {
                     name,
@@ -182,27 +186,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
 
-        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
-            params
-                .iter()
-                .map(
-                    |ast::GenericParam {
-                         name,
-                         node_id,
-                         default,
-                     }| {
-                        let param_hir_id = self.next_hir_id();
-                        self.register_local(*node_id, param_hir_id);
-                        GenericParam {
-                            hir_id: param_hir_id,
-                            name: name.value,
-                            span: name.span,
-                            default: default.as_ref().map(|ty| self.lower_type(ty)),
-                        }
-                    },
-                )
-                .collect()
-        });
+        let generic_params = self.lower_generic_params(generic_params);
 
         let items: ThinVec<DefId> = items
             .iter()
@@ -250,27 +234,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
 
-        let generic_params = generic_params.map(|ast::GenericParams { params, .. }| {
-            params
-                .iter()
-                .map(
-                    |ast::GenericParam {
-                         name,
-                         node_id,
-                         default,
-                     }| {
-                        let param_hir_id = self.next_hir_id();
-                        self.register_local(*node_id, param_hir_id);
-                        GenericParam {
-                            hir_id: param_hir_id,
-                            name: name.value,
-                            span: name.span,
-                            default: default.as_ref().map(|ty| self.lower_type(ty)),
-                        }
-                    },
-                )
-                .collect()
-        });
+        let generic_params = self.lower_generic_params(generic_params);
 
         let fields: ThinVec<StructField> = fields
             .iter()
@@ -304,6 +268,41 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                             generic_params,
                             fields,
                             items,
+                        },
+                        span,
+                        visibility,
+                    })),
+                }],
+                bodies: FxHashMap::default(),
+            },
+        }
+    }
+
+    fn lower_type_alias(
+        &mut self,
+        def_id: DefId,
+        name: &'a Ident,
+        type_: &'a ast::Type,
+        generic_params: Option<&ast::GenericParams>,
+        span: Span,
+        visibility: Visibility,
+    ) -> OwnerInfo {
+        let owner_id = OwnerId(def_id.0);
+        let hir_id = HirId::make_owner(def_id);
+
+        let generic_params = self.lower_generic_params(generic_params);
+
+        OwnerInfo {
+            nodes: OwnerNodes {
+                nodes: vec![ParentedNode {
+                    parent: ItemLocalId::ZERO,
+                    node: Node::Item(Box::new(Item {
+                        hir_id,
+                        owner_id,
+                        kind: ItemKind::TypeAlias {
+                            name: name.value,
+                            type_: self.lower_type(type_),
+                            generic_params,
                         },
                         span,
                         visibility,
@@ -369,30 +368,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let owner_id = OwnerId(def_id.0);
         let hir_id = HirId::make_owner(def_id);
 
-        let generic_params =
-            f.generic_params
-                .as_ref()
-                .map(|ast::GenericParams { params, .. }| {
-                    params
-                        .iter()
-                        .map(
-                            |ast::GenericParam {
-                                 name,
-                                 node_id,
-                                 default,
-                             }| {
-                                let param_hir_id = self.next_hir_id();
-                                self.register_local(*node_id, param_hir_id);
-                                GenericParam {
-                                    hir_id: param_hir_id,
-                                    name: name.value,
-                                    span: name.span,
-                                    default: default.as_ref().map(|ty| self.lower_type(ty)),
-                                }
-                            },
-                        )
-                        .collect()
-                });
+        let generic_params = self.lower_generic_params(f.generic_params.as_ref());
 
         let params: ThinVec<Param> = f
             .parameters
@@ -472,6 +448,33 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         };
         let local_id = self.next_local_id();
         (BodyId(local_id), Body { value: block_expr })
+    }
+
+    fn lower_generic_params(
+        &mut self,
+        generic_params: Option<&ast::GenericParams>,
+    ) -> Option<ThinVec<GenericParam>> {
+        generic_params.map(|ast::GenericParams { params, .. }| {
+            params
+                .iter()
+                .map(
+                    |ast::GenericParam {
+                         name,
+                         node_id,
+                         default,
+                     }| {
+                        let param_hir_id = self.next_hir_id();
+                        self.register_local(*node_id, param_hir_id);
+                        GenericParam {
+                            hir_id: param_hir_id,
+                            name: name.value,
+                            span: name.span,
+                            default: default.as_ref().map(|ty| self.lower_type(ty)),
+                        }
+                    },
+                )
+                .collect()
+        })
     }
 
     fn with_owner(

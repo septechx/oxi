@@ -141,6 +141,11 @@ pub enum ItemKind {
         items: ThinVec<DefId>,
         generic_params: Option<ThinVec<GenericParam>>,
     },
+    TypeAlias {
+        name: Symbol,
+        type_: Ty,
+        generic_params: Option<ThinVec<GenericParam>>,
+    },
     Trait {
         name: Symbol,
         items: ThinVec<DefId>,

@@ -62,6 +62,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
+                    ItemKind::TypeAlias { .. } => {
+                        todo!("type alias type checking")
+                    }
                     ItemKind::Trait {
                         items,
                         generic_params,
