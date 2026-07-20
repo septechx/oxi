@@ -162,7 +162,7 @@ pub enum ExprKind {
     },
     Call {
         callee: ExprId,
-        params: ThinVec<ExprId>,
+        args: ThinVec<ExprId>,
     },
     StructInit {
         def_id: DefId,

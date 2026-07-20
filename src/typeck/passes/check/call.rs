@@ -12,7 +12,7 @@ use crate::typeck::{Adjustment, MemberRes, MethodKind, Scheme, Ty, diag};
 use crate::{diag_params, hir};
 
 impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
-    pub fn check_call(&mut self, callee: &Expr, params: &ThinVec<Expr>, call_span: Span) -> Ty {
+    pub fn check_call(&mut self, callee: &Expr, args: &ThinVec<Expr>, call_span: Span) -> Ty {
         let callee_span = callee.span;
 
         if let Some((recv_ty, member, is_method_call, receiver_hir_id, generic_args)) =
@@ -31,7 +31,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                             segment.ident.value,
                             false,
                             None,
-                            segment.generic_params.as_ref(),
+                            segment.generic_args.as_ref(),
                         )
                     })
                 }
@@ -45,13 +45,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 recv_ty,
                 member,
                 is_method_call,
-                params,
+                args,
                 receiver_hir_id,
                 generic_args,
             );
         }
 
-        self.check_direct_call(callee, callee_span, call_span, params)
+        self.check_direct_call(callee, callee_span, call_span, args)
     }
 
     // Direct calls
@@ -61,7 +61,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         callee: &Expr,
         callee_span: Span,
         call_span: Span,
-        params: &ThinVec<Expr>,
+        args: &ThinVec<Expr>,
     ) -> Ty {
         let callee_ty = self.check_expr(callee);
         let callee_ty = self.icx.resolve(&callee_ty);
@@ -70,7 +70,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 params: param_tys,
                 ret,
             } => {
-                if !self.check_call_args(params, &param_tys, None, false, call_span, None) {
+                if !self.check_call_args(args, &param_tys, None, false, call_span, None) {
                     return Ty::Error;
                 }
 
@@ -98,14 +98,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         call_span: Span,
         receiver_hir_id: Option<HirId>,
     ) -> bool {
-        let arg_tys = if is_method_call && !param_tys.is_empty() {
+        let param_tys_without_self = if is_method_call && !param_tys.is_empty() {
             &param_tys[1..]
         } else {
             param_tys
         };
 
-        if args.len() != arg_tys.len() {
-            let expected = arg_tys.len();
+        if args.len() != param_tys_without_self.len() {
+            let expected = param_tys_without_self.len();
             builders::emit_at(
                 self.ctx,
                 call_span,
@@ -133,7 +133,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         for (i, arg) in args.iter().enumerate() {
             let arg_span = arg.span;
             let arg_ty = self.check_expr(arg);
-            let expected_ty = &arg_tys[i];
+            let expected_ty = &param_tys_without_self[i];
 
             unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id).or_push_err(self.icx);
         }
@@ -152,7 +152,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         recv_ty: Ty,
         member: Symbol,
         is_method_call: bool,
-        params: &ThinVec<Expr>,
+        args: &ThinVec<Expr>,
         receiver_hir_id: Option<HirId>,
         explicit_generic_args: Option<&ThinVec<hir::Ty>>,
     ) -> Ty {
@@ -169,7 +169,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
 
         // Type-check args once (side effects: node_types, adjustments)
-        let arg_tys: ThinVec<Ty> = params.iter().map(|arg| self.check_expr(arg)).collect();
+        let arg_tys: ThinVec<Ty> = args.iter().map(|arg| self.check_expr(arg)).collect();
 
         for (def_id, kind) in &candidates {
             let Some(mut scheme) = self.item_schemes.get(def_id).cloned() else {
@@ -292,14 +292,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             return Ty::Error;
         };
 
-        let arg_param_tys = if is_method_call && !param_tys.is_empty() {
+        let param_tys_without_self = if is_method_call && !param_tys.is_empty() {
             &param_tys[1..]
         } else {
             &param_tys
         };
 
-        if arg_tys.len() != arg_param_tys.len() {
-            let expected = arg_param_tys.len();
+        if arg_tys.len() != param_tys_without_self.len() {
+            let expected = param_tys_without_self.len();
             builders::emit_at(
                 self.ctx,
                 call_span,
@@ -316,7 +316,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 let first = param_tys.first().expect("method has at least 1 param");
                 unify(self.icx, first, &recv_ty, call_span, self.module_id).or_push_err(self.icx);
             }
-            for (arg_ty, param_ty) in arg_tys.iter().zip(arg_param_tys) {
+            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_without_self) {
                 unify(self.icx, param_ty, arg_ty, call_span, self.module_id).or_push_err(self.icx);
             }
         }
@@ -370,13 +370,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         is_method_call: bool,
         call_span: Span,
     ) -> bool {
-        let arg_param_tys = if is_method_call && !param_tys.is_empty() {
+        let param_tys_withut_self = if is_method_call && !param_tys.is_empty() {
             &param_tys[1..]
         } else {
             param_tys
         };
 
-        if arg_tys.len() != arg_param_tys.len() {
+        if arg_tys.len() != param_tys_withut_self.len() {
             return false;
         }
 
@@ -399,7 +399,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
 
-        for (arg_ty, param_ty) in arg_tys.iter().zip(arg_param_tys) {
+        for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_withut_self) {
             if unify(self.icx, param_ty, arg_ty, call_span, self.module_id).is_err() {
                 return false;
             }

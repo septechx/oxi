@@ -54,8 +54,8 @@ impl Ty {
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(path) => match path.res {
                     Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                        let generic_params = Self::hir_generic_params(icx, path);
-                        Ty::Adt(def_id, generic_params)
+                        let generic_args = Self::hir_generic_args(icx, path);
+                        Ty::Adt(def_id, generic_args)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
                     Res::GenericParam(hir_id) => {
@@ -73,7 +73,7 @@ impl Ty {
         }
     }
 
-    pub(super) fn hir_generic_params(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+    pub(super) fn hir_generic_args(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
         // TODO: Handle generic args in spots other than the last segment.
         // Currently Adt's can only have generic args in the last segment, but
         // when support for associated types is added, this will need to be
@@ -81,9 +81,9 @@ impl Ty {
         path.segments
             .last()
             .expect("path has segments")
-            .generic_params
+            .generic_args
             .as_ref()
-            .map(|params| params.iter().map(|ty| Ty::from_hir(icx, ty)).collect())
+            .map(|args| args.iter().map(|ty| Ty::from_hir(icx, ty)).collect())
     }
 
     pub fn is_numeric(&self, icx: &InferCtx) -> bool {

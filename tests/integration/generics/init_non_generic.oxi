@@ -1,4 +1,4 @@
-// @expect-error unexpected_generic_params
+// @expect-error unexpected_generic_args
 
 struct Point {
     x: u32,

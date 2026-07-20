@@ -252,16 +252,16 @@ pub enum ExprKind {
         op: BinOp,
         right: Box<Expr>,
     },
-    /// Function call: callee(params...)
+    /// Function call: callee(args...)
     Call {
         callee: Box<Expr>,
-        params: ThinVec<Expr>,
+        args: ThinVec<Expr>,
     },
     /// Method call: receiver.method(args...)
     MethodCall {
         receiver: Box<Expr>,
         method: Symbol,
-        params: ThinVec<Expr>,
+        args: ThinVec<Expr>,
         def_id: DefId,
     },
     /// Field access: base.field
@@ -460,19 +460,19 @@ impl Path {
 #[derive(Debug, Clone)]
 pub struct PathSegment {
     pub ident: Ident,
-    pub generic_params: Option<ThinVec<Ty>>,
+    pub generic_args: Option<ThinVec<Ty>>,
 }
 
 impl PathSegment {
     pub fn display(&self, ctx: &Ctx) -> String {
         let ident = ctx.interner.lookup(self.ident.value);
-        if let Some(params) = &self.generic_params {
-            let params_str = params
+        if let Some(args) = &self.generic_args {
+            let args_str = args
                 .iter()
                 .map(|t| t.display(ctx))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("{}::<{}>", ident, params_str)
+            format!("{}::<{}>", ident, args_str)
         } else {
             ident.to_string()
         }

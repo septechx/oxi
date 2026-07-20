@@ -35,18 +35,18 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 let right = self.lower_expr(right);
                 if operator.kind == TokenKind::Pipe {
                     match right.kind {
-                        ExprKind::Call { callee, params } => {
-                            let mut new_params = ThinVec::with_capacity(params.len() + 1);
-                            new_params.push(left);
-                            new_params.extend(params);
+                        ExprKind::Call { callee, args } => {
+                            let mut new_args = ThinVec::with_capacity(args.len() + 1);
+                            new_args.push(left);
+                            new_args.extend(args);
                             ExprKind::Call {
-                                params: new_params,
+                                args: new_args,
                                 callee,
                             }
                         }
                         _ => ExprKind::Call {
                             callee: right.into_box(),
-                            params: thin_vec![left],
+                            args: thin_vec![left],
                         },
                     }
                 } else {
@@ -127,13 +127,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     }
                 }
             }
-            ast::ExprKind::FunctionCall { callee, parameters } => {
+            ast::ExprKind::FunctionCall { callee, arguments } => {
                 let callee = self.lower_expr(callee).into_box();
-                let params = parameters
-                    .iter()
-                    .map(|expr| self.lower_expr(expr))
-                    .collect();
-                ExprKind::Call { callee, params }
+                let args = arguments.iter().map(|expr| self.lower_expr(expr)).collect();
+                ExprKind::Call { callee, args }
             }
             ast::ExprKind::StructInstantiation { path, fields } => {
                 let def = match self.resolve_def_id(&expr.node_id) {
@@ -143,8 +140,8 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 let generic_args = path
                     .segments
                     .last()
-                    .and_then(|seg| seg.generic_params.as_ref())
-                    .map(|params| params.iter().map(|ty| self.lower_type(ty)).collect());
+                    .and_then(|seg| seg.generic_args.as_ref())
+                    .map(|args| args.iter().map(|ty| self.lower_type(ty)).collect());
                 let fields = fields
                     .iter()
                     .map(|(name, expr)| (*name, self.lower_expr(expr)))

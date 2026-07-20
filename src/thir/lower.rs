@@ -178,15 +178,13 @@ impl<'a> ThirLowerer<'a> {
             hir::ExprKind::Reference { expr, mutability } => {
                 self.lower_reference(expr, *mutability, ty, span, hir_id)
             }
-            hir::ExprKind::Call { callee, params } => {
-                self.lower_call(callee, params, ty, span, hir_id)
-            }
+            hir::ExprKind::Call { callee, args } => self.lower_call(callee, args, ty, span, hir_id),
             hir::ExprKind::MethodCall {
                 receiver,
-                params,
+                args,
                 def_id,
                 ..
-            } => self.lower_method_call(receiver, params, *def_id, ty, span, hir_id),
+            } => self.lower_method_call(receiver, args, *def_id, ty, span, hir_id),
             hir::ExprKind::Field { base, index, .. } => {
                 self.lower_field(base, *index, ty, span, hir_id)
             }
@@ -471,22 +469,22 @@ impl<'a> ThirLowerer<'a> {
     fn lower_method_call(
         &mut self,
         receiver: &hir::Expr,
-        params: &ThinVec<hir::Expr>,
+        args: &ThinVec<hir::Expr>,
         def_id: DefId,
         ty: &Ty,
         span: Span,
         hir_id: HirId,
     ) -> ExprId {
         let recv_id = self.lower_expr(receiver);
-        let args: ThinVec<ExprId> = params.iter().map(|param| self.lower_expr(param)).collect();
-        let mut params = ThinVec::with_capacity(1 + args.len());
-        params.push(recv_id);
-        params.extend(args);
+        let args: ThinVec<ExprId> = args.iter().map(|arg| self.lower_expr(arg)).collect();
+        let mut new_args = ThinVec::with_capacity(1 + args.len());
+        new_args.push(recv_id);
+        new_args.extend(args);
         let path_id = self.alloc_expr(ExprKind::Path { def_id }, Ty::MethodCallee, span, hir_id);
         self.alloc_expr(
             ExprKind::Call {
                 callee: path_id,
-                params,
+                args: new_args,
             },
             ty.clone(),
             span,
@@ -497,14 +495,14 @@ impl<'a> ThirLowerer<'a> {
     fn lower_call(
         &mut self,
         callee: &hir::Expr,
-        params: &ThinVec<hir::Expr>,
+        args: &ThinVec<hir::Expr>,
         ty: &Ty,
         span: Span,
         hir_id: HirId,
     ) -> ExprId {
         let callee = self.lower_expr(callee);
-        let params: ThinVec<ExprId> = params.iter().map(|param| self.lower_expr(param)).collect();
-        self.alloc_expr(ExprKind::Call { callee, params }, ty.clone(), span, hir_id)
+        let args: ThinVec<ExprId> = args.iter().map(|arg| self.lower_expr(arg)).collect();
+        self.alloc_expr(ExprKind::Call { callee, args }, ty.clone(), span, hir_id)
     }
 
     fn lower_dereference(
@@ -648,7 +646,7 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) 
                     let generics = path
                         .segments
                         .last()
-                        .and_then(|seg| seg.generic_params.as_ref())
+                        .and_then(|seg| seg.generic_args.as_ref())
                         .as_ref()
                         .map(|args| {
                             args.iter()

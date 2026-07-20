@@ -22,9 +22,9 @@ message = "Cannot call non-function expression"
 level = "Error"
 message = "Expected {expected} parameter{s}, found {found}"
 
-[unexpected_generic_params]
+[unexpected_generic_args]
 level = "Error"
-message = "Expected {expected} generic parameter{s}, found {found}"
+message = "Expected {expected} generic argument{s}, found {found}"
 
 [unknown_field]
 level = "Error"

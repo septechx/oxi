@@ -315,7 +315,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Unary { op, right } => self.check_unary(*op, right),
             ExprKind::Dereference { expr } => self.check_dereference(expr),
             ExprKind::Reference { expr, mutability } => self.check_reference(expr, *mutability),
-            ExprKind::Call { callee, params } => self.check_call(callee, params, expr_span),
+            ExprKind::Call { callee, args } => self.check_call(callee, args, expr_span),
             ExprKind::StructInit {
                 def,
                 generic_args,
@@ -413,7 +413,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     let explicit_args = path
                         .segments
                         .last()
-                        .and_then(|seg| seg.generic_params.as_ref());
+                        .and_then(|seg| seg.generic_args.as_ref());
                     if matches!(scheme.body, Ty::Adt(_, _)) {
                         match explicit_args {
                             Some(args) => self
@@ -474,7 +474,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 self.ctx,
                 span,
                 self.module_id,
-                diag::UnexpectedGenericParams,
+                diag::UnexpectedGenericArgs,
                 diag_params! {
                     expected = scheme.vars.len(),
                     s = if scheme.vars.len() == 1 { "" } else { "s" },
@@ -533,7 +533,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                             if let Some(explicit_args) = path
                                 .segments
                                 .last()
-                                .and_then(|seg| seg.generic_params.as_ref())
+                                .and_then(|seg| seg.generic_args.as_ref())
                             {
                                 self.instantiate_with_explicit_args(
                                     *def_id,
@@ -697,7 +697,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     self.ctx,
                     span,
                     self.module_id,
-                    diag::UnexpectedGenericParams,
+                    diag::UnexpectedGenericArgs,
                     diag_params! {
                         expected = param_hir_ids.len(),
                         s = if param_hir_ids.len() == 1 { "" } else { "s" },
