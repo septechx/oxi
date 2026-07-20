@@ -20,9 +20,14 @@ pub fn lower_body(
     for param in params {
         let local_var = LocalVarId(lowerer.locals.len() as u32);
         lowerer.locals.insert(param.hir_id, local_var);
+        let param_ty = typeck
+            .node_types
+            .get(&param.ty.hir_id)
+            .cloned()
+            .unwrap_or_else(|| hir_ty_to_ty(&param.ty, &typeck.hir_id_to_ty_var));
         lowerer.params.push(Param {
             name: param.name,
-            ty: hir_ty_to_ty(&param.ty, &typeck.hir_id_to_ty_var),
+            ty: param_ty,
             hir_id: param.hir_id,
             local_var,
         });
@@ -218,7 +223,12 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let source = self.lower_expr(expr);
-        let target_ty = hir_ty_to_ty(target, &self.typeck.hir_id_to_ty_var);
+        let target_ty = self
+            .typeck
+            .node_types
+            .get(&target.hir_id)
+            .cloned()
+            .unwrap_or_else(|| hir_ty_to_ty(target, &self.typeck.hir_id_to_ty_var));
         self.alloc_expr(
             ExprKind::Cast {
                 source,
@@ -334,14 +344,21 @@ impl<'a> ThirLowerer<'a> {
                     let init_id = init.as_ref().map(|expr| self.lower_expr(expr));
                     let local_var = LocalVarId(self.locals.len() as u32);
                     self.locals.insert(*local, local_var);
-                    let ty = if matches!(ty.kind, hir::TyKind::Infer) {
-                        init.as_ref()
-                            .and_then(|expr| self.typeck.node_types.get(&expr.hir_id))
-                            .cloned()
-                            .unwrap_or(Ty::Error)
-                    } else {
-                        hir_ty_to_ty(ty, &self.typeck.hir_id_to_ty_var)
-                    };
+                    let ty = self
+                        .typeck
+                        .node_types
+                        .get(&ty.hir_id)
+                        .cloned()
+                        .or_else(|| {
+                            if matches!(ty.kind, hir::TyKind::Infer) {
+                                init.as_ref()
+                                    .and_then(|expr| self.typeck.node_types.get(&expr.hir_id))
+                                    .cloned()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_else(|| hir_ty_to_ty(ty, &self.typeck.hir_id_to_ty_var));
                     let remainder_scope = self
                         .scope_tree
                         .expect("has scope tree")

@@ -1,9 +1,11 @@
 use thin_vec::ThinVec;
 
+use fxhash::FxHashMap;
+
 use crate::ast::Mutability;
-use crate::hir::{self, DefId, PrimTy, QPath, TyKind};
-use crate::resolve::Res;
-use crate::typeck::fold::fold_ty;
+use crate::hir::{self, DefId, DefKind, PrimTy, QPath, TyKind};
+use crate::resolve::{Res, ResolverOutputs};
+use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -107,6 +109,36 @@ impl Ty {
     pub fn reject_vars(self) -> Self {
         fold_ty(&self, &mut |ty| match ty {
             Ty::Var(_) => Ty::Error,
+            ty => ty,
+        })
+    }
+
+    pub fn normalize_aliases(
+        self,
+        item_schemes: &FxHashMap<DefId, Scheme>,
+        resolver: &ResolverOutputs,
+    ) -> Ty {
+        fold_ty(&self, &mut |ty| match ty {
+            Ty::Adt(def_id, generic_args)
+                if resolver.defs[def_id.0 as usize].kind == DefKind::TypeAlias =>
+            {
+                if let Some(scheme) = item_schemes.get(&def_id) {
+                    let resolved = if let Some(args) = &generic_args {
+                        let mapping: FxHashMap<TyVarId, Ty> = scheme
+                            .vars
+                            .iter()
+                            .copied()
+                            .zip(args.iter().cloned())
+                            .collect();
+                        substitute_ty_vars(&scheme.body, &mapping)
+                    } else {
+                        scheme.body.clone()
+                    };
+                    Ty::normalize_aliases(resolved, item_schemes, resolver)
+                } else {
+                    Ty::Adt(def_id, generic_args)
+                }
+            }
             ty => ty,
         })
     }

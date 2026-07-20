@@ -218,8 +218,18 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         }
     }
 
+    fn from_hir_resolved(
+        icx: &mut InferCtx,
+        hir_ty: &hir::Ty,
+        item_schemes: &FxHashMap<DefId, Scheme>,
+        resolver: &ResolverOutputs,
+    ) -> Ty {
+        let ty = Ty::from_hir(icx, hir_ty);
+        ty.normalize_aliases(item_schemes, resolver)
+    }
+
     fn check_const_body(&mut self, ty: &hir::Ty, body: &Body) {
-        let expected = Ty::from_hir(self.icx, ty);
+        let expected = Self::from_hir_resolved(self.icx, ty, self.item_schemes, self.resolver);
         self.node_types.insert(ty.hir_id, expected.clone());
         let body_ty = self.check_expr(&body.value);
         if let Err(err) = unify(
@@ -236,13 +246,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     fn check_fn_body(&mut self, decl: &FnDecl, body: &Body) {
         self.env.push();
         for param in &decl.params {
-            let param_ty = Ty::from_hir(self.icx, &param.ty);
+            let param_ty =
+                Self::from_hir_resolved(self.icx, &param.ty, self.item_schemes, self.resolver);
             self.node_types.insert(param.ty.hir_id, param_ty.clone());
             let scheme = Scheme::monomorphic(param_ty);
             self.local_schemes.insert(param.hir_id, scheme.clone());
             self.env.insert(param.hir_id, scheme);
         }
-        let expected = Ty::from_hir(self.icx, &decl.ret);
+        let expected =
+            Self::from_hir_resolved(self.icx, &decl.ret, self.item_schemes, self.resolver);
         self.node_types.insert(decl.ret.hir_id, expected.clone());
         self.check_expr(&body.value);
         self.check_return_values(&body.value, &expected, body.value.span);
@@ -381,7 +393,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             ExprKind::Index { base, index } => self.check_index(base, index, expr_span, hir_id),
             ExprKind::As { expr, ty } => {
                 self.check_expr(expr);
-                let target_ty = Ty::from_hir(self.icx, ty);
+                let target_ty =
+                    Self::from_hir_resolved(self.icx, ty, self.item_schemes, self.resolver);
                 self.node_types.insert(ty.hir_id, target_ty.clone());
                 target_ty
             }
@@ -503,7 +516,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
         }
         for (hir_arg_ty, &v) in args.iter().zip(method_vars) {
-            let arg_ty = Ty::from_hir(self.icx, hir_arg_ty);
+            let arg_ty =
+                Self::from_hir_resolved(self.icx, hir_arg_ty, self.item_schemes, self.resolver);
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
             unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id).or_push_err(self.icx);
@@ -709,7 +723,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let args: ThinVec<Ty> = hir_args
                 .iter()
                 .map(|arg| {
-                    let arg_ty = Ty::from_hir(self.icx, arg);
+                    let arg_ty =
+                        Self::from_hir_resolved(self.icx, arg, self.item_schemes, self.resolver);
                     self.node_types.insert(arg.hir_id, arg_ty.clone());
                     arg_ty
                 })
@@ -760,7 +775,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             if let Some(default_ty) = default
                 && let Some(&fresh) = fresh_var_map.get(hir_id)
             {
-                let default_ty = Ty::from_hir(self.icx, default_ty);
+                let default_ty =
+                    Self::from_hir_resolved(self.icx, default_ty, self.item_schemes, self.resolver);
                 let default_ty = substitute_ty_vars(&default_ty, &subst);
                 self.icx.add_generic_default(fresh, default_ty);
             }
@@ -821,7 +837,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let expr_span = expr.span;
             let expr = self.check_expr(expr);
             if let Some((hir_field_ty, _)) = field_table.get(&name.value) {
-                let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+                let mut field_ty = Self::from_hir_resolved(
+                    self.icx,
+                    hir_field_ty,
+                    self.item_schemes,
+                    self.resolver,
+                );
                 if !ty_var_subst.is_empty() {
                     field_ty = substitute_ty_vars(&field_ty, ty_var_subst);
                 }
@@ -869,7 +890,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     StmtKind::Let {
                         ty: hir_ty, init, ..
                     } => {
-                        let ty = Ty::from_hir(self.icx, hir_ty);
+                        let ty = Self::from_hir_resolved(
+                            self.icx,
+                            hir_ty,
+                            self.item_schemes,
+                            self.resolver,
+                        );
                         self.node_types.insert(hir_ty.hir_id, ty);
                         if let Some(init) = init {
                             self.check_expr(init);
@@ -888,7 +914,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     local,
                     ..
                 } => {
-                    let ty = Ty::from_hir(self.icx, hir_ty);
+                    let ty =
+                        Self::from_hir_resolved(self.icx, hir_ty, self.item_schemes, self.resolver);
                     self.node_types.insert(hir_ty.hir_id, ty.clone());
                     self.icx.push_level();
                     let init_span = init.as_ref().map(|e| e.span).unwrap_or(stmt.span);
@@ -1028,7 +1055,8 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let (hir_field_ty, index) = fields.get(&member)?;
         self.member_res
             .insert(hir_id, MemberRes::Field { index: *index });
-        let mut field_ty = Ty::from_hir(self.icx, hir_field_ty);
+        let mut field_ty =
+            Self::from_hir_resolved(self.icx, hir_field_ty, self.item_schemes, self.resolver);
         match generic_args {
             Some(generic_args) => {
                 let subst = self.def_ty_var_subst(struct_id, generic_args);
@@ -1044,7 +1072,12 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     for (i, default) in info.defaults.iter().enumerate() {
                         match default {
                             Some(ty) => {
-                                let mut ty = Ty::from_hir(self.icx, ty);
+                                let mut ty = Self::from_hir_resolved(
+                                    self.icx,
+                                    ty,
+                                    self.item_schemes,
+                                    self.resolver,
+                                );
                                 if !subst.is_empty() {
                                     ty = substitute_ty_vars(&ty, &subst);
                                 }
