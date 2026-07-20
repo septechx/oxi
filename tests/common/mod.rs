@@ -134,13 +134,18 @@ impl Drop for Test {
         }
 
         let root = root_source.expect("test must define main.oxi");
-        let res = compile_source(root.0, root.1, || {
-            if self.should_abort() {
-                Err(anyhow::anyhow!("pipeline aborted"))
-            } else {
-                Ok(())
-            }
-        });
+        let res = compile_source(
+            root.0,
+            root.1,
+            || {
+                if self.should_abort() {
+                    Err(anyhow::anyhow!("pipeline aborted"))
+                } else {
+                    Ok(())
+                }
+            },
+            None,
+        );
 
         if let Err(e) = &res
             && self.should_succeed != Some(false)

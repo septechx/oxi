@@ -81,5 +81,5 @@ fn build_files(cli: Cli) -> Result<()> {
     };
     colored::control::set_override(use_color);
 
-    compile_source(cli.input, source_text, check_for_errors)
+    compile_source(cli.input, source_text, check_for_errors, cli.unpretty)
 }

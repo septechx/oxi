@@ -1,8 +1,11 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{Error, Result, anyhow};
 use clap::Parser;
 use inkwell::OptimizationLevel;
+
+use crate::driver::UnprettyPrintable;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum OptLevel {
@@ -75,6 +78,21 @@ impl FromStr for EmitOption {
     }
 }
 
+impl FromStr for UnprettyPrintable {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "tokens" => Ok(UnprettyPrintable::Tokens),
+            "ast" => Ok(UnprettyPrintable::Ast),
+            "resolver" => Ok(UnprettyPrintable::Resolver),
+            "hir" => Ok(UnprettyPrintable::Hir),
+            "typeck" => Ok(UnprettyPrintable::Typeck),
+            "thir" => Ok(UnprettyPrintable::Thir),
+            other => Err(anyhow!("invalid unpretty option: {}", other)),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None, arg_required_else_help(true))]
 pub struct Cli {
@@ -97,6 +115,9 @@ pub struct Cli {
         default_value = "auto"
     )]
     pub color: ColorChoice,
+
+    #[clap(long, help = "Print intermediate representation")]
+    pub unpretty: Option<UnprettyPrintable>,
 
     #[clap(long, help = "Do not print any output")]
     pub quiet: bool,
