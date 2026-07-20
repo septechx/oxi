@@ -476,10 +476,9 @@ impl<'a> ThirLowerer<'a> {
         hir_id: HirId,
     ) -> ExprId {
         let recv_id = self.lower_expr(receiver);
-        let args: ThinVec<ExprId> = args.iter().map(|arg| self.lower_expr(arg)).collect();
         let mut new_args = ThinVec::with_capacity(1 + args.len());
         new_args.push(recv_id);
-        new_args.extend(args);
+        new_args.extend(args.iter().map(|arg| self.lower_expr(arg)));
         let path_id = self.alloc_expr(ExprKind::Path { def_id }, Ty::MethodCallee, span, hir_id);
         self.alloc_expr(
             ExprKind::Call {

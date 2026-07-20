@@ -478,12 +478,9 @@ impl Visitable for Expr {
                 ExprKind::Array { contents } => {
                     contents.visit(visitor);
                 }
-                ExprKind::FunctionCall {
-                    callee,
-                    arguments: parameters,
-                } => {
+                ExprKind::FunctionCall { callee, arguments } => {
                     callee.visit(visitor);
-                    parameters.visit(visitor);
+                    arguments.visit(visitor);
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit(visitor);
@@ -578,12 +575,9 @@ impl Visitable for Expr {
                 ExprKind::Array { contents } => {
                     contents.visit_mut(visitor);
                 }
-                ExprKind::FunctionCall {
-                    callee,
-                    arguments: parameters,
-                } => {
+                ExprKind::FunctionCall { callee, arguments } => {
                     callee.visit_mut(visitor);
-                    parameters.visit_mut(visitor);
+                    arguments.visit_mut(visitor);
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit_mut(visitor);

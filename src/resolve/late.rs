@@ -449,12 +449,9 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     elem.visit(self);
                 }
             }
-            ExprKind::FunctionCall {
-                callee,
-                arguments: parameters,
-            } => {
+            ExprKind::FunctionCall { callee, arguments } => {
                 callee.visit(self);
-                parameters.visit(self);
+                arguments.visit(self);
             }
             ExprKind::MemberAccess { base, .. } => base.visit(self),
             ExprKind::Index { base, index } => {

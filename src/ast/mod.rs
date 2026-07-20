@@ -383,12 +383,11 @@ pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
     segments
         .iter()
         .map(|s| {
-            if let Some(params) = &s.generic_args {
+            if let Some(args) = &s.generic_args {
                 format!(
                     "{}::<{}>",
                     ctx.interner.lookup(s.ident.value),
-                    params
-                        .iter()
+                    args.iter()
                         .map(|t| t.display(ctx))
                         .collect::<Vec<_>>()
                         .join(", ")
