@@ -1,3 +1,5 @@
+use thin_vec::ThinVec;
+
 use crate::hir::{
     AssocItemKind, Block, Body, Crate, DefId, Expr, ExprKind, ItemKind, MaybeOwner, Node, Param,
     StmtKind,
@@ -11,7 +13,7 @@ pub fn build_scope_tree(body: &Body) -> ScopeTree {
     builder.tree
 }
 
-pub fn build_fn_scope_tree(params: &[Param], body: &Body) -> ScopeTree {
+pub fn build_fn_scope_tree(params: &ThinVec<Param>, body: &Body) -> ScopeTree {
     let mut builder = ScopeTreeBuilder::new();
     let body_hir_id = body.value.hir_id;
     builder.tree.root = Some(body_hir_id);
@@ -138,18 +140,16 @@ impl ScopeTreeBuilder {
                 self.build_expr(left);
                 self.build_expr(right);
             }
-            ExprKind::Call { callee, params } => {
+            ExprKind::Call { callee, args } => {
                 self.build_expr(callee);
-                for param in params {
-                    self.build_expr(param);
+                for arg in args {
+                    self.build_expr(arg);
                 }
             }
-            ExprKind::MethodCall {
-                receiver, params, ..
-            } => {
+            ExprKind::MethodCall { receiver, args, .. } => {
                 self.build_expr(receiver);
-                for param in params {
-                    self.build_expr(param);
+                for arg in args {
+                    self.build_expr(arg);
                 }
             }
             ExprKind::Field { base, .. } => {
@@ -321,7 +321,7 @@ mod tests {
         // fn _(_: i32) _ { 0 }
         let body_expr = lit_expr(2, 0);
         let body = Body { value: body_expr };
-        let params = vec![param(1)];
+        let params = thin_vec![param(1)];
 
         let tree = build_fn_scope_tree(&params, &body);
         let callsite = Scope {
@@ -671,7 +671,7 @@ mod tests {
         // fn _() { 42 }
         let body_expr = lit_expr(1, 42);
         let body = Body { value: body_expr };
-        let tree = build_fn_scope_tree(&[], &body);
+        let tree = build_fn_scope_tree(&ThinVec::new(), &body);
 
         let callsite = Scope {
             local_id: ItemLocalId(1),

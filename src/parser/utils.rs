@@ -49,27 +49,27 @@ fn parse_path_segment(parser: &mut Parser) -> Result<PathSegment> {
     let ident = parser.expect_identifier()?;
     let span_start = ident.span.start();
     let mut span_end = ident.span.end();
-    let generic_params = if parser.peek().kind == TokenKind::Less {
+    let generic_args = if parser.peek().kind == TokenKind::Less {
         parser.expect(TokenKind::ColonColon)?;
-        let params = parse_generic_params(parser)?;
-        span_end = params
+        let args = parse_generic_args(parser)?;
+        span_end = args
             .last()
-            .map(|param| param.span)
+            .map(|arg| arg.span)
             .unwrap_or_else(|| ident.span)
             .end();
-        Some(params)
+        Some(args)
     } else {
         None
     };
     let span = Span::new(span_start, span_end);
     Ok(PathSegment {
         ident,
-        generic_params,
+        generic_args,
         span,
     })
 }
 
-fn parse_generic_params(parser: &mut Parser) -> Result<ThinVec<Type>> {
+fn parse_generic_args(parser: &mut Parser) -> Result<ThinVec<Type>> {
     parser.expect(TokenKind::Less)?;
     let mut args = ThinVec::new();
     while parser.current_token().kind != TokenKind::More {

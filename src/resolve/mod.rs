@@ -65,7 +65,7 @@ pub enum Res<Id = NodeId> {
     GenericParam(Id),
     /// Primitive type, like `i32`
     PrimTy(PrimTy),
-    /// Self param in struct or impl
+    /// Self type in struct or impl
     SelfTyAlias { alias_to: DefId },
     /// Error in name resolution
     Err,

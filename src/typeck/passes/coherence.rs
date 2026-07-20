@@ -63,7 +63,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 1. Extract and validate trait generic args from the path
             let trait_scheme = self.item_schemes.get(&trait_def_id);
-            let trait_generic_args = Ty::hir_generic_params(&mut icx, trait_ty);
+            let trait_generic_args = Ty::hir_generic_args(&mut icx, trait_ty);
 
             if let Some(scheme) = trait_scheme
                 && !scheme.vars.is_empty()
@@ -104,7 +104,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.ctx,
                             trait_ty.span,
                             impl_module,
-                            diag::UnexpectedGenericParams,
+                            diag::UnexpectedGenericArgs,
                             diag_params! {
                                 expected = scheme.vars.len(),
                                 s = if scheme.vars.len() == 1 { "" } else { "s" },
@@ -153,7 +153,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     self.ctx,
                                     trait_ty.span,
                                     impl_module,
-                                    diag::UnexpectedGenericParams,
+                                    diag::UnexpectedGenericArgs,
                                     diag_params! {
                                         expected = scheme.vars.len(),
                                         s = if scheme.vars.len() == 1 { "" } else { "s" },
@@ -169,7 +169,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.ctx,
                             trait_ty.span,
                             impl_module,
-                            diag::UnexpectedGenericParams,
+                            diag::UnexpectedGenericArgs,
                             diag_params! {
                                 expected = scheme.vars.len(),
                                 s = if scheme.vars.len() == 1 { "" } else { "s" },

@@ -12,7 +12,7 @@ pub fn parse_attributes(parser: &mut Parser) -> Result<ThinVec<Attribute>> {
 
         let name = parser.expect_identifier()?;
 
-        let parameters = if parser.current_token().kind == TokenKind::OpenParen {
+        let arguments = if parser.current_token().kind == TokenKind::OpenParen {
             parser.advance();
             let mut args = ThinVec::new();
 
@@ -35,7 +35,7 @@ pub fn parse_attributes(parser: &mut Parser) -> Result<ThinVec<Attribute>> {
         let span = Span::new(hash_token.span.start(), close_token.span.end());
 
         attributes.push(Attribute {
-            parameters,
+            arguments,
             name,
             span,
         });

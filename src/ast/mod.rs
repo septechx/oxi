@@ -189,7 +189,7 @@ pub enum ExprKind {
     /// A function call expression, e.g. `foo(1, 2, 3)`.
     FunctionCall {
         callee: Box<Expr>,
-        parameters: ThinVec<Expr>,
+        arguments: ThinVec<Expr>,
     },
 
     /// A cast expression, e.g. `foo as u32`.
@@ -341,7 +341,7 @@ impl Path {
             segments: thin_vec![PathSegment {
                 ident: id,
                 span: id.span,
-                generic_params: None
+                generic_args: None
             }],
         }
     }
@@ -362,7 +362,7 @@ impl Path {
 #[derive(Debug, Clone)]
 pub struct PathSegment {
     pub ident: Ident,
-    pub generic_params: Option<ThinVec<Type>>,
+    pub generic_args: Option<ThinVec<Type>>,
     pub span: Span,
 }
 
@@ -383,12 +383,11 @@ pub fn path_segments_to_string(segments: &[PathSegment], ctx: &Ctx) -> String {
     segments
         .iter()
         .map(|s| {
-            if let Some(params) = &s.generic_params {
+            if let Some(args) = &s.generic_args {
                 format!(
                     "{}::<{}>",
                     ctx.interner.lookup(s.ident.value),
-                    params
-                        .iter()
+                    args.iter()
                         .map(|t| t.display(ctx))
                         .collect::<Vec<_>>()
                         .join(", ")
@@ -412,7 +411,7 @@ pub fn idents_to_string(idents: &[Ident], interner: &Interner) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     pub name: Ident,
-    pub parameters: Option<ThinVec<Box<str>>>,
+    pub arguments: Option<ThinVec<Box<str>>>,
     pub span: Span,
 }
 

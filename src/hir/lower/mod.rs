@@ -70,10 +70,10 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
     fn lower_path_segment(&mut self, segment: &ast::PathSegment) -> PathSegment {
         PathSegment {
             ident: segment.ident,
-            generic_params: segment
-                .generic_params
+            generic_args: segment
+                .generic_args
                 .as_ref()
-                .map(|params| params.iter().map(|ty| self.lower_type(ty)).collect()),
+                .map(|args| args.iter().map(|ty| self.lower_type(ty)).collect()),
         }
     }
 

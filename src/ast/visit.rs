@@ -195,10 +195,10 @@ impl Visitable for Item {
                     items,
                 } => {
                     for segment in &self_ty.0.segments {
-                        segment.generic_params.visit(visitor);
+                        segment.generic_args.visit(visitor);
                     }
                     for segment in &trait_.0.segments {
-                        segment.generic_params.visit(visitor);
+                        segment.generic_args.visit(visitor);
                     }
                     items.visit(visitor);
                 }
@@ -253,10 +253,10 @@ impl Visitable for Item {
                     items,
                 } => {
                     for segment in &mut self_ty.0.segments {
-                        segment.generic_params.visit_mut(visitor);
+                        segment.generic_args.visit_mut(visitor);
                     }
                     for segment in &mut trait_.0.segments {
-                        segment.generic_params.visit_mut(visitor);
+                        segment.generic_args.visit_mut(visitor);
                     }
                     items.visit_mut(visitor);
                 }
@@ -437,7 +437,7 @@ impl Visitable for Expr {
                 ExprKind::Loop(b) => b.visit(visitor),
                 ExprKind::Path(path) => {
                     for segment in &path.segments {
-                        segment.generic_params.visit(visitor);
+                        segment.generic_args.visit(visitor);
                     }
                 }
                 ExprKind::Binary {
@@ -469,7 +469,7 @@ impl Visitable for Expr {
                 }
                 ExprKind::StructInstantiation { path, fields } => {
                     for segment in &path.segments {
-                        segment.generic_params.visit(visitor);
+                        segment.generic_args.visit(visitor);
                     }
                     for field in fields {
                         field.1.visit(visitor);
@@ -478,9 +478,9 @@ impl Visitable for Expr {
                 ExprKind::Array { contents } => {
                     contents.visit(visitor);
                 }
-                ExprKind::FunctionCall { callee, parameters } => {
+                ExprKind::FunctionCall { callee, arguments } => {
                     callee.visit(visitor);
-                    parameters.visit(visitor);
+                    arguments.visit(visitor);
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit(visitor);
@@ -534,7 +534,7 @@ impl Visitable for Expr {
                 ExprKind::Loop(b) => b.visit_mut(visitor),
                 ExprKind::Path(path) => {
                     for segment in &mut path.segments {
-                        segment.generic_params.visit_mut(visitor);
+                        segment.generic_args.visit_mut(visitor);
                     }
                 }
                 ExprKind::Binary {
@@ -566,7 +566,7 @@ impl Visitable for Expr {
                 }
                 ExprKind::StructInstantiation { path, fields } => {
                     for segment in &mut path.segments {
-                        segment.generic_params.visit_mut(visitor);
+                        segment.generic_args.visit_mut(visitor);
                     }
                     for field in fields {
                         field.1.visit_mut(visitor);
@@ -575,9 +575,9 @@ impl Visitable for Expr {
                 ExprKind::Array { contents } => {
                     contents.visit_mut(visitor);
                 }
-                ExprKind::FunctionCall { callee, parameters } => {
+                ExprKind::FunctionCall { callee, arguments } => {
                     callee.visit_mut(visitor);
-                    parameters.visit_mut(visitor);
+                    arguments.visit_mut(visitor);
                 }
                 ExprKind::MemberAccess { base, .. } => {
                     base.visit_mut(visitor);
@@ -627,7 +627,7 @@ impl Visitable for Type {
             VisitAction::Continue => match &self.kind {
                 TypeKind::Symbol(path) => {
                     for segment in &path.segments {
-                        segment.generic_params.visit(visitor);
+                        segment.generic_args.visit(visitor);
                     }
                 }
                 TypeKind::Pointer(ty, _) => ty.visit(visitor),
@@ -658,7 +658,7 @@ impl Visitable for Type {
             VisitAction::Continue => match &mut self.kind {
                 TypeKind::Symbol(path) => {
                     for segment in &mut path.segments {
-                        segment.generic_params.visit_mut(visitor);
+                        segment.generic_args.visit_mut(visitor);
                     }
                 }
                 TypeKind::Pointer(ty, _) => ty.visit_mut(visitor),

@@ -564,7 +564,7 @@ fn test_function_call_expr() {
     let expr = Expr {
         kind: ExprKind::FunctionCall {
             callee: Box::new(dummy_expr_symbol("foo")),
-            parameters: thin_vec![dummy_expr_number(1), dummy_expr_number(2)],
+            arguments: thin_vec![dummy_expr_number(1), dummy_expr_number(2)],
         },
         span: dummy_span(),
         node_id: NodeId::default(),
@@ -1054,7 +1054,7 @@ fn test_comprehensive_all_expression_types() {
     let expr = Expr {
         kind: ExprKind::FunctionCall {
             callee: Box::new(dummy_expr_symbol("foo")),
-            parameters: thin_vec![
+            arguments: thin_vec![
                 dummy_expr_number(1),
                 Expr {
                     kind: ExprKind::StructInstantiation {

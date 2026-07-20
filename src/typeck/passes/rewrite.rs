@@ -40,7 +40,7 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                 }
             }
         }
-        ExprKind::Call { callee, params } => {
+        ExprKind::Call { callee, args } => {
             let res = member_res.get(&callee.hir_id).copied();
             if let Some(MemberRes::Method { def_id, .. }) = res {
                 let (mut base_owned, member_sym) =
@@ -58,20 +58,20 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
                         _ => unreachable!(),
                     };
                 rewrite_expr(&mut base_owned, member_res);
-                let mut params_owned = std::mem::take(params);
-                for param in &mut params_owned {
-                    rewrite_expr(param, member_res);
+                let mut args_owned = std::mem::take(args);
+                for arg in &mut args_owned {
+                    rewrite_expr(arg, member_res);
                 }
                 expr.kind = ExprKind::MethodCall {
                     receiver: base_owned,
                     method: member_sym,
-                    params: params_owned,
+                    args: args_owned,
                     def_id,
                 };
             } else {
                 rewrite_expr(callee, member_res);
-                for param in params {
-                    rewrite_expr(param, member_res);
+                for arg in args {
+                    rewrite_expr(arg, member_res);
                 }
             }
         }
@@ -138,12 +138,10 @@ fn rewrite_expr(expr: &mut Expr, member_res: &FxHashMap<HirId, MemberRes>) {
         ExprKind::As { expr, .. } => {
             rewrite_expr(expr, member_res);
         }
-        ExprKind::MethodCall {
-            receiver, params, ..
-        } => {
+        ExprKind::MethodCall { receiver, args, .. } => {
             rewrite_expr(receiver, member_res);
-            for param in params {
-                rewrite_expr(param, member_res);
+            for arg in args {
+                rewrite_expr(arg, member_res);
             }
         }
         ExprKind::Field { base, .. } => {
