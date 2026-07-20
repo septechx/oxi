@@ -349,6 +349,7 @@ impl<'ctx> NodeIdAssigner<'ctx> {
 }
 
 impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
+    // TODO: Doesn't the Visitor alrady handle this, could the match be removed?
     fn visit_item(&mut self, item: &mut Item) -> VisitAction {
         item.node_id = self.next_node_id();
 
@@ -385,7 +386,12 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
                     self.assign_to_generic_params(generic_params);
                 }
             }
-            _ => {}
+            ItemKind::Type { generic_params, .. } => {
+                if let Some(generic_params) = generic_params {
+                    self.assign_to_generic_params(generic_params);
+                }
+            }
+            ItemKind::Import(_) | ItemKind::Module { .. } | ItemKind::Const { .. } => {}
         }
 
         VisitAction::Continue
@@ -497,8 +503,19 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 );
                 VisitAction::SkipChildren
             }
-            // Maybe we should also create defs for `mod` and `import` items, but just skip for now
-            _ => VisitAction::SkipChildren,
+            ItemKind::Type { name, .. } => {
+                let sym = name.value;
+                self.resolver.create_def(
+                    item.node_id,
+                    sym,
+                    DefKind::TypeAlias,
+                    item.visibility,
+                    item.span,
+                );
+                VisitAction::SkipChildren
+            }
+            // TODO: Maybe we should also create defs for `mod` and `import` items, but just skip for now
+            ItemKind::Module { .. } | ItemKind::Import(_) => VisitAction::SkipChildren,
         }
     }
 

@@ -64,6 +64,11 @@ pub enum ItemKind {
         items: ThinVec<AssocItem>,
         generic_params: Option<GenericParams>,
     },
+    Type {
+        name: Ident,
+        generic_params: Option<GenericParams>,
+        type_: Type,
+    },
     Trait {
         name: Ident,
         items: ThinVec<AssocItem>,
@@ -75,11 +80,11 @@ pub enum ItemKind {
         items: ThinVec<AssocItem>,
     },
     Fn(Fn),
-    Import(ImportTree),
     Module {
         name: Ident,
         body: Option<ThinVec<Item>>,
     },
+    Import(ImportTree),
 }
 
 #[derive(Debug, Clone)]

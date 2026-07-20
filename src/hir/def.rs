@@ -14,6 +14,7 @@ pub enum DefKind {
     Import,
     Field,
     Local,
+    TypeAlias,
 }
 
 #[derive(Debug, Clone)]

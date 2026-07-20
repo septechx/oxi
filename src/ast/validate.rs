@@ -200,6 +200,7 @@ impl Visitor for AstValidator {
             }
             ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
+            ItemKind::Type { .. } => VisitAction::Continue,
             ItemKind::Module { body, .. } => {
                 if let Some(items) = body {
                     let mut names = Vec::new();
@@ -210,6 +211,7 @@ impl Visitor for AstValidator {
                             ItemKind::Trait { name, .. } => names.push(name),
                             ItemKind::Const { name, .. } => names.push(name),
                             ItemKind::Module { name, .. } => names.push(name),
+                            ItemKind::Type { name, .. } => names.push(name),
                             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
                         }
                     }
@@ -381,6 +383,7 @@ pub fn validate_ast(ast: &Ast, module_id: ModuleId) {
             ItemKind::Trait { name, .. } => top_level_names.push(name),
             ItemKind::Const { name, .. } => top_level_names.push(name),
             ItemKind::Module { name, .. } => top_level_names.push(name),
+            ItemKind::Type { name, .. } => top_level_names.push(name),
             ItemKind::Impl { .. } | ItemKind::Import(_) => {}
         }
     }

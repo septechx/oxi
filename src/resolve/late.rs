@@ -277,7 +277,7 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
     fn is_type_def(&self, def_id: DefId) -> bool {
         matches!(
             self.resolver.defs.get(def_id.0 as usize).map(|d| d.kind),
-            Some(DefKind::Struct | DefKind::Trait)
+            Some(DefKind::Struct | DefKind::Trait | DefKind::TypeAlias)
         )
     }
 
@@ -388,6 +388,23 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                     }
                     this.resolve_path(&trait_.0, trait_.1);
                     this.resolve_assoc_items(items);
+                });
+            }
+            ItemKind::Type {
+                generic_params,
+                type_,
+                ..
+            } => {
+                self.with_rib(RibKind::Item, |this| {
+                    if let Some(generic_params) = generic_params {
+                        for param in &generic_params.params {
+                            let sym = param.name.value;
+                            let rib = this.ribs.last_mut().expect("rib exists");
+                            rib.bindings.insert(sym, Res::GenericParam(param.node_id));
+                            param.visit(this);
+                        }
+                    }
+                    type_.visit(this);
                 });
             }
         }

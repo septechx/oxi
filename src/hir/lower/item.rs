@@ -30,6 +30,14 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     item.span,
                     item.visibility,
                 ),
+                ast::ItemKind::Type {
+                    name,
+                    generic_params,
+                    type_,
+                } => {
+                    _ = (name, generic_params, type_);
+                    todo!("AST -> HIR lowering for types");
+                }
                 ast::ItemKind::Fn(f) => this.lower_fn(def_id, f, item.span, item.visibility, None),
                 ast::ItemKind::Trait {
                     name,

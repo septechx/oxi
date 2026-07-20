@@ -219,6 +219,54 @@ pub fn parse_struct_decl_item(
     })
 }
 
+pub fn parse_type_decl_item(
+    mut parser: &mut Parser,
+    attributes: ThinVec<Attribute>,
+    modifiers: ThinVec<Modifier>,
+) -> Result<Item> {
+    let type_token = parser.expect(TokenKind::Type)?;
+    let name = parser.expect_identifier()?;
+
+    let generic_params = parse_optional_generic_params(parser)?;
+
+    parser.expect(TokenKind::Equals)?;
+
+    let type_ = parse_type(parser, BindingPower::DefaultBp)?;
+
+    let end_span = parser.expect(TokenKind::Semicolon)?.span;
+
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
+
+    let mut is_public = false;
+
+    let mut start_span = type_token.span;
+
+    if let Some(pub_mod) = pub_mod {
+        start_span = pub_mod.span;
+        is_public = true;
+    };
+
+    let span = Span::new(start_span.start(), end_span.end());
+
+    let visibility = if is_public {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
+
+    Ok(Item {
+        kind: ItemKind::Type {
+            name,
+            generic_params,
+            type_,
+        },
+        node_id: NodeId::default(),
+        attributes,
+        span,
+        visibility,
+    })
+}
+
 pub fn parse_trait_decl_item(
     mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
@@ -444,34 +492,6 @@ pub fn parse_impl_item(
     })
 }
 
-pub fn parse_import_item(
-    mut parser: &mut Parser,
-    attributes: ThinVec<Attribute>,
-    modifiers: ThinVec<Modifier>,
-) -> Result<Item> {
-    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
-
-    let start_span = parser.expect(TokenKind::Import)?.span;
-    let tree = parse_import_tree(parser)?;
-    let end_span = parser.expect(TokenKind::Semicolon)?.span;
-
-    let span = Span::new(start_span.start(), end_span.end());
-
-    let visibility = if pub_mod.is_some() {
-        Visibility::Public
-    } else {
-        Visibility::Private
-    };
-
-    Ok(Item {
-        kind: ItemKind::Import(tree),
-        node_id: NodeId::default(),
-        attributes,
-        span,
-        visibility,
-    })
-}
-
 pub fn parse_module_item(
     mut parser: &mut Parser,
     attributes: ThinVec<Attribute>,
@@ -507,6 +527,34 @@ pub fn parse_module_item(
         node_id: NodeId::default(),
         attributes,
         span: Span::new(start_span.start(), end_span.end()),
+        visibility,
+    })
+}
+
+pub fn parse_import_item(
+    mut parser: &mut Parser,
+    attributes: ThinVec<Attribute>,
+    modifiers: ThinVec<Modifier>,
+) -> Result<Item> {
+    let (pub_mod,) = get_modifiers!(&mut parser, modifiers, [Pub]);
+
+    let start_span = parser.expect(TokenKind::Import)?.span;
+    let tree = parse_import_tree(parser)?;
+    let end_span = parser.expect(TokenKind::Semicolon)?.span;
+
+    let span = Span::new(start_span.start(), end_span.end());
+
+    let visibility = if pub_mod.is_some() {
+        Visibility::Public
+    } else {
+        Visibility::Private
+    };
+
+    Ok(Item {
+        kind: ItemKind::Import(tree),
+        node_id: NodeId::default(),
+        attributes,
+        span,
         visibility,
     })
 }

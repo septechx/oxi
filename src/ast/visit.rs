@@ -179,6 +179,16 @@ impl Visitable for Item {
                     }
                     items.visit(visitor);
                 }
+                ItemKind::Type {
+                    generic_params,
+                    type_,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit(visitor);
+                    }
+                    type_.visit(visitor);
+                }
                 ItemKind::Trait {
                     items,
                     generic_params,
@@ -236,6 +246,16 @@ impl Visitable for Item {
                         field.1.visit_mut(visitor);
                     }
                     items.visit_mut(visitor);
+                }
+                ItemKind::Type {
+                    generic_params,
+                    type_,
+                    ..
+                } => {
+                    if let Some(params) = generic_params {
+                        params.visit_mut(visitor);
+                    }
+                    type_.visit_mut(visitor);
                 }
                 ItemKind::Trait {
                     items,
