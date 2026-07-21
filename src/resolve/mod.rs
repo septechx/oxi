@@ -175,14 +175,6 @@ impl NameResolution {
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
     pub resolutions: FxHashMap<Symbol, NameResolution>,
-
-    // TODO: Do we really need this?
-    pub struct_assoc_items: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
-    // TODO: Do we really need this?
-    pub impls: ThinVec<DefId>,
-    // TODO: Do we really need this?
-    pub assoc_items: ThinVec<DefId>,
-
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub qualified_name: String,
@@ -197,6 +189,7 @@ pub struct ResolverOutputs {
     /// Arena\[DefId] -> Def
     pub defs: ThinVec<Def>,
     pub modules: PerModule<ModuleData>,
+    pub def_to_module: FxHashMap<DefId, ModuleId>,
 }
 
 #[derive(Debug)]
@@ -213,6 +206,7 @@ pub struct Resolver<'a, 'ctx> {
     def_map: NodeMap<DefId>,
     /// Arena\[DefId] -> Def
     defs: ThinVec<Def>,
+    def_to_module: FxHashMap<DefId, ModuleId>,
 
     // Late res
     /// maps (path node id) -> (res)
@@ -241,6 +235,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             modules,
             def_map: NodeMap::default(),
             defs: ThinVec::new(),
+            def_to_module: FxHashMap::default(),
             res_map: NodeMap::default(),
         }
     }
@@ -258,6 +253,7 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             def_map: self.def_map,
             defs: self.defs,
             modules: self.modules,
+            def_to_module: self.def_to_module,
         }
     }
 
@@ -295,5 +291,10 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
             self.defs.get(def_id.0 as usize).map(|d| d.kind),
             Some(DefKind::Struct | DefKind::Trait | DefKind::TypeAlias | DefKind::AssocType)
         )
+    }
+
+    fn register_def_to_module(&mut self, def_id: DefId) {
+        self.def_to_module
+            .insert(def_id, ModuleId(self.module_idx as u32));
     }
 }

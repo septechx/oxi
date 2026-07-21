@@ -115,7 +115,9 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                             && self.resolver.defs[def_id.0 as usize].kind == DefKind::Trait
                             && let Some(module_id) = self
                                 .current_owner
-                                .and_then(|owner| self.def_to_module.get(&owner.to_def_id()))
+                                .and_then(|owner| {
+                                    self.resolver.def_to_module.get(&owner.to_def_id())
+                                })
                                 .copied()
                         {
                             let trait_name = self

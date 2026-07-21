@@ -10,7 +10,7 @@ use crate::errors::builders;
 use crate::hir::DefId;
 use crate::interner::Symbol;
 use crate::resolve::path::PathError;
-use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver, diag};
+use crate::resolve::{PartialRes, PrimTy, Res, Resolver, diag};
 use fxhash::FxHashMap;
 
 impl<'a, 'ctx> Resolver<'a, 'ctx> {
@@ -316,28 +316,6 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         PartialRes::new(Res::Err)
     }
 
-    fn register_impl_assoc_items(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
-        for item in items {
-            let name = match &item.kind {
-                AssocItemKind::Fn(f) => f.name.value,
-                AssocItemKind::Type { name, .. } => name.value,
-            };
-            let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
-                continue;
-            };
-            let binding = NameBinding {
-                def_id,
-                visibility: item.visibility,
-            };
-            self.resolver
-                .current_module_mut()
-                .struct_assoc_items
-                .entry(struct_def_id)
-                .or_default()
-                .insert(name, binding);
-        }
-    }
-
     fn inject_self_ty(&mut self, node_id: NodeId) {
         let def_id = self.resolver.def_id_for_node(node_id).expect("resolved");
         self.inject_self_ty_from_def_id(def_id);
@@ -417,7 +395,6 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                         Some(Res::Def(def_id)) => {
                             rib.bindings
                                 .insert(self_sym, Res::SelfTyAlias { alias_to: def_id });
-                            this.register_impl_assoc_items(def_id, items);
                         }
                         Some(res) => {
                             rib.bindings.insert(self_sym, res);

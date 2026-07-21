@@ -424,103 +424,87 @@ impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
     pub fn new(resolver: &'a mut Resolver<'res, 'ctx>) -> Self {
         Self { resolver }
     }
-
-    fn register_struct_assoc_item(&mut self, item: &AssocItem, struct_def_id: DefId) {
-        let (kind, name) = match &item.kind {
-            AssocItemKind::Fn(f) => (DefKind::AssocFn, f.name.value),
-            AssocItemKind::Type { name, .. } => (DefKind::AssocType, name.value),
-        };
-        let def_id = self.resolver.alloc_def(
-            item.node_id,
-            Some(name),
-            kind,
-            Some(item.visibility),
-            item.span,
-        );
-        let binding = NameBinding {
-            def_id,
-            visibility: item.visibility,
-        };
-        self.resolver
-            .current_module_mut()
-            .struct_assoc_items
-            .entry(struct_def_id)
-            .or_default()
-            .insert(name, binding);
-    }
 }
 
 impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     fn visit_item(&mut self, item: &Item) -> VisitAction {
         match &item.kind {
             ItemKind::Const { name, .. } => {
-                let sym = name.value;
-                self.resolver.create_def(
+                let def_id = self.resolver.create_def(
                     item.node_id,
-                    sym,
+                    name.value,
                     DefKind::Const,
                     item.visibility,
                     item.span,
                 );
+                self.resolver.register_def_to_module(def_id);
                 VisitAction::SkipChildren
             }
-            ItemKind::Struct { name, items, .. } => {
-                let sym = name.value;
-                let struct_def_id = self.resolver.create_def(
+            ItemKind::Struct { name, .. } => {
+                let def_id = self.resolver.create_def(
                     item.node_id,
-                    sym,
+                    name.value,
                     DefKind::Struct,
                     item.visibility,
                     item.span,
                 );
-
-                for assoc in items {
-                    self.register_struct_assoc_item(assoc, struct_def_id);
-                }
-                VisitAction::SkipChildren
+                self.resolver.register_def_to_module(def_id);
+                VisitAction::Continue
             }
             ItemKind::Trait { name, .. } => {
-                let sym = name.value;
-                self.resolver.create_def(
+                let def_id = self.resolver.create_def(
                     item.node_id,
-                    sym,
+                    name.value,
                     DefKind::Trait,
                     item.visibility,
                     item.span,
                 );
+                self.resolver.register_def_to_module(def_id);
                 VisitAction::Continue
             }
             ItemKind::Impl { .. } => {
                 let def_id =
                     self.resolver
                         .alloc_def(item.node_id, None, DefKind::Impl, None, item.span);
-                self.resolver.current_module_mut().impls.push(def_id);
+                self.resolver.register_def_to_module(def_id);
                 VisitAction::Continue
             }
             ItemKind::Fn(f) => {
-                let sym = f.name.value;
-                self.resolver.create_def(
+                let def_id = self.resolver.create_def(
                     item.node_id,
-                    sym,
+                    f.name.value,
                     DefKind::Function,
                     item.visibility,
                     item.span,
                 );
+                self.resolver.register_def_to_module(def_id);
                 VisitAction::SkipChildren
             }
             ItemKind::Type { name, .. } => {
-                let sym = name.value;
-                self.resolver.create_def(
+                let def_id = self.resolver.create_def(
                     item.node_id,
-                    sym,
+                    name.value,
                     DefKind::TypeAlias,
                     item.visibility,
                     item.span,
                 );
+                self.resolver.register_def_to_module(def_id);
                 VisitAction::SkipChildren
             }
-            // TODO: Maybe we should also create defs for `mod` and `import` items, but just skip for now
-            ItemKind::Module { .. } | ItemKind::Import(_) => VisitAction::SkipChildren,
+            ItemKind::Module { .. } => {
+                let def_id =
+                    self.resolver
+                        .alloc_def(item.node_id, None, DefKind::Mod, None, item.span);
+                self.resolver.register_def_to_module(def_id);
+                VisitAction::SkipChildren
+            }
+            ItemKind::Import(_) => {
+                let def_id =
+                    self.resolver
+                        .alloc_def(item.node_id, None, DefKind::Import, None, item.span);
+                self.resolver.register_def_to_module(def_id);
+                VisitAction::SkipChildren
+            }
         }
     }
 
@@ -536,7 +520,7 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
             Some(item.visibility),
             item.span,
         );
-        self.resolver.current_module_mut().assoc_items.push(def_id);
+        self.resolver.register_def_to_module(def_id);
         VisitAction::SkipChildren
     }
 }

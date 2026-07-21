@@ -125,7 +125,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             })
             .collect();
 
-        let module_id = *self.def_to_module.get(&def_id).expect("module id exists");
+        let module_id = *self
+            .resolver
+            .def_to_module
+            .get(&def_id)
+            .expect("module id exists");
 
         let self_res = self
             .resolver
