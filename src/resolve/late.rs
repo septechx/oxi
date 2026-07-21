@@ -222,14 +222,18 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             let module_prefix = &segments[..prefix_len];
             let type_seg = &segments[prefix_len];
 
-            let module = self
+            let Some(resolution) = self
                 .resolver
                 .resolve_module_path(self.resolver.module_idx, module_prefix)
-                .ok()?;
-
-            let resolution = self.resolver.modules[module]
-                .resolutions
-                .get(&type_seg.ident.value)?;
+                .ok()
+                .and_then(|module| {
+                    self.resolver.modules[module]
+                        .resolutions
+                        .get(&type_seg.ident.value)
+                })
+            else {
+                continue;
+            };
 
             let def = resolution.best_binding().def_id;
 
