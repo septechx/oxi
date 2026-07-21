@@ -71,6 +71,18 @@ pub enum Res<Id = NodeId> {
     Err,
 }
 
+impl Res {
+    fn is_type_ns(&self, resolver: &Resolver) -> bool {
+        match self {
+            Res::Def(def) => resolver.is_type_def(*def),
+            Res::SelfTyAlias { .. } => true,
+            Res::GenericParam(_) => true,
+            Res::PrimTy(_) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PendingImport {
     pub module: ModuleId,
@@ -271,5 +283,12 @@ impl<'a, 'ctx> Resolver<'a, 'ctx> {
                 None => unreachable!(),
             }
         }
+    }
+
+    fn is_type_def(&self, def_id: DefId) -> bool {
+        matches!(
+            self.defs.get(def_id.0 as usize).map(|d| d.kind),
+            Some(DefKind::Struct | DefKind::Trait | DefKind::TypeAlias | DefKind::AssocType)
+        )
     }
 }

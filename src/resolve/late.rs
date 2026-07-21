@@ -7,7 +7,7 @@ use crate::ast::{
 };
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hir::{DefId, DefKind};
+use crate::hir::DefId;
 use crate::interner::Symbol;
 use crate::resolve::path::PathError;
 use crate::resolve::{NameBinding, PartialRes, PrimTy, Res, Resolver, diag};
@@ -179,38 +179,71 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         Res::Err
     }
 
-    fn defer_type_relative_path(&mut self, path: &Path) -> Option<PartialRes> {
-        let segments = &path.segments;
-        let seg_count = segments.len();
+    fn probe_ident_type(&self, name: Symbol) -> Option<Res> {
+        if let Some(prim) = PrimTy::from_name(name) {
+            return Some(Res::PrimTy(prim));
+        }
 
-        let first_sym = segments[0].ident.value;
-        if let Some(resolution) = self.resolver.current_module().resolutions.get(&first_sym) {
-            let type_def = resolution.best_binding().def_id;
-            if self.is_type_def(type_def) && seg_count >= 2 {
-                return Some(PartialRes::with_unresolved_segments(
-                    Res::Def(type_def),
-                    seg_count - 1,
-                ));
+        for rib in self.ribs.iter().rev() {
+            if let Some(&res) = rib.bindings.get(&name) {
+                if res.is_type_ns(self.resolver) {
+                    return Some(res);
+                }
+                return None;
             }
         }
 
-        for prefix_len in (1..seg_count).rev() {
+        if let Some(resolution) = self.resolver.current_module().resolutions.get(&name) {
+            let def = resolution.best_binding().def_id;
+            if self.resolver.is_type_def(def) {
+                return Some(Res::Def(def));
+            }
+        }
+
+        None
+    }
+
+    fn defer_type_relative_path(&mut self, path: &Path) -> Option<PartialRes> {
+        let segments = &path.segments;
+        if segments.len() < 2 {
+            return None;
+        }
+
+        // Case 1: first segment is already a type.
+        if let Some(first) = self.probe_ident_type(segments[0].ident.value) {
+            return Some(PartialRes::with_unresolved_segments(
+                first,
+                segments.len() - 1,
+            ));
+        }
+
+        // Case 2: search for module::...::Type
+        for prefix_len in (1..segments.len()).rev() {
             let module_prefix = &segments[..prefix_len];
             let type_seg = &segments[prefix_len];
-            let module_node_idx = self
+
+            let module = self
                 .resolver
                 .resolve_module_path(self.resolver.module_idx, module_prefix)
                 .ok()?;
-            let type_resolution = self.resolver.modules[module_node_idx]
+
+            let resolution = self.resolver.modules[module]
                 .resolutions
                 .get(&type_seg.ident.value)?;
-            let type_def = type_resolution.best_binding().def_id;
-            if !self.is_type_def(type_def) || prefix_len + 1 >= seg_count {
+
+            let def = resolution.best_binding().def_id;
+
+            if !self.resolver.is_type_def(def) {
                 continue;
             }
+
+            if prefix_len + 1 == segments.len() {
+                continue;
+            }
+
             return Some(PartialRes::with_unresolved_segments(
-                Res::Def(type_def),
-                seg_count - prefix_len - 1,
+                Res::Def(def),
+                segments.len() - prefix_len - 1,
             ));
         }
 
@@ -277,13 +310,6 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
             },
         );
         PartialRes::new(Res::Err)
-    }
-
-    fn is_type_def(&self, def_id: DefId) -> bool {
-        matches!(
-            self.resolver.defs.get(def_id.0 as usize).map(|d| d.kind),
-            Some(DefKind::Struct | DefKind::Trait | DefKind::TypeAlias)
-        )
     }
 
     fn register_impl_assoc_items(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
