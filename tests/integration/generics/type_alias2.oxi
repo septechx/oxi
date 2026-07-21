@@ -1,3 +1,5 @@
+// @expect-error unexpected_generic_args
+
 type Id<T> = T;
 
 pub fn main() void {

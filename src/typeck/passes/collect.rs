@@ -176,13 +176,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
         }
-
-        let def_ids: Vec<DefId> = self.item_schemes.keys().copied().collect();
-        for def_id in def_ids {
-            let Scheme { vars, body } = self.item_schemes[&def_id].clone();
-            let body = Ty::normalize_aliases(body, &self.item_schemes, self.resolver);
-            self.item_schemes.insert(def_id, Scheme { vars, body });
-        }
     }
 
     fn collect_generic_params(

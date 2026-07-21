@@ -156,7 +156,7 @@ pub struct CoherenceTable {
     pub assoc_to_parent: FxHashMap<DefId, DefId>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GenericParamInfo {
     pub hir_ids: Vec<HirId>,
     pub defaults: ThinVec<Option<hir::Ty>>,
