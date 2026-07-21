@@ -124,6 +124,10 @@ impl Ty {
             {
                 if let Some(scheme) = item_schemes.get(&def_id) {
                     let resolved = if let Some(args) = &generic_args {
+                        if args.len() != scheme.vars.len() {
+                            // FIXME: Somehow report this error to the user without panicking.
+                            panic!("generic args length mismatch");
+                        }
                         let mapping: FxHashMap<TyVarId, Ty> = scheme
                             .vars
                             .iter()
