@@ -318,38 +318,23 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
 
     fn register_impl_assoc_items(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
         for item in items {
-            match &item.kind {
-                AssocItemKind::Fn(f) => {
-                    let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
-                        continue;
-                    };
-                    let binding = NameBinding {
-                        def_id,
-                        visibility: item.visibility,
-                    };
-                    self.resolver
-                        .current_module_mut()
-                        .struct_assoc_items
-                        .entry(struct_def_id)
-                        .or_default()
-                        .insert(f.name.value, binding);
-                }
-                AssocItemKind::Type { name, .. } => {
-                    let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
-                        continue;
-                    };
-                    let binding = NameBinding {
-                        def_id,
-                        visibility: item.visibility,
-                    };
-                    self.resolver
-                        .current_module_mut()
-                        .struct_assoc_items
-                        .entry(struct_def_id)
-                        .or_default()
-                        .insert(name.value, binding);
-                }
-            }
+            let name = match &item.kind {
+                AssocItemKind::Fn(f) => f.name.value,
+                AssocItemKind::Type { name, .. } => name.value,
+            };
+            let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
+                continue;
+            };
+            let binding = NameBinding {
+                def_id,
+                visibility: item.visibility,
+            };
+            self.resolver
+                .current_module_mut()
+                .struct_assoc_items
+                .entry(struct_def_id)
+                .or_default()
+                .insert(name, binding);
         }
     }
 

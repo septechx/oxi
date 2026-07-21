@@ -426,46 +426,27 @@ impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
     }
 
     fn register_struct_assoc_item(&mut self, item: &AssocItem, struct_def_id: DefId) {
-        match &item.kind {
-            AssocItemKind::Fn(f) => {
-                let def_id = self.resolver.alloc_def(
-                    item.node_id,
-                    Some(f.name.value),
-                    DefKind::AssocFn,
-                    Some(item.visibility),
-                    item.span,
-                );
-                let binding = NameBinding {
-                    def_id,
-                    visibility: item.visibility,
-                };
-                self.resolver
-                    .current_module_mut()
-                    .struct_assoc_items
-                    .entry(struct_def_id)
-                    .or_default()
-                    .insert(f.name.value, binding);
-            }
-            AssocItemKind::Type { name, .. } => {
-                let def_id = self.resolver.alloc_def(
-                    item.node_id,
-                    Some(name.value),
-                    DefKind::AssocType,
-                    Some(item.visibility),
-                    item.span,
-                );
-                let binding = NameBinding {
-                    def_id,
-                    visibility: item.visibility,
-                };
-                self.resolver
-                    .current_module_mut()
-                    .struct_assoc_items
-                    .entry(struct_def_id)
-                    .or_default()
-                    .insert(name.value, binding);
-            }
-        }
+        let (kind, name) = match &item.kind {
+            AssocItemKind::Fn(f) => (DefKind::AssocFn, f.name.value),
+            AssocItemKind::Type { name, .. } => (DefKind::AssocType, name.value),
+        };
+        let def_id = self.resolver.alloc_def(
+            item.node_id,
+            Some(name),
+            kind,
+            Some(item.visibility),
+            item.span,
+        );
+        let binding = NameBinding {
+            def_id,
+            visibility: item.visibility,
+        };
+        self.resolver
+            .current_module_mut()
+            .struct_assoc_items
+            .entry(struct_def_id)
+            .or_default()
+            .insert(name, binding);
     }
 }
 
@@ -544,28 +525,18 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
     }
 
     fn visit_assoc_item(&mut self, item: &AssocItem) -> VisitAction {
-        match &item.kind {
-            AssocItemKind::Fn(f) => {
-                let def_id = self.resolver.alloc_def(
-                    item.node_id,
-                    Some(f.name.value),
-                    DefKind::AssocFn,
-                    Some(item.visibility),
-                    item.span,
-                );
-                self.resolver.current_module_mut().assoc_items.push(def_id);
-            }
-            AssocItemKind::Type { name, .. } => {
-                let def_id = self.resolver.alloc_def(
-                    item.node_id,
-                    Some(name.value),
-                    DefKind::AssocType,
-                    Some(item.visibility),
-                    item.span,
-                );
-                self.resolver.current_module_mut().assoc_items.push(def_id);
-            }
-        }
+        let (kind, name) = match &item.kind {
+            AssocItemKind::Fn(f) => (DefKind::AssocFn, f.name.value),
+            AssocItemKind::Type { name, .. } => (DefKind::AssocType, name.value),
+        };
+        let def_id = self.resolver.alloc_def(
+            item.node_id,
+            Some(name),
+            kind,
+            Some(item.visibility),
+            item.span,
+        );
+        self.resolver.current_module_mut().assoc_items.push(def_id);
         VisitAction::SkipChildren
     }
 }
