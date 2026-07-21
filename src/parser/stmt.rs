@@ -126,26 +126,39 @@ pub fn parse_struct_decl_item(
         match parser.current_token().kind {
             TokenKind::Fn => {
                 let stmt = parse_fn_decl_item(parser, ThinVec::new(), ThinVec::new())?;
-                if let ItemKind::Fn(fn_decl) = stmt.kind {
-                    if fn_decl.body.is_none() {
-                        builders::emit_at(
-                            parser.ctx,
-                            fn_decl.name.span,
-                            parser.current_token().module_id,
-                            diag::StructMethodMissingBody,
-                            diag_params! {},
-                        );
-                    }
-                    items.push(AssocItem {
-                        kind: AssocItemKind::Fn(fn_decl),
-                        span: stmt.span,
-                        visibility,
-                        node_id: NodeId::default(),
-                    })
+                let ItemKind::Fn(fn_decl) = stmt.kind else {
+                    unreachable!()
                 };
+                if fn_decl.body.is_none() {
+                    builders::emit_at(
+                        parser.ctx,
+                        fn_decl.name.span,
+                        parser.current_token().module_id,
+                        diag::StructMethodMissingBody,
+                        diag_params! {},
+                    );
+                }
+                items.push(AssocItem {
+                    kind: AssocItemKind::Fn(fn_decl),
+                    span: stmt.span,
+                    visibility,
+                    node_id: NodeId::default(),
+                })
             }
             TokenKind::Type => {
                 let mut assoc = parse_type_assoc_item(parser)?;
+                let AssocItemKind::Type { type_, .. } = &mut assoc.kind else {
+                    unreachable!()
+                };
+                if type_.is_none() {
+                    builders::emit_at(
+                        parser.ctx,
+                        assoc.span,
+                        parser.current_token().module_id,
+                        diag::StructAssocTypeMissingBody,
+                        diag_params! {},
+                    );
+                }
                 assoc.visibility = visibility;
                 items.push(assoc);
             }

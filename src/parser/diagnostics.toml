@@ -16,7 +16,11 @@ message = "Expected top-level item, but found `{actual}` instead."
 
 [struct_method_missing_body]
 level = "Error"
-message = "Struct methods must have a body"
+message = "Associated functions in structs must have a body"
+
+[struct_assoc_type_missing_body]
+level = "Error"
+message = "Associated types in structs must have a body"
 
 [field_already_defined]
 level = "Error"
