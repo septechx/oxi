@@ -1,4 +1,4 @@
-use crate::hir::{DefId, ItemKind, MaybeOwner, Node};
+use crate::hir::{DefId, ItemKind, OwnerNode};
 use crate::typeck::Typeck;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -9,13 +9,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
     fn collect_inherent_methods(&mut self) {
         for (i, owner) in self.krate.owners.iter().enumerate() {
-            let MaybeOwner::Owner(info) = owner else {
-                continue;
-            };
-            let Node::Item(item) = &info.nodes.nodes[0].node else {
-                continue;
-            };
-            let ItemKind::Struct { items, .. } = &item.kind else {
+            let Some(ItemKind::Struct { items, .. }) = owner
+                .as_owner()
+                .map(|info| info.nodes.node())
+                .and_then(|node| match node {
+                    OwnerNode::Item(item) => Some(&item.kind),
+                    _ => None,
+                })
+            else {
                 continue;
             };
             let def_id = DefId(i as u32);
@@ -34,13 +35,17 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn collect_trait_methods(&mut self) {
         for ((trait_def_id, struct_def_id), impl_def_ids) in self.coherence.impls.iter() {
             for &impl_def_id in impl_def_ids {
-                let Some(MaybeOwner::Owner(info)) = self.krate.owner(impl_def_id) else {
-                    continue;
-                };
-                let Node::Item(item) = &info.nodes.nodes[0].node else {
-                    continue;
-                };
-                let ItemKind::Impl { items, .. } = &item.kind else {
+                let Some(ItemKind::Impl { items, .. }) =
+                    self.krate.owner(impl_def_id).and_then(|owner| {
+                        owner
+                            .as_owner()
+                            .map(|info| info.nodes.node())
+                            .and_then(|node| match node {
+                                OwnerNode::Item(item) => Some(&item.kind),
+                                _ => None,
+                            })
+                    })
+                else {
                     continue;
                 };
                 let entry = self.trait_methods.entry(*struct_def_id).or_default();

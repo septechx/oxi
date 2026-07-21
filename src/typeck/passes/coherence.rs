@@ -2,7 +2,7 @@ use thin_vec::ThinVec;
 
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hir::{DefId, DefKind, HirId, ItemKind, MaybeOwner, ModuleId, Node};
+use crate::hir::{DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
 use crate::interner::Symbol;
 use crate::resolve::Res;
 use crate::typeck::fold::{fold_ty, substitute_ty_vars};
@@ -19,10 +19,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         for (i, owner) in self.krate.owners.iter().enumerate() {
             let def_id = DefId(i as u32);
-            let MaybeOwner::Owner(info) = owner else {
-                continue;
-            };
-            let Node::Item(item) = &info.nodes.nodes[0].node else {
+            let Some(item) = owner
+                .as_owner()
+                .map(|info| info.nodes.node())
+                .and_then(|node| match node {
+                    OwnerNode::Item(item) => Some(item),
+                    _ => None,
+                })
+            else {
                 continue;
             };
             let ItemKind::Impl {

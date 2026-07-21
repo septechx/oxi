@@ -1,9 +1,7 @@
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
-use crate::hir::{
-    self, AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, MaybeOwner, Node,
-};
+use crate::hir::{self, AssocItemKind, DefId, FnDecl, GenericParam, HirId, ItemKind, OwnerNode};
 use crate::interner::Symbol;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId};
@@ -17,12 +15,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         for (i, owner) in self.krate.owners.iter().enumerate() {
             let def_id = DefId(i as u32);
-            let MaybeOwner::Owner(info) = owner else {
+            let Some(info) = owner.as_owner() else {
                 continue;
             };
 
-            match &info.nodes.nodes[0].node {
-                Node::Item(item) => match &item.kind {
+            match &info.nodes.node() {
+                OwnerNode::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
                         let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, &fun.generic_params);
@@ -119,56 +117,59 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
                     }
                 },
-                Node::AssocItem(assoc) => {
-                    let AssocItemKind::Fn(fun) = &assoc.kind else {
-                        continue;
-                    };
-                    let (mut scheme_vars, hir_ids, defaults) =
-                        Self::collect_generic_params(&mut icx, &fun.generic_params);
+                OwnerNode::AssocItem(assoc) => match &assoc.kind {
+                    AssocItemKind::Fn(fun) => {
+                        let (mut scheme_vars, hir_ids, defaults) =
+                            Self::collect_generic_params(&mut icx, &fun.generic_params);
 
-                    let parent_def_id = self
-                        .coherence
-                        .assoc_to_parent
-                        .get(&def_id)
-                        .expect("assoc item has parent");
-                    let parent_info = self
-                        .coherence
-                        .generic_params
-                        .get(parent_def_id)
-                        .expect("assoc item parent has generic params");
-                    let parent_vars: ThinVec<TyVarId> = parent_info
-                        .hir_ids
-                        .iter()
-                        .map(|hir_id| {
-                            *icx.hir_id_to_ty_var
-                                .get(hir_id)
-                                .expect("parent generic param registered")
-                        })
-                        .collect();
-                    let parent_args: ThinVec<Ty> =
-                        parent_vars.iter().map(|&v| Ty::Var(v)).collect();
-                    scheme_vars = parent_vars.into_iter().chain(scheme_vars).collect();
-                    let body = self.fn_ty(&mut icx, &fun.decl);
-                    let body = fold_ty(&body, &mut |ty| match ty {
-                        Ty::Adt(id, None) if id == *parent_def_id => {
-                            Ty::Adt(id, (!parent_args.is_empty()).then_some(parent_args.clone()))
-                        }
-                        t => t,
-                    });
-                    self.item_schemes.insert(
-                        def_id,
-                        Scheme {
-                            vars: scheme_vars,
-                            body,
-                        },
-                    );
-                    if !hir_ids.is_empty() {
-                        self.coherence
+                        let parent_def_id = self
+                            .coherence
+                            .assoc_to_parent
+                            .get(&def_id)
+                            .expect("assoc item has parent");
+                        let parent_info = self
+                            .coherence
                             .generic_params
-                            .insert(def_id, GenericParamInfo { hir_ids, defaults });
+                            .get(parent_def_id)
+                            .expect("assoc item parent has generic params");
+                        let parent_vars: ThinVec<TyVarId> = parent_info
+                            .hir_ids
+                            .iter()
+                            .map(|hir_id| {
+                                *icx.hir_id_to_ty_var
+                                    .get(hir_id)
+                                    .expect("parent generic param registered")
+                            })
+                            .collect();
+                        let parent_args: ThinVec<Ty> =
+                            parent_vars.iter().map(|&v| Ty::Var(v)).collect();
+                        scheme_vars = parent_vars.into_iter().chain(scheme_vars).collect();
+                        let body = self.fn_ty(&mut icx, &fun.decl);
+                        let body = fold_ty(&body, &mut |ty| match ty {
+                            Ty::Adt(id, None) if id == *parent_def_id => Ty::Adt(
+                                id,
+                                (!parent_args.is_empty()).then_some(parent_args.clone()),
+                            ),
+                            t => t,
+                        });
+                        self.item_schemes.insert(
+                            def_id,
+                            Scheme {
+                                vars: scheme_vars,
+                                body,
+                            },
+                        );
+                        if !hir_ids.is_empty() {
+                            self.coherence
+                                .generic_params
+                                .insert(def_id, GenericParamInfo { hir_ids, defaults });
+                        }
                     }
-                }
-                _ => {}
+                    AssocItemKind::Type { name, type_ } => {
+                        todo!("type assoc item: {name:?} = {type_:?}")
+                    }
+                },
+                OwnerNode::Crate => {}
             }
         }
 

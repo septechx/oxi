@@ -10,7 +10,7 @@ use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::{
     self, AssocItemKind, BinOp, Block, Body, DefId, Expr, ExprKind, FloatTy, FnDecl, HirId, IntTy,
-    ItemKind, MaybeOwner, ModuleId, Node, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
+    ItemKind, ModuleId, OwnerNode, PrimTy, QPath, Stmt, StmtKind, UintTy, UnOp,
 };
 use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
@@ -74,15 +74,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for (i, owner) in self.krate.owners.iter().enumerate() {
             let def_id = DefId(i as u32);
 
-            let MaybeOwner::Owner(info) = owner else {
+            let Some(info) = owner.as_owner() else {
                 continue;
             };
 
             let module_id = self.def_to_module.get(&def_id).expect("contains def id");
             checker.module_id = *module_id;
 
-            match &info.nodes.nodes[0].node {
-                Node::Item(item) => match &item.kind {
+            match &info.nodes.node() {
+                OwnerNode::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
@@ -100,21 +100,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                     _ => {}
                 },
-                Node::AssocItem(assoc) => {
-                    let AssocItemKind::Fn(fun) = &assoc.kind else {
-                        continue;
-                    };
-                    if let Some(&parent_def_id) = checker.coherence.assoc_to_parent.get(&def_id) {
-                        checker.register_if_generic_def(parent_def_id);
+                OwnerNode::AssocItem(assoc) => match &assoc.kind {
+                    AssocItemKind::Fn(fun) => {
+                        if let Some(&parent_def_id) = checker.coherence.assoc_to_parent.get(&def_id)
+                        {
+                            checker.register_if_generic_def(parent_def_id);
+                        }
+                        checker.register_if_generic(&fun.generic_params);
+                        if let Some(body_id) = fun.body_id
+                            && let Some(body) = info.nodes.body(body_id)
+                        {
+                            checker.check_fn_body(&fun.decl, body);
+                        }
                     }
-                    checker.register_if_generic(&fun.generic_params);
-                    if let Some(body_id) = fun.body_id
-                        && let Some(body) = info.nodes.body(body_id)
-                    {
-                        checker.check_fn_body(&fun.decl, body);
+                    AssocItemKind::Type { name, type_ } => {
+                        todo!("type assoc item: {name:?} = {type_:?}")
                     }
-                }
-                _ => {}
+                },
+                OwnerNode::Crate => {}
             }
         }
 
