@@ -111,6 +111,11 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         for item in items {
             match &item.kind {
                 AssocItemKind::Fn(fun) => self.resolve_fn(fun),
+                AssocItemKind::Type { type_, .. } => {
+                    if let Some(type_) = type_ {
+                        type_.visit(self);
+                    }
+                }
             }
         }
     }
@@ -281,22 +286,40 @@ impl<'a, 'res, 'ctx> LateResolutionVisitor<'a, 'res, 'ctx> {
         )
     }
 
-    fn register_impl_methods(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
+    fn register_impl_assoc_items(&mut self, struct_def_id: DefId, items: &ThinVec<AssocItem>) {
         for item in items {
-            let AssocItemKind::Fn(f) = &item.kind;
-            let Some(method_def_id) = self.resolver.def_id_for_node(item.node_id) else {
-                continue;
-            };
-            let binding = NameBinding {
-                def_id: method_def_id,
-                visibility: item.visibility,
-            };
-            self.resolver
-                .current_module_mut()
-                .struct_methods
-                .entry(struct_def_id)
-                .or_default()
-                .insert(f.name.value, binding);
+            match &item.kind {
+                AssocItemKind::Fn(f) => {
+                    let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
+                        continue;
+                    };
+                    let binding = NameBinding {
+                        def_id,
+                        visibility: item.visibility,
+                    };
+                    self.resolver
+                        .current_module_mut()
+                        .struct_assoc_items
+                        .entry(struct_def_id)
+                        .or_default()
+                        .insert(f.name.value, binding);
+                }
+                AssocItemKind::Type { name, .. } => {
+                    let Some(def_id) = self.resolver.def_id_for_node(item.node_id) else {
+                        continue;
+                    };
+                    let binding = NameBinding {
+                        def_id,
+                        visibility: item.visibility,
+                    };
+                    self.resolver
+                        .current_module_mut()
+                        .struct_assoc_items
+                        .entry(struct_def_id)
+                        .or_default()
+                        .insert(name.value, binding);
+                }
+            }
         }
     }
 
@@ -379,7 +402,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                         Some(Res::Def(def_id)) => {
                             rib.bindings
                                 .insert(self_sym, Res::SelfTyAlias { alias_to: def_id });
-                            this.register_impl_methods(def_id, items);
+                            this.register_impl_assoc_items(def_id, items);
                         }
                         Some(res) => {
                             rib.bindings.insert(self_sym, res);

@@ -32,11 +32,15 @@ message = "Expected function body or terminator after signature"
 
 [impl_method_missing_body]
 level = "Error"
-message = "Impl methods must have a body"
+message = "Methods in impl items must have a body"
+
+[impl_type_missing_body]
+level = "Error"
+message = "Associated types in impl items must have a body"
 
 [const_item_without_value]
 level = "Warning"
-message = "Declared constant without providing a value"
+message = "Declared a constant without providing a value"
 
 [unknown_escape_sequence]
 level = "Warning"

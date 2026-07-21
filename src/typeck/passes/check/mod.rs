@@ -101,7 +101,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     _ => {}
                 },
                 Node::AssocItem(assoc) => {
-                    let AssocItemKind::Fn(fun) = &assoc.kind;
+                    let AssocItemKind::Fn(fun) = &assoc.kind else {
+                        continue;
+                    };
                     if let Some(&parent_def_id) = checker.coherence.assoc_to_parent.get(&def_id) {
                         checker.register_if_generic_def(parent_def_id);
                     }

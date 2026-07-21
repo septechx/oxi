@@ -186,7 +186,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             for res in module.resolutions.values() {
                 def_to_module.insert(res.best_binding().def_id, ModuleId(i as u32));
             }
-            for methods in module.struct_methods.values() {
+            for methods in module.struct_assoc_items.values() {
                 for binding in methods.values() {
                     def_to_module.insert(binding.def_id, ModuleId(i as u32));
                 }
@@ -194,7 +194,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             for &impl_def_id in &module.impls {
                 def_to_module.insert(impl_def_id, ModuleId(i as u32));
             }
-            for &method_def_id in &module.methods {
+            for &method_def_id in &module.assoc_items {
                 def_to_module.insert(method_def_id, ModuleId(i as u32));
             }
         }

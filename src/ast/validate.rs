@@ -94,6 +94,11 @@ impl AstValidator {
     fn validate_assoc_item(&mut self, item: &AssocItem) {
         match &item.kind {
             AssocItemKind::Fn(f) => self.validate_fn_decl(f),
+            AssocItemKind::Type { type_, .. } => {
+                if let Some(type_) = type_ {
+                    type_.visit(self);
+                }
+            }
         }
     }
 
@@ -165,8 +170,9 @@ impl Visitor for AstValidator {
                 self.check_duplicate_names(
                     items.iter().map(|item| match &item.kind {
                         AssocItemKind::Fn(f) => &f.name,
+                        AssocItemKind::Type { name, .. } => name,
                     }),
-                    "struct methods",
+                    "struct associated items",
                 );
 
                 let old_top_level = self.is_top_level;
@@ -182,8 +188,9 @@ impl Visitor for AstValidator {
                 self.check_duplicate_names(
                     items.iter().map(|item| match &item.kind {
                         AssocItemKind::Fn(f) => &f.name,
+                        AssocItemKind::Type { name, .. } => name,
                     }),
-                    "trait methods",
+                    "trait associated items",
                 );
 
                 let old_top_level = self.is_top_level;

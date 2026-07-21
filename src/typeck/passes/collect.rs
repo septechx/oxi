@@ -120,7 +120,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                 },
                 Node::AssocItem(assoc) => {
-                    let AssocItemKind::Fn(fun) = &assoc.kind;
+                    let AssocItemKind::Fn(fun) = &assoc.kind else {
+                        continue;
+                    };
                     let (mut scheme_vars, hir_ids, defaults) =
                         Self::collect_generic_params(&mut icx, &fun.generic_params);
 

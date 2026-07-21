@@ -163,9 +163,9 @@ impl NameResolution {
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
     pub resolutions: FxHashMap<Symbol, NameResolution>,
-    pub struct_methods: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
+    pub struct_assoc_items: FxHashMap<DefId, FxHashMap<Symbol, NameBinding>>,
     pub impls: ThinVec<DefId>,
-    pub methods: ThinVec<DefId>,
+    pub assoc_items: ThinVec<DefId>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub qualified_name: String,

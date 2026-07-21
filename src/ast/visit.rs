@@ -8,7 +8,7 @@ use fxhash::FxHashMap;
 pub enum VisitAction {
     /// Descend into children
     Continue,
-    /// Don't descend
+    /// Don't descend into children
     SkipChildren,
 }
 
@@ -315,12 +315,22 @@ impl Visitable for AssocItemKind {
     fn visit(&self, visitor: &mut impl Visitor) {
         match self {
             AssocItemKind::Fn(f) => f.visit(visitor),
+            AssocItemKind::Type { type_, .. } => {
+                if let Some(ty) = type_ {
+                    ty.visit(visitor);
+                }
+            }
         }
     }
 
     fn visit_mut(&mut self, visitor: &mut impl VisitorMut) {
         match self {
             AssocItemKind::Fn(f) => f.visit_mut(visitor),
+            AssocItemKind::Type { type_, .. } => {
+                if let Some(ty) = type_ {
+                    ty.visit_mut(visitor);
+                }
+            }
         }
     }
 }

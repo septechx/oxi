@@ -11,6 +11,7 @@ pub enum DefKind {
     Const,
     Impl,
     AssocFn,
+    AssocType,
     Import,
     Field,
     Local,

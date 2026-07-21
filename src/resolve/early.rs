@@ -327,8 +327,10 @@ impl<'ctx> NodeIdAssigner<'ctx> {
     fn assign_to_assoc_items(&mut self, items: &mut ThinVec<AssocItem>) {
         for item in items {
             item.node_id = self.next_node_id();
-            let AssocItemKind::Fn(fun) = &mut item.kind;
-            self.assign_to_fn(fun);
+            match &mut item.kind {
+                AssocItemKind::Fn(fun) => self.assign_to_fn(fun),
+                AssocItemKind::Type { .. } => {}
+            }
         }
     }
 
@@ -423,25 +425,47 @@ impl<'a, 'res, 'ctx> DefCollector<'a, 'res, 'ctx> {
         Self { resolver }
     }
 
-    fn register_struct_method(&mut self, item: &AssocItem, struct_def_id: DefId) {
-        let AssocItemKind::Fn(f) = &item.kind;
-        let method_def_id = self.resolver.alloc_def(
-            item.node_id,
-            Some(f.name.value),
-            DefKind::AssocFn,
-            Some(item.visibility),
-            item.span,
-        );
-        let binding = NameBinding {
-            def_id: method_def_id,
-            visibility: item.visibility,
-        };
-        self.resolver
-            .current_module_mut()
-            .struct_methods
-            .entry(struct_def_id)
-            .or_default()
-            .insert(f.name.value, binding);
+    fn register_struct_assoc_item(&mut self, item: &AssocItem, struct_def_id: DefId) {
+        match &item.kind {
+            AssocItemKind::Fn(f) => {
+                let def_id = self.resolver.alloc_def(
+                    item.node_id,
+                    Some(f.name.value),
+                    DefKind::AssocFn,
+                    Some(item.visibility),
+                    item.span,
+                );
+                let binding = NameBinding {
+                    def_id,
+                    visibility: item.visibility,
+                };
+                self.resolver
+                    .current_module_mut()
+                    .struct_assoc_items
+                    .entry(struct_def_id)
+                    .or_default()
+                    .insert(f.name.value, binding);
+            }
+            AssocItemKind::Type { name, .. } => {
+                let def_id = self.resolver.alloc_def(
+                    item.node_id,
+                    Some(name.value),
+                    DefKind::AssocType,
+                    Some(item.visibility),
+                    item.span,
+                );
+                let binding = NameBinding {
+                    def_id,
+                    visibility: item.visibility,
+                };
+                self.resolver
+                    .current_module_mut()
+                    .struct_assoc_items
+                    .entry(struct_def_id)
+                    .or_default()
+                    .insert(name.value, binding);
+            }
+        }
     }
 }
 
@@ -470,7 +494,7 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                 );
 
                 for assoc in items {
-                    self.register_struct_method(assoc, struct_def_id);
+                    self.register_struct_assoc_item(assoc, struct_def_id);
                 }
                 VisitAction::SkipChildren
             }
@@ -529,7 +553,17 @@ impl<'a, 'res, 'ctx> Visitor for DefCollector<'a, 'res, 'ctx> {
                     Some(item.visibility),
                     item.span,
                 );
-                self.resolver.current_module_mut().methods.push(def_id);
+                self.resolver.current_module_mut().assoc_items.push(def_id);
+            }
+            AssocItemKind::Type { name, .. } => {
+                let def_id = self.resolver.alloc_def(
+                    item.node_id,
+                    Some(name.value),
+                    DefKind::AssocType,
+                    Some(item.visibility),
+                    item.span,
+                );
+                self.resolver.current_module_mut().assoc_items.push(def_id);
             }
         }
         VisitAction::SkipChildren

@@ -108,7 +108,7 @@ fn build_def_to_module(resolver: &ResolverOutputs) -> FxHashMap<DefId, ModuleId>
         for res in module.resolutions.values() {
             map.insert(res.best_binding().def_id, ModuleId(i as u32));
         }
-        for methods in module.struct_methods.values() {
+        for methods in module.struct_assoc_items.values() {
             for binding in methods.values() {
                 map.insert(binding.def_id, ModuleId(i as u32));
             }
@@ -116,7 +116,7 @@ fn build_def_to_module(resolver: &ResolverOutputs) -> FxHashMap<DefId, ModuleId>
         for &impl_def_id in &module.impls {
             map.insert(impl_def_id, ModuleId(i as u32));
         }
-        for &method_def_id in &module.methods {
+        for &method_def_id in &module.assoc_items {
             map.insert(method_def_id, ModuleId(i as u32));
         }
     }

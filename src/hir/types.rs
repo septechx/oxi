@@ -174,6 +174,7 @@ pub struct AssocItem {
 #[derive(Debug, Clone)]
 pub enum AssocItemKind {
     Fn(Fn),
+    Type { name: Symbol, type_: Option<Ty> },
 }
 
 #[derive(Debug, Clone)]

@@ -76,6 +76,28 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 ast::AssocItemKind::Fn(f) => {
                     this.lower_fn(def_id, f, item.span, item.visibility, Some(def_id))
                 }
+                ast::AssocItemKind::Type { name, type_ } => {
+                    let hir_id = HirId::make_owner(def_id);
+                    let owner_id = OwnerId(def_id.0);
+                    let type_ = type_.as_ref().map(|t| this.lower_type(t));
+                    OwnerInfo {
+                        nodes: OwnerNodes {
+                            nodes: vec![ParentedNode {
+                                parent: ItemLocalId::ZERO,
+                                node: Node::AssocItem(Box::new(AssocItem {
+                                    hir_id,
+                                    owner_id,
+                                    kind: AssocItemKind::Type {
+                                        name: name.value,
+                                        type_,
+                                    },
+                                    span: item.span,
+                                })),
+                            }],
+                            bodies: FxHashMap::default(),
+                        },
+                    }
+                }
             })
         })
     }

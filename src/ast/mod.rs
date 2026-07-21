@@ -119,6 +119,7 @@ pub struct AssocItem {
 #[derive(Debug, Clone)]
 pub enum AssocItemKind {
     Fn(Fn),
+    Type { name: Ident, type_: Option<Type> },
 }
 
 #[derive(Debug, Clone)]
