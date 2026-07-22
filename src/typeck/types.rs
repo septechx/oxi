@@ -1,8 +1,10 @@
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
-use crate::hir::{self, DefId, PrimTy, QPath, TyKind};
+use crate::hir::{self, DefId, DefKind, PrimTy, QPath, TyKind};
+use crate::interner::Symbol;
 use crate::resolve::Res;
+use crate::typeck::Typeck;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 
@@ -34,33 +36,33 @@ pub enum Ty {
     Error,
 }
 
-impl Ty {
-    pub fn from_hir(icx: &mut InferCtx, hir_ty: &hir::Ty) -> Ty {
+impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
+    pub fn ty_from_hir(&self, icx: &mut InferCtx, hir_ty: &hir::Ty) -> Ty {
         match &hir_ty.kind {
             TyKind::Error => Ty::Error,
             TyKind::Never => Ty::Never,
             TyKind::Infer => icx.alloc_ty_var(),
             TyKind::PrimTy(prim) => Ty::Prim(*prim),
-            TyKind::Ptr(inner, m) => Ty::Ptr(Ty::from_hir(icx, inner).into_box(), *m),
-            TyKind::Slice(inner) => Ty::Slice(Ty::from_hir(icx, inner).into_box()),
-            TyKind::Array(inner, size) => Ty::Array(Ty::from_hir(icx, inner).into_box(), *size),
+            TyKind::Ptr(inner, m) => Ty::Ptr(self.ty_from_hir(icx, inner).into_box(), *m),
+            TyKind::Slice(inner) => Ty::Slice(self.ty_from_hir(icx, inner).into_box()),
+            TyKind::Array(inner, size) => Ty::Array(self.ty_from_hir(icx, inner).into_box(), *size),
             TyKind::Fn { params, ret } => Ty::Fn {
                 params: params
                     .iter()
-                    .map(|hir_ty| Ty::from_hir(icx, hir_ty))
+                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty))
                     .collect(),
-                ret: Ty::from_hir(icx, ret).into_box(),
+                ret: self.ty_from_hir(icx, ret).into_box(),
             },
             TyKind::Tuple(elements) => Ty::Tuple(
                 elements
                     .iter()
-                    .map(|hir_ty| Ty::from_hir(icx, hir_ty))
+                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty))
                     .collect(),
             ),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(path) => match path.res {
                     Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                        let generic_args = Self::hir_generic_args(icx, path);
+                        let generic_args = self.ty_hir_generic_args(icx, path);
                         Ty::Adt(def_id, generic_args)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
@@ -70,7 +72,9 @@ impl Ty {
                     }
                     Res::Local(_) | Res::Err => Ty::Error,
                 },
-                QPath::TypeRelative { .. } => Ty::Error,
+                QPath::TypeRelative { qself, segment } => {
+                    self.resolve_type_relative_projection(icx, qself, segment)
+                }
             },
             TyKind::GenericParam(hir_id, _) => {
                 let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
@@ -79,7 +83,72 @@ impl Ty {
         }
     }
 
-    pub(super) fn hir_generic_args(icx: &mut InferCtx, path: &hir::Path) -> Option<ThinVec<Ty>> {
+    /// Resolve `QPath::TypeRelative` in a trait to a `Ty::Projection`
+    fn resolve_type_relative_projection(
+        &self,
+        icx: &mut InferCtx,
+        qself: &QPath,
+        segment: &hir::PathSegment,
+    ) -> Ty {
+        let qself_ty = match qself {
+            QPath::Resolved(path) => match path.res {
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    let generic_args = self.ty_hir_generic_args(icx, path);
+                    Ty::Adt(def_id, generic_args)
+                }
+                Res::GenericParam(hir_id) => {
+                    let ty_var = icx.hir_id_to_ty_var.get(&hir_id);
+                    match ty_var {
+                        Some(&var) => Ty::Var(var),
+                        None => return Ty::Error,
+                    }
+                }
+                _ => return Ty::Error,
+            },
+            QPath::TypeRelative { .. } => return Ty::Error,
+        };
+
+        let Ty::Adt(trait_def_id, _) = &qself_ty else {
+            return Ty::Error;
+        };
+
+        if self.resolver.def(*trait_def_id).kind != DefKind::Trait {
+            return Ty::Error;
+        }
+
+        let assoc_name = segment.ident.value;
+        let Some(assoc_def_id) = self.find_assoc_type(*trait_def_id, assoc_name) else {
+            return Ty::Error;
+        };
+
+        Ty::Projection {
+            trait_def_id: *trait_def_id,
+            assoc_def_id,
+            self_ty: Box::new(qself_ty),
+            generic_args: segment
+                .generic_args
+                .as_ref()
+                .map(|args| args.iter().map(|ty| self.ty_from_hir(icx, ty)).collect()),
+        }
+    }
+
+    fn find_assoc_type(&self, parent: DefId, name: Symbol) -> Option<DefId> {
+        for (&assoc_def_id, &parent_def_id) in &self.coherence.assoc_to_parent {
+            if parent_def_id == parent {
+                let def = self.resolver.def(assoc_def_id);
+                if def.kind == DefKind::AssocType && def.name == Some(name) {
+                    return Some(assoc_def_id);
+                }
+            }
+        }
+        None
+    }
+
+    pub(super) fn ty_hir_generic_args(
+        &self,
+        icx: &mut InferCtx,
+        path: &hir::Path,
+    ) -> Option<ThinVec<Ty>> {
         // TODO: Handle generic args in spots other than the last segment.
         // Currently Adt's can only have generic args in the last segment, but
         // when support for associated types is added, this will need to be
@@ -89,9 +158,11 @@ impl Ty {
             .expect("path has segments")
             .generic_args
             .as_ref()
-            .map(|args| args.iter().map(|ty| Ty::from_hir(icx, ty)).collect())
+            .map(|args| args.iter().map(|ty| self.ty_from_hir(icx, ty)).collect())
     }
+}
 
+impl Ty {
     pub fn is_numeric(&self, icx: &InferCtx) -> bool {
         match self {
             Ty::Prim(PrimTy::Int(_) | PrimTy::Uint(_) | PrimTy::Float(_)) => true,

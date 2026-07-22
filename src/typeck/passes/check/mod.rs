@@ -20,7 +20,7 @@ use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
-use crate::typeck::{Adjustment, CoherenceTable, MemberRes, TyVarId, Typeck, diag};
+use crate::typeck::{Adjustment, MemberRes, TyVarId, Typeck, diag};
 use fxhash::{FxHashMap, FxHashSet};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
@@ -55,14 +55,26 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut local_schemes: FxHashMap<HirId, Scheme> = FxHashMap::default();
         let mut adjustments: FxHashMap<HirId, Vec<Adjustment>> = FxHashMap::default();
 
+        // Take ownership of the crate's owners so we can mutably borrow the rest of the struct in checker
+        let owners = std::mem::take(&mut self.krate.owners);
+        let owners = owners
+            .into_iter()
+            .enumerate()
+            .map(|(i, owner)| {
+                let def_id = DefId(i as u32);
+                let module_id = self
+                    .resolver
+                    .def_to_module
+                    .get(&def_id)
+                    .copied()
+                    .unwrap_or_default();
+                (def_id, owner, module_id)
+            })
+            .collect::<Vec<_>>();
+
         let mut checker = BodyChecker {
-            ctx: self.ctx,
+            typeck: self,
             icx: &mut icx,
-            item_schemes: &mut self.item_schemes,
-            inherent_methods: &mut self.inherent_methods,
-            trait_methods: &mut self.trait_methods,
-            coherence: &mut self.coherence,
-            resolver: self.resolver,
             node_types: &mut node_types,
             member_res: &mut member_res,
             local_schemes: &mut local_schemes,
@@ -71,19 +83,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             module_id: ModuleId(0),
         };
 
-        for (i, owner) in self.krate.owners.iter().enumerate() {
-            let def_id = DefId(i as u32);
+        for (def_id, owner, module_id) in owners.iter() {
+            checker.module_id = *module_id;
 
             let Some(info) = owner.as_owner() else {
                 continue;
             };
-
-            let module_id = self
-                .resolver
-                .def_to_module
-                .get(&def_id)
-                .expect("contains def id");
-            checker.module_id = *module_id;
 
             match &info.nodes.node() {
                 OwnerNode::Item(item) => match &item.kind {
@@ -106,7 +111,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
                     AssocItemKind::Fn(fun) => {
-                        if let Some(&parent_def_id) = checker.coherence.assoc_to_parent.get(&def_id)
+                        if let Some(&parent_def_id) =
+                            checker.typeck.coherence.assoc_to_parent.get(def_id)
                         {
                             checker.register_if_generic_def(parent_def_id);
                         }
@@ -122,6 +128,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 OwnerNode::Crate => {}
             }
         }
+        // Restore the crate's owners
+        drop(checker);
+        self.krate.owners = owners.into_iter().map(|(_, owner, _)| owner).collect();
 
         self.hir_id_to_ty_var = std::mem::take(&mut icx.hir_id_to_ty_var);
 
@@ -188,16 +197,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 }
 
 #[allow(clippy::type_complexity)]
-struct BodyChecker<'a, 'b, 'ctx, 'res> {
-    ctx: &'ctx mut Ctx,
-    resolver: &'res ResolverOutputs,
+struct BodyChecker<'a, 'ctx, 'hir, 'res> {
+    typeck: &'a mut Typeck<'ctx, 'hir, 'res>,
     module_id: ModuleId,
 
     icx: &'a mut InferCtx,
-    item_schemes: &'b mut FxHashMap<DefId, Scheme>,
-    inherent_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    trait_methods: &'b mut FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
-    coherence: &'b mut CoherenceTable,
     node_types: &'a mut FxHashMap<HirId, Ty>,
     member_res: &'a mut FxHashMap<HirId, MemberRes>,
     local_schemes: &'a mut FxHashMap<HirId, Scheme>,
@@ -205,7 +209,7 @@ struct BodyChecker<'a, 'b, 'ctx, 'res> {
     env: ScopeEnv,
 }
 
-impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
+impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     fn register_if_generic(&mut self, generic_params: &Option<ThinVec<hir::GenericParam>>) {
         if let Some(params) = generic_params {
             for param in params {
@@ -216,7 +220,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn register_if_generic_def(&mut self, def: DefId) {
-        if let Some(info) = self.coherence.generic_params.get(&def) {
+        if let Some(info) = self.typeck.coherence.generic_params.get(&def) {
             for &hir_id in &info.hir_ids {
                 if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
                     let ty_var = self.icx.next_ty_var();
@@ -227,20 +231,20 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> Ty {
-        let ty = Ty::from_hir(self.icx, hir_ty);
+        let ty = self.typeck.ty_from_hir(self.icx, hir_ty);
         self.normalize_aliases(ty, hir_ty.span)
     }
 
     pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> Ty {
         fold_ty(&ty, &mut |ty| match ty {
             Ty::Adt(def_id, generic_args)
-                if self.resolver.defs[def_id.0 as usize].kind == DefKind::TypeAlias =>
+                if self.typeck.resolver.def(def_id).kind == DefKind::TypeAlias =>
             {
-                if let Some(scheme) = self.item_schemes.get(&def_id) {
+                if let Some(scheme) = self.typeck.item_schemes.get(&def_id) {
                     let resolved = if let Some(args) = &generic_args {
                         if args.len() != scheme.vars.len() {
                             builders::emit_at(
-                                self.ctx,
+                                self.typeck.ctx,
                                 span,
                                 self.module_id,
                                 diag::UnexpectedGenericArgs,
@@ -459,7 +463,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         match qpath {
             QPath::Resolved(path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    let scheme = match self.item_schemes.get(def_id) {
+                    let scheme = match self.typeck.item_schemes.get(def_id) {
                         Some(scheme) => scheme.clone(),
                         None => return Ty::Error,
                     };
@@ -499,7 +503,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Ordering::Equal => true,
             Ordering::Greater => false,
             Ordering::Less => {
-                let Some(info) = self.coherence.generic_params.get(&def_id) else {
+                let Some(info) = self.typeck.coherence.generic_params.get(&def_id) else {
                     return false;
                 };
                 for i in args.len()..expected_len {
@@ -524,7 +528,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let mut args = explicit_args.clone();
         if !self.try_complete_generic_args(def_id, &mut args, scheme.vars.len()) {
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 span,
                 self.module_id,
                 diag::UnexpectedGenericArgs,
@@ -541,14 +545,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             mapping.insert(v, self.icx.next_ty_var());
         }
         let parent_var_count = self
+            .typeck
             .coherence
             .assoc_to_parent
             .get(&def_id)
-            .and_then(|parent_def_id| self.coherence.generic_params.get(parent_def_id))
+            .and_then(|parent_def_id| self.typeck.coherence.generic_params.get(parent_def_id))
             .map(|parent_info| parent_info.hir_ids.len())
             .unwrap_or(0);
         let method_vars = &scheme.vars[parent_var_count..];
-        if let Some(info) = self.coherence.generic_params.get(&def_id) {
+        if let Some(info) = self.typeck.coherence.generic_params.get(&def_id) {
             for (hir_id, &v) in info.hir_ids.iter().zip(method_vars) {
                 if let Some(&fresh) = mapping.get(&v) {
                     self.icx.hir_id_to_ty_var.entry(*hir_id).or_insert(fresh);
@@ -581,7 +586,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let base = match qpath {
             QPath::Resolved(path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    match self.item_schemes.get(def_id).cloned() {
+                    match self.typeck.item_schemes.get(def_id).cloned() {
                         Some(scheme) => {
                             if let Some(explicit_args) = path
                                 .segments
@@ -636,7 +641,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             _ => {
                 if !left.is_numeric(self.icx) {
                     builders::emit_at(
-                        self.ctx,
+                        self.typeck.ctx,
                         left_span,
                         self.module_id,
                         diag::NonNumericOperand,
@@ -645,7 +650,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     return Ty::Error;
                 } else if !right.is_numeric(self.icx) {
                     builders::emit_at(
-                        self.ctx,
+                        self.typeck.ctx,
                         right_span,
                         self.module_id,
                         diag::NonNumericOperand,
@@ -673,7 +678,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 let resolved = self.icx.resolve(&right);
                 if !resolved.is_numeric(self.icx) {
                     builders::emit_at(
-                        self.ctx,
+                        self.typeck.ctx,
                         right_span,
                         self.module_id,
                         diag::NonNumericOperand,
@@ -698,11 +703,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             Ty::Ptr(inner, _) => (*inner).clone(),
             _ => {
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     span,
                     self.module_id,
                     diag::DerefNonPointer,
-                    diag_params! { type = ty_display(&left, self.resolver, &self.ctx.interner) },
+                    diag_params! { type = ty_display(&left, self.typeck.resolver, &self.typeck.ctx.interner) },
                 );
                 Ty::Error
             }
@@ -711,7 +716,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
     fn def_ty_var_subst(&self, def: DefId, args: &[Ty]) -> FxHashMap<TyVarId, Ty> {
         let mut subst = FxHashMap::default();
-        if let Some(info) = self.coherence.generic_params.get(&def) {
+        if let Some(info) = self.typeck.coherence.generic_params.get(&def) {
             for (hir_id, arg_ty) in info.hir_ids.iter().zip(args.iter()) {
                 if let Some(&registered_var) = self.icx.hir_id_to_ty_var.get(hir_id) {
                     subst.insert(registered_var, arg_ty.clone());
@@ -731,6 +736,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         self.register_if_generic_def(def);
 
         let param_hir_ids = self
+            .typeck
             .coherence
             .generic_params
             .get(&def)
@@ -748,7 +754,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             let mut hir_args = generic_args.clone();
             if !self.try_complete_generic_args(def, &mut hir_args, param_hir_ids.len()) {
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     span,
                     self.module_id,
                     diag::UnexpectedGenericArgs,
@@ -794,7 +800,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn stash_generic_defaults(&mut self, def: DefId, fresh_var_map: &FxHashMap<HirId, TyVarId>) {
-        let info = match self.coherence.generic_params.get(&def).cloned() {
+        let info = match self.typeck.coherence.generic_params.get(&def).cloned() {
             Some(info) => info,
             None => return,
         };
@@ -830,6 +836,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         ty_var_subst: &FxHashMap<TyVarId, Ty>,
     ) -> Ty {
         let field_table = self
+            .typeck
             .coherence
             .struct_fields
             .get(&def)
@@ -844,29 +851,29 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let struct_names: FxHashSet<Symbol> = field_table.keys().copied().collect();
 
         for name in init_names.difference(&struct_names) {
-            let field = self.ctx.interner.lookup(*name).to_string();
+            let field = self.typeck.ctx.interner.lookup(*name).to_string();
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 *sym_to_span.get(name).expect("field exists"),
                 self.module_id,
                 diag::UnknownField,
                 diag_params! {
                     field = field,
-                    type = ty_display(&struct_ty, self.resolver, &self.ctx.interner)
+                    type = ty_display(&struct_ty, self.typeck.resolver, &self.typeck.ctx.interner)
                 },
             );
         }
 
         for name in struct_names.difference(&init_names) {
-            let field = self.ctx.interner.lookup(*name).to_string();
+            let field = self.typeck.ctx.interner.lookup(*name).to_string();
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 span,
                 self.module_id,
                 diag::MissingField,
                 diag_params! {
                     field = field,
-                    type = ty_display(&struct_ty, self.resolver, &self.ctx.interner)
+                    type = ty_display(&struct_ty, self.typeck.resolver, &self.typeck.ctx.interner)
                 },
             );
         }
@@ -1078,7 +1085,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         hir_id: HirId,
     ) -> Option<Ty> {
         self.register_if_generic_def(struct_id);
-        let fields = self.coherence.struct_fields.get(&struct_id)?.clone();
+        let fields = self.typeck.coherence.struct_fields.get(&struct_id)?.clone();
         let (hir_field_ty, index) = fields.get(&member)?;
         self.member_res
             .insert(hir_id, MemberRes::Field { index: *index });
@@ -1091,7 +1098,13 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 }
             }
             None => {
-                if let Some(info) = self.coherence.generic_params.get(&struct_id).cloned() {
+                if let Some(info) = self
+                    .typeck
+                    .coherence
+                    .generic_params
+                    .get(&struct_id)
+                    .cloned()
+                {
                     let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                     let mut resolved: ThinVec<Ty> = ThinVec::new();
                     let mut has_missing = false;
@@ -1156,20 +1169,20 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                     return field_ty;
                 }
 
-                let field = self.ctx.interner.lookup(member).to_string();
+                let field = self.typeck.ctx.interner.lookup(member).to_string();
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     member_span,
                     self.module_id,
                     diag::UnknownField,
                     diag_params! {
                         field = field,
-                        type = ty_display(recv_ty, self.resolver, &self.ctx.interner)
+                        type = ty_display(recv_ty, self.typeck.resolver, &self.typeck.ctx.interner)
                     },
                 );
             }
             Ty::Slice(elem) => {
-                let interner = &self.ctx.interner;
+                let interner = &self.typeck.ctx.interner;
                 if interner.lookup(member) == "len" {
                     self.member_res
                         .insert(hir_id, MemberRes::Field { index: 1 });
@@ -1180,9 +1193,9 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                         .insert(hir_id, MemberRes::Field { index: 0 });
                     return Ty::Ptr(elem.clone(), Mutability::Constant);
                 }
-                let field = self.ctx.interner.lookup(member).to_string();
+                let field = self.typeck.ctx.interner.lookup(member).to_string();
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     member_span,
                     self.module_id,
                     diag::UnknownFieldInSlice,
@@ -1190,15 +1203,15 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                 );
             }
             _ => {
-                let field = self.ctx.interner.lookup(member).to_string();
+                let field = self.typeck.ctx.interner.lookup(member).to_string();
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     member_span,
                     self.module_id,
                     diag::TypeWithNoFields,
                     diag_params! {
                         field = field,
-                        type = ty_display(recv_ty, self.resolver, &self.ctx.interner)
+                        type = ty_display(recv_ty, self.typeck.resolver, &self.typeck.ctx.interner)
                     },
                 );
             }
@@ -1222,11 +1235,11 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             _ => {
                 self.check_expr(index);
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     expr_span,
                     self.module_id,
                     diag::CannotIndex,
-                    diag_params! { type = ty_display(&base, self.resolver, &self.ctx.interner) },
+                    diag_params! { type = ty_display(&base, self.typeck.resolver, &self.typeck.ctx.interner) },
                 );
                 Ty::Error
             }
@@ -1234,7 +1247,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
     }
 
     fn report_type_error(&mut self, err: UnifyError) {
-        emit_unify_error(&err, self.resolver, self.ctx, self.icx);
+        emit_unify_error(&err, self.typeck.resolver, self.typeck.ctx, self.icx);
     }
 }
 

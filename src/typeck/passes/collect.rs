@@ -39,7 +39,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Const { ty, .. } => {
-                        let ty = Ty::from_hir(&mut icx, ty).reject_vars();
+                        let ty = self.ty_from_hir(&mut icx, ty).reject_vars();
                         self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Struct {
@@ -78,7 +78,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = Ty::from_hir(&mut icx, type_);
+                        let body = self.ty_from_hir(&mut icx, type_);
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Trait {
@@ -161,7 +161,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 let Some(type_) = type_ else {
                                     unreachable!("impl assoc type must have a type");
                                 };
-                                let body = Ty::from_hir(&mut icx, type_);
+                                let body = self.ty_from_hir(&mut icx, type_);
                                 // impls do not yet have generic params, but act as if they did so
                                 // we can reuse logic
                                 let scheme = self.assoc_item_scheme(
@@ -375,9 +375,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let params: ThinVec<Ty> = decl
             .params
             .iter()
-            .map(|param| Ty::from_hir(icx, &param.ty))
+            .map(|param| self.ty_from_hir(icx, &param.ty))
             .collect();
-        let ret = Ty::from_hir(icx, &decl.ret).into_box();
+        let ret = self.ty_from_hir(icx, &decl.ret).into_box();
         Ty::Fn { params, ret }
     }
 

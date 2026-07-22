@@ -68,7 +68,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 1. Extract and validate trait generic args from the path
             let trait_scheme = self.item_schemes.get(&trait_def_id);
-            let trait_generic_args = Ty::hir_generic_args(&mut icx, trait_ty);
+            let trait_generic_args = self.ty_hir_generic_args(&mut icx, trait_ty);
 
             if let Some(scheme) = trait_scheme
                 && !scheme.vars.is_empty()
@@ -91,8 +91,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
-                            let mut ty =
-                                Ty::from_hir(&mut icx, default.as_ref().expect("default exists"));
+                            let mut ty = self
+                                .ty_from_hir(&mut icx, default.as_ref().expect("default exists"));
                             if !subst.is_empty() {
                                 ty = substitute_ty_vars(&ty, &subst);
                             }
@@ -136,7 +136,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     info.defaults[full_args.len()..].iter().enumerate()
                                 {
                                     let idx = full_args.len() + i;
-                                    let mut ty = Ty::from_hir(
+                                    let mut ty = self.ty_from_hir(
                                         &mut icx,
                                         default.as_ref().expect("default exists"),
                                     );

@@ -1,8 +1,9 @@
+use crate::ast::{Ident, Mutability};
 use thin_vec::ThinVec;
 
-use crate::ast::{Ident, Mutability};
-use crate::hir::{self, PrimTy, QPath, UnOp};
+use crate::hir::{self, Def, DefId, DefKind, PrimTy, QPath, UnOp};
 use crate::hir::{BinOp, HirId};
+use crate::interner::Symbol;
 use crate::resolve::Res;
 use crate::span::Span;
 use crate::thir::scope::{Scope, ScopeKind, ScopeTree};
@@ -15,8 +16,9 @@ pub fn lower_body(
     body: &hir::Body,
     typeck: &TypeckOutputs,
     scope_tree: Option<&ScopeTree>,
+    resolver: &ResolverOutputs,
 ) -> ThirBody {
-    let mut lowerer = ThirLowerer::new(typeck, scope_tree);
+    let mut lowerer = ThirLowerer::new(typeck, scope_tree, resolver);
     for param in params {
         let local_var = LocalVarId(lowerer.locals.len() as u32);
         lowerer.locals.insert(param.hir_id, local_var);
@@ -24,7 +26,14 @@ pub fn lower_body(
             .node_types
             .get(&param.ty.hir_id)
             .cloned()
-            .unwrap_or_else(|| hir_ty_to_ty(&param.ty, &typeck.hir_id_to_ty_var));
+            .unwrap_or_else(|| {
+                hir_ty_to_ty(
+                    &param.ty,
+                    &typeck.hir_id_to_ty_var,
+                    &lowerer.resolver.defs,
+                    &lowerer.typeck.coherence.assoc_to_parent,
+                )
+            });
         lowerer.params.push(Param {
             name: param.name,
             ty: param_ty,
@@ -46,6 +55,7 @@ pub fn lower_body(
 struct ThirLowerer<'a> {
     typeck: &'a TypeckOutputs,
     scope_tree: Option<&'a ScopeTree>,
+    resolver: &'a ResolverOutputs,
     exprs: Vec<Expr>,
     stmts: Vec<Stmt>,
     blocks: Vec<Block>,
@@ -54,10 +64,15 @@ struct ThirLowerer<'a> {
 }
 
 impl<'a> ThirLowerer<'a> {
-    fn new(typeck: &'a TypeckOutputs, scope_tree: Option<&'a ScopeTree>) -> Self {
+    fn new(
+        typeck: &'a TypeckOutputs,
+        scope_tree: Option<&'a ScopeTree>,
+        resolver: &'a ResolverOutputs,
+    ) -> Self {
         Self {
             typeck,
             scope_tree,
+            resolver,
             exprs: Vec::new(),
             stmts: Vec::new(),
             blocks: Vec::new(),
@@ -228,7 +243,14 @@ impl<'a> ThirLowerer<'a> {
             .node_types
             .get(&target.hir_id)
             .cloned()
-            .unwrap_or_else(|| hir_ty_to_ty(target, &self.typeck.hir_id_to_ty_var));
+            .unwrap_or_else(|| {
+                hir_ty_to_ty(
+                    target,
+                    &self.typeck.hir_id_to_ty_var,
+                    &self.resolver.defs,
+                    &self.typeck.coherence.assoc_to_parent,
+                )
+            });
         self.alloc_expr(
             ExprKind::Cast {
                 source,
@@ -358,7 +380,14 @@ impl<'a> ThirLowerer<'a> {
                                 None
                             }
                         })
-                        .unwrap_or_else(|| hir_ty_to_ty(ty, &self.typeck.hir_id_to_ty_var));
+                        .unwrap_or_else(|| {
+                            hir_ty_to_ty(
+                                ty,
+                                &self.typeck.hir_id_to_ty_var,
+                                &self.resolver.defs,
+                                &self.typeck.coherence.assoc_to_parent,
+                            )
+                        });
                     let remainder_scope = self
                         .scope_tree
                         .expect("has scope tree")
@@ -633,27 +662,39 @@ impl<'a> ThirLowerer<'a> {
     }
 }
 
-fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) -> Ty {
+// TODO: We probably should be using typeck resolts for this
+fn hir_ty_to_ty(
+    hir_ty: &hir::Ty,
+    hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>,
+    defs: &ThinVec<Def>,
+    assoc_to_parent: &FxHashMap<DefId, DefId>,
+) -> Ty {
     let ty = match &hir_ty.kind {
         hir::TyKind::Error | hir::TyKind::Infer => Ty::Error,
         hir::TyKind::Never => Ty::Never,
         hir::TyKind::PrimTy(prim) => Ty::Prim(*prim),
-        hir::TyKind::Ptr(inner, m) => Ty::Ptr(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *m),
-        hir::TyKind::Slice(inner) => Ty::Slice(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box()),
-        hir::TyKind::Array(inner, size) => {
-            Ty::Array(hir_ty_to_ty(inner, hir_id_to_ty_var).into_box(), *size)
+        hir::TyKind::Ptr(inner, m) => Ty::Ptr(
+            hir_ty_to_ty(inner, hir_id_to_ty_var, defs, assoc_to_parent).into_box(),
+            *m,
+        ),
+        hir::TyKind::Slice(inner) => {
+            Ty::Slice(hir_ty_to_ty(inner, hir_id_to_ty_var, defs, assoc_to_parent).into_box())
         }
+        hir::TyKind::Array(inner, size) => Ty::Array(
+            hir_ty_to_ty(inner, hir_id_to_ty_var, defs, assoc_to_parent).into_box(),
+            *size,
+        ),
         hir::TyKind::Fn { params, ret } => Ty::Fn {
             params: params
                 .iter()
-                .map(|p| hir_ty_to_ty(p, hir_id_to_ty_var))
+                .map(|p| hir_ty_to_ty(p, hir_id_to_ty_var, defs, assoc_to_parent))
                 .collect(),
-            ret: hir_ty_to_ty(ret, hir_id_to_ty_var).into_box(),
+            ret: hir_ty_to_ty(ret, hir_id_to_ty_var, defs, assoc_to_parent).into_box(),
         },
         hir::TyKind::Tuple(elements) => Ty::Tuple(
             elements
                 .iter()
-                .map(|e| hir_ty_to_ty(e, hir_id_to_ty_var))
+                .map(|e| hir_ty_to_ty(e, hir_id_to_ty_var, defs, assoc_to_parent))
                 .collect(),
         ),
         hir::TyKind::Path(qpath) => match qpath {
@@ -666,7 +707,9 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) 
                         .as_ref()
                         .map(|args| {
                             args.iter()
-                                .map(|arg| hir_ty_to_ty(arg, hir_id_to_ty_var))
+                                .map(|arg| {
+                                    hir_ty_to_ty(arg, hir_id_to_ty_var, defs, assoc_to_parent)
+                                })
                                 .collect()
                         });
                     Ty::Adt(*def_id, generics)
@@ -674,7 +717,37 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) 
                 Res::PrimTy(prim) => Ty::Prim(*prim),
                 _ => Ty::Error,
             },
-            QPath::TypeRelative { .. } => Ty::Error,
+            QPath::TypeRelative { qself, segment } => {
+                let qself_ty = hir_ty_to_qpath_self(qself, hir_id_to_ty_var, defs, assoc_to_parent);
+                match &qself_ty {
+                    Ty::Adt(trait_def_id, _)
+                        if defs[trait_def_id.0 as usize].kind == DefKind::Trait =>
+                    {
+                        let assoc_name = segment.ident.value;
+                        match find_assoc_type(*trait_def_id, assoc_name, defs, assoc_to_parent) {
+                            Some(assoc_def_id) => Ty::Projection {
+                                trait_def_id: *trait_def_id,
+                                assoc_def_id,
+                                self_ty: Box::new(qself_ty),
+                                generic_args: segment.generic_args.as_ref().map(|args| {
+                                    args.iter()
+                                        .map(|ty| {
+                                            hir_ty_to_ty(
+                                                ty,
+                                                hir_id_to_ty_var,
+                                                defs,
+                                                assoc_to_parent,
+                                            )
+                                        })
+                                        .collect()
+                                }),
+                            },
+                            None => Ty::Error,
+                        }
+                    }
+                    _ => Ty::Error,
+                }
+            }
         },
         hir::TyKind::GenericParam(hir_id, _) => hir_id_to_ty_var
             .get(hir_id)
@@ -683,4 +756,72 @@ fn hir_ty_to_ty(hir_ty: &hir::Ty, hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>) 
     };
     assert!(!ty.is_error());
     ty
+}
+
+fn hir_ty_to_qpath_self(
+    qpath: &QPath,
+    hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>,
+    defs: &ThinVec<Def>,
+    assoc_to_parent: &FxHashMap<DefId, DefId>,
+) -> Ty {
+    match qpath {
+        QPath::Resolved(path) => match &path.res {
+            Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                let generics = path
+                    .segments
+                    .last()
+                    .and_then(|seg| seg.generic_args.as_ref())
+                    .as_ref()
+                    .map(|args| {
+                        args.iter()
+                            .map(|arg| hir_ty_to_ty(arg, hir_id_to_ty_var, defs, assoc_to_parent))
+                            .collect()
+                    });
+                Ty::Adt(*def_id, generics)
+            }
+            _ => Ty::Error,
+        },
+        QPath::TypeRelative { qself, segment } => {
+            let qself_ty = hir_ty_to_qpath_self(qself, hir_id_to_ty_var, defs, assoc_to_parent);
+            let Ty::Adt(trait_def_id, _) = &qself_ty else {
+                return Ty::Error;
+            };
+            if defs[trait_def_id.0 as usize].kind != DefKind::Trait {
+                return Ty::Error;
+            }
+            let assoc_name = segment.ident.value;
+            let Some(assoc_def_id) =
+                find_assoc_type(*trait_def_id, assoc_name, defs, assoc_to_parent)
+            else {
+                return Ty::Error;
+            };
+            Ty::Projection {
+                trait_def_id: *trait_def_id,
+                assoc_def_id,
+                self_ty: Box::new(qself_ty),
+                generic_args: segment.generic_args.as_ref().map(|args| {
+                    args.iter()
+                        .map(|ty| hir_ty_to_ty(ty, hir_id_to_ty_var, defs, assoc_to_parent))
+                        .collect()
+                }),
+            }
+        }
+    }
+}
+
+fn find_assoc_type(
+    parent: DefId,
+    name: Symbol,
+    defs: &ThinVec<Def>,
+    assoc_to_parent: &FxHashMap<DefId, DefId>,
+) -> Option<DefId> {
+    for (&assoc_def_id, &parent_def_id) in assoc_to_parent {
+        if parent_def_id == parent
+            && defs[assoc_def_id.0 as usize].kind == DefKind::AssocType
+            && defs[assoc_def_id.0 as usize].name == Some(name)
+        {
+            return Some(assoc_def_id);
+        }
+    }
+    None
 }

@@ -11,7 +11,7 @@ use crate::typeck::unify::{OrPushErr, unify};
 use crate::typeck::{Adjustment, MemberRes, MethodKind, Scheme, Ty, diag};
 use crate::{diag_params, hir};
 
-impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
+impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     pub fn check_call(&mut self, callee: &Expr, args: &ThinVec<Expr>, call_span: Span) -> Ty {
         let callee_span = callee.span;
 
@@ -78,7 +78,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
             }
             _ => {
                 builders::emit_at(
-                    self.ctx,
+                    self.typeck.ctx,
                     callee_span,
                     self.module_id,
                     diag::CallNonFunction,
@@ -107,7 +107,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         if args.len() != param_tys_without_self.len() {
             let expected = param_tys_without_self.len();
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 call_span,
                 self.module_id,
                 diag::UnexpectedParameters,
@@ -159,11 +159,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let candidates = self.resolve_method_candidates(&recv_ty, member);
         if candidates.is_empty() {
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 callee_span,
                 self.module_id,
                 diag::MethodNotFound,
-                diag_params! { method = member, type = ty_display(&recv_ty, self.resolver, &self.ctx.interner) },
+                diag_params! {
+                    method = member,
+                    type = ty_display(&recv_ty, self.typeck.resolver, &self.typeck.ctx.interner)
+                },
             );
             return Ty::Error;
         }
@@ -172,13 +175,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         let arg_tys: ThinVec<Ty> = args.iter().map(|arg| self.check_expr(arg)).collect();
 
         for (def_id, kind) in &candidates {
-            let Some(mut scheme) = self.item_schemes.get(def_id).cloned() else {
+            let Some(mut scheme) = self.typeck.item_schemes.get(def_id).cloned() else {
                 continue;
             };
 
             if let MethodKind::Trait { trait_, impl_def } = kind
-                && let Some(trait_scheme) = self.item_schemes.get(trait_)
-                && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
+                && let Some(trait_scheme) = self.typeck.item_schemes.get(trait_)
+                && let Some(Some(args)) = self
+                    .typeck
+                    .coherence
+                    .impl_resolved_generic_args
+                    .get(impl_def)
             {
                 let mut subst = FxHashMap::default();
                 for (&var, arg) in trait_scheme.vars.iter().zip(args.iter()) {
@@ -265,13 +272,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
         // All candidates failed
         let (def_id, kind) = candidates.first().expect("candidates not empty");
-        let Some(mut scheme) = self.item_schemes.get(def_id).cloned() else {
+        let Some(mut scheme) = self.typeck.item_schemes.get(def_id).cloned() else {
             return Ty::Error;
         };
 
         if let MethodKind::Trait { trait_, impl_def } = kind
-            && let Some(trait_scheme) = self.item_schemes.get(trait_)
-            && let Some(Some(args)) = self.coherence.impl_resolved_generic_args.get(impl_def)
+            && let Some(trait_scheme) = self.typeck.item_schemes.get(trait_)
+            && let Some(Some(args)) = self
+                .typeck
+                .coherence
+                .impl_resolved_generic_args
+                .get(impl_def)
         {
             let mut subst = FxHashMap::default();
             for (&var, arg) in trait_scheme.vars.iter().zip(args.iter()) {
@@ -301,7 +312,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         if arg_tys.len() != param_tys_without_self.len() {
             let expected = param_tys_without_self.len();
             builders::emit_at(
-                self.ctx,
+                self.typeck.ctx,
                 call_span,
                 self.module_id,
                 diag::UnexpectedParameters,
@@ -329,12 +340,14 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
         };
 
         let parent_def_id = self
+            .typeck
             .coherence
             .assoc_to_parent
             .get(def_id)
             .expect("assoc item has parent");
 
         let parent_info = self
+            .typeck
             .coherence
             .generic_params
             .get(parent_def_id)
@@ -416,17 +429,17 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
 
         let mut candidates = vec![];
 
-        if let Some(method) = self.inherent_methods.get(&struct_id)
+        if let Some(method) = self.typeck.inherent_methods.get(&struct_id)
             && let Some(&method_def_id) = method.get(&member)
         {
             candidates.push((method_def_id, MethodKind::Inherent));
         }
 
-        if let Some(method) = self.trait_methods.get(&struct_id)
+        if let Some(method) = self.typeck.trait_methods.get(&struct_id)
             && let Some(entries) = method.get(&member)
         {
             for &(trait_, method_def_id) in entries {
-                if let Some(impl_def_ids) = self.coherence.impls.get(&(trait_, struct_id)) {
+                if let Some(impl_def_ids) = self.typeck.coherence.impls.get(&(trait_, struct_id)) {
                     for &impl_def in impl_def_ids {
                         candidates.push((method_def_id, MethodKind::Trait { trait_, impl_def }));
                     }
