@@ -1359,6 +1359,28 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 generics_to_string(generics.as_ref(), resolver, interner)
             )
         }
+        Ty::Projection {
+            trait_def_id,
+            assoc_def_id,
+            self_ty,
+            generic_args,
+        } => {
+            let name = resolver.defs[trait_def_id.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Trait#{}", trait_def_id.0));
+            let assoc_name = resolver.defs[assoc_def_id.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Ty#{}", assoc_def_id.0));
+            format!(
+                "<{} as {}>::{}{}",
+                ty_display(self_ty, resolver, interner),
+                name,
+                assoc_name,
+                generics_to_string(generic_args.as_ref(), resolver, interner)
+            )
+        }
         Ty::Never => "!".to_string(),
         Ty::MethodCallee => "<method-callee>".to_string(),
         Ty::Error => "<error>".to_string(),

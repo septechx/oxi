@@ -19,6 +19,12 @@ pub enum Ty {
     },
     Tuple(ThinVec<Ty>),
     Adt(DefId, Option<ThinVec<Ty>>),
+    Projection {
+        trait_def_id: DefId,
+        assoc_def_id: DefId,
+        self_ty: Box<Ty>,
+        generic_args: Option<ThinVec<Ty>>,
+    },
     Never,
     /// Dummy type for the synthetic `Path` callee created during THIR lowering
     /// of method calls. This callee `Path` expression is never type-checked, it

@@ -168,6 +168,19 @@ impl InferCtx {
                     .as_ref()
                     .map(|tys| tys.iter().map(|ty| self.adjust(ty, bound)).collect()),
             ),
+            Ty::Projection {
+                trait_def_id,
+                assoc_def_id,
+                self_ty,
+                generic_args,
+            } => Ty::Projection {
+                trait_def_id: *trait_def_id,
+                assoc_def_id: *assoc_def_id,
+                self_ty: self.adjust(self_ty, bound).into_box(),
+                generic_args: generic_args
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.adjust(ty, bound)).collect()),
+            },
             Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
@@ -192,6 +205,19 @@ impl InferCtx {
                     .as_ref()
                     .map(|tys| tys.iter().map(|ty| self.resolve(ty)).collect()),
             ),
+            Ty::Projection {
+                trait_def_id,
+                assoc_def_id,
+                self_ty,
+                generic_args,
+            } => Ty::Projection {
+                trait_def_id: *trait_def_id,
+                assoc_def_id: *assoc_def_id,
+                self_ty: self.resolve(self_ty).into_box(),
+                generic_args: generic_args
+                    .as_ref()
+                    .map(|tys| tys.iter().map(|ty| self.resolve(ty)).collect()),
+            },
             Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
         }
     }
@@ -220,6 +246,18 @@ impl InferCtx {
             Ty::Adt(_, generics) => {
                 if let Some(generics) = generics {
                     for ty in generics {
+                        self.vars_in(&ty, out);
+                    }
+                }
+            }
+            Ty::Projection {
+                self_ty,
+                generic_args,
+                ..
+            } => {
+                self.vars_in(&self_ty, out);
+                if let Some(generic_args) = generic_args {
+                    for ty in generic_args {
                         self.vars_in(&ty, out);
                     }
                 }

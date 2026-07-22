@@ -2,6 +2,7 @@ use crate::typeck::Ty;
 use crate::typeck::infctx::TyVarId;
 use fxhash::FxHashMap;
 
+// TODO: Refactor into trait.
 pub fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
 where
     F: FnMut(Ty) -> Ty,
@@ -22,6 +23,19 @@ where
             ret: fold_ty(ret, f).into_box(),
         },
         Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| fold_ty(ty, f)).collect()),
+        Ty::Projection {
+            trait_def_id,
+            assoc_def_id,
+            self_ty,
+            generic_args,
+        } => Ty::Projection {
+            self_ty: fold_ty(self_ty, f).into_box(),
+            generic_args: generic_args
+                .as_ref()
+                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
+            trait_def_id: *trait_def_id,
+            assoc_def_id: *assoc_def_id,
+        },
     };
 
     f(ty)
