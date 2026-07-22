@@ -4,6 +4,9 @@ mod infctx;
 mod passes;
 mod unify;
 
+mod visitor;
+pub use visitor::*;
+
 mod types;
 pub use types::*;
 

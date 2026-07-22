@@ -1,7 +1,9 @@
+use crate::ast::visit::VisitAction;
 use crate::hir::{FloatTy, IntTy, ModuleId, PrimTy};
 use crate::span::Span;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 use crate::typeck::types::Ty;
+use crate::typeck::{TyVisitable, TyVisitor};
 
 #[derive(Debug, Clone)]
 pub enum UnifyError {
@@ -170,30 +172,38 @@ fn bind(
 }
 
 fn occurs(icx: &InferCtx, var: TyVarId, to: &Ty) -> bool {
-    match to {
-        Ty::Var(v) => {
-            if *v == var {
-                return true;
-            }
-            match icx.root_of(*v) {
-                Some(bound) => occurs(icx, var, bound),
-                None => false,
-            }
-        }
-        Ty::Ptr(inner, _) | Ty::Slice(inner) | Ty::Array(inner, _) => occurs(icx, var, inner),
-        Ty::Fn { params, ret } => {
-            params.iter().any(|param| occurs(icx, var, param)) || occurs(icx, var, ret)
-        }
-        Ty::Tuple(elements) => elements.iter().any(|element| occurs(icx, var, element)),
-        Ty::Adt(_, generics) => {
-            if let Some(generics) = generics {
-                generics.iter().any(|ty| occurs(icx, var, ty))
-            } else {
-                false
-            }
-        }
-        Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => false,
+    struct OccursVisitor<'a> {
+        icx: &'a InferCtx,
+        target: TyVarId,
+        occurs: bool,
     }
+
+    impl TyVisitor for OccursVisitor<'_> {
+        fn visit_ty(&mut self, ty: &Ty) -> VisitAction {
+            if self.occurs {
+                return VisitAction::SkipChildren;
+            }
+
+            let Ty::Var(var) = ty else {
+                return VisitAction::Continue;
+            };
+            if *var == self.target {
+                self.occurs = true;
+            } else if let Some(bound) = self.icx.root_of(*var) {
+                bound.visit(self);
+            }
+
+            VisitAction::SkipChildren
+        }
+    }
+
+    let mut visitor = OccursVisitor {
+        icx,
+        target: var,
+        occurs: false,
+    };
+    to.visit(&mut visitor);
+    visitor.occurs
 }
 
 fn mismatch(expected: Ty, found: Ty, span: Span, module_id: ModuleId) -> UnifyError {

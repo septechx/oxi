@@ -2,6 +2,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use thin_vec::ThinVec;
 
 use super::check::emit_unify_error;
+use crate::ast::visit::VisitAction;
 use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::{
@@ -11,7 +12,7 @@ use crate::interner::Symbol;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
-use crate::typeck::{GenericParamInfo, Typeck, diag};
+use crate::typeck::{GenericParamInfo, TyVisitable, TyVisitor, Typeck, diag};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn collect_signatures(&mut self) {
@@ -243,96 +244,72 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         visited: &mut FxHashSet<DefId>,
         in_progress: &mut FxHashSet<DefId>,
     ) -> bool {
+        struct AliasVisitor<'a> {
+            start: DefId,
+            item_schemes: &'a FxHashMap<DefId, Scheme>,
+            defs: &'a ThinVec<Def>,
+            visited: &'a mut FxHashSet<DefId>,
+            in_progress: &'a mut FxHashSet<DefId>,
+            found_cycle: bool,
+        }
+
+        impl TyVisitor for AliasVisitor<'_> {
+            fn visit_ty(&mut self, ty: &Ty) -> VisitAction {
+                if self.found_cycle {
+                    return VisitAction::SkipChildren;
+                }
+
+                let Ty::Adt(def_id, _) = ty else {
+                    return VisitAction::Continue;
+                };
+                if self.defs[def_id.0 as usize].kind != DefKind::TypeAlias {
+                    return VisitAction::Continue;
+                }
+                if *def_id == self.start || self.in_progress.contains(def_id) {
+                    self.found_cycle = true;
+                    return VisitAction::SkipChildren;
+                }
+                if !self.visited.insert(*def_id) {
+                    return VisitAction::SkipChildren;
+                }
+
+                if Typeck::visit_alias(
+                    *def_id,
+                    self.start,
+                    self.item_schemes,
+                    self.defs,
+                    self.visited,
+                    self.in_progress,
+                ) {
+                    self.found_cycle = true;
+                }
+
+                VisitAction::SkipChildren
+            }
+        }
+
+        let Some(scheme) = item_schemes.get(&current) else {
+            return false;
+        };
+
         in_progress.insert(current);
 
-        let result = item_schemes.get(&current).is_some_and(|scheme| {
-            Self::collect_alias_refs(
-                &scheme.body,
-                start,
-                item_schemes,
-                defs,
-                visited,
-                in_progress,
-            )
-        });
+        let mut visitor = AliasVisitor {
+            start,
+            item_schemes,
+            defs,
+            visited,
+            in_progress,
+            found_cycle: false,
+        };
+
+        scheme.body.visit(&mut visitor);
+
+        let found_cycle = visitor.found_cycle;
 
         in_progress.remove(&current);
-        result
-    }
 
-    fn collect_alias_refs(
-        ty: &Ty,
-        start_def_id: DefId,
-        item_schemes: &FxHashMap<DefId, Scheme>,
-        defs: &ThinVec<Def>,
-        visited: &mut FxHashSet<DefId>,
-        in_progress: &mut FxHashSet<DefId>,
-    ) -> bool {
-        match ty {
-            Ty::Adt(def_id, generic_args) => {
-                if generic_args.iter().flatten().any(|ty| {
-                    Self::collect_alias_refs(
-                        ty,
-                        start_def_id,
-                        item_schemes,
-                        defs,
-                        visited,
-                        in_progress,
-                    )
-                }) {
-                    return true;
-                }
-                if defs[def_id.0 as usize].kind != DefKind::TypeAlias {
-                    return false;
-                }
-                if *def_id == start_def_id || in_progress.contains(def_id) {
-                    return true;
-                }
-                if !visited.insert(*def_id) {
-                    return false;
-                }
-                Self::visit_alias(
-                    *def_id,
-                    start_def_id,
-                    item_schemes,
-                    defs,
-                    visited,
-                    in_progress,
-                )
-            }
-            Ty::Slice(inner) | Ty::Array(inner, _) | Ty::Ptr(inner, _) => Self::collect_alias_refs(
-                inner,
-                start_def_id,
-                item_schemes,
-                defs,
-                visited,
-                in_progress,
-            ),
-            Ty::Tuple(elements) => elements.iter().any(|ty| {
-                Self::collect_alias_refs(ty, start_def_id, item_schemes, defs, visited, in_progress)
-            }),
-
-            Ty::Fn { params, ret } => {
-                params.iter().any(|ty| {
-                    Self::collect_alias_refs(
-                        ty,
-                        start_def_id,
-                        item_schemes,
-                        defs,
-                        visited,
-                        in_progress,
-                    )
-                }) || Self::collect_alias_refs(
-                    ret,
-                    start_def_id,
-                    item_schemes,
-                    defs,
-                    visited,
-                    in_progress,
-                )
-            }
-            Ty::MethodCallee | Ty::Error | Ty::Never | Ty::Prim(_) | Ty::Var(_) => false,
-        }
+        found_cycle
     }
 
     fn collect_generic_params(
