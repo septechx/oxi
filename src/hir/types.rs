@@ -174,6 +174,7 @@ pub struct AssocItem {
 #[derive(Debug, Clone)]
 pub enum AssocItemKind {
     Fn(Fn),
+    // TODO: Maybe add generic params to type?
     Type { name: Symbol, type_: Option<Ty> },
 }
 

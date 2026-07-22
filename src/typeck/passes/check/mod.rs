@@ -117,9 +117,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             checker.check_fn_body(&fun.decl, body);
                         }
                     }
-                    AssocItemKind::Type { name, type_ } => {
-                        todo!("type assoc item: {name:?} = {type_:?}")
-                    }
+                    AssocItemKind::Type { .. } => {}
                 },
                 OwnerNode::Crate => {}
             }

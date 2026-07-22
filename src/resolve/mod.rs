@@ -192,6 +192,16 @@ pub struct ResolverOutputs {
     pub def_to_module: FxHashMap<DefId, ModuleId>,
 }
 
+impl ResolverOutputs {
+    pub fn def(&self, def_id: DefId) -> &Def {
+        &self.defs[def_id.0 as usize]
+    }
+
+    pub fn def_mut(&mut self, def_id: DefId) -> &mut Def {
+        &mut self.defs[def_id.0 as usize]
+    }
+}
+
 #[derive(Debug)]
 pub struct Resolver<'a, 'ctx> {
     ctx: &'ctx mut Ctx,

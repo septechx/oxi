@@ -98,9 +98,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let methods: Vec<(Symbol, DefId)> = items
                             .iter()
                             .filter_map(|&item| {
-                                self.resolver.defs[item.0 as usize]
-                                    .name
-                                    .map(|name| (name, item))
+                                let def = &self.resolver.defs[item.0 as usize];
+                                (def.kind == DefKind::AssocFn).then_some((def.name?, item))
                             })
                             .collect();
                         self.coherence.register_trait(def_id, methods);
@@ -125,54 +124,59 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
                     AssocItemKind::Fn(fun) => {
-                        let (mut scheme_vars, hir_ids, defaults) =
+                        let (scheme_vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, &fun.generic_params);
-
                         let parent_def_id = self
                             .coherence
                             .assoc_to_parent
                             .get(&def_id)
                             .expect("assoc item has parent");
-                        let parent_info = self
-                            .coherence
-                            .generic_params
-                            .get(parent_def_id)
-                            .expect("assoc item parent has generic params");
-                        let parent_vars: ThinVec<TyVarId> = parent_info
-                            .hir_ids
-                            .iter()
-                            .map(|hir_id| {
-                                *icx.hir_id_to_ty_var
-                                    .get(hir_id)
-                                    .expect("parent generic param registered")
-                            })
-                            .collect();
-                        let parent_args: ThinVec<Ty> =
-                            parent_vars.iter().map(|&v| Ty::Var(v)).collect();
-                        scheme_vars = parent_vars.into_iter().chain(scheme_vars).collect();
+
                         let body = self.fn_ty(&mut icx, &fun.decl);
-                        let body = fold_ty(&body, &mut |ty| match ty {
-                            Ty::Adt(id, None) if id == *parent_def_id => Ty::Adt(
-                                id,
-                                (!parent_args.is_empty()).then_some(parent_args.clone()),
-                            ),
-                            t => t,
-                        });
-                        self.item_schemes.insert(
-                            def_id,
-                            Scheme {
-                                vars: scheme_vars,
-                                body,
-                            },
-                        );
+                        let scheme =
+                            self.assoc_item_scheme(&mut icx, *parent_def_id, scheme_vars, body);
+                        self.item_schemes.insert(def_id, scheme);
                         if !hir_ids.is_empty() {
                             self.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
                     }
-                    AssocItemKind::Type { name, type_ } => {
-                        todo!("type assoc item: {name:?} = {type_:?}")
+                    AssocItemKind::Type { type_, .. } => {
+                        let parent_def_id = self
+                            .coherence
+                            .assoc_to_parent
+                            .get(&def_id)
+                            .expect("assoc item has parent");
+                        let parent_kind = self.resolver.def(*parent_def_id).kind;
+
+                        match parent_kind {
+                            DefKind::Trait => {
+                                // Type is abstract and can only be used in a projection, so only store the default type
+                                self.coherence
+                                    .assoc_type_defaults
+                                    .insert(def_id, type_.clone());
+                            }
+                            DefKind::Impl => {
+                                let Some(type_) = type_ else {
+                                    unreachable!("impl assoc type must have a type");
+                                };
+                                let body = Ty::from_hir(&mut icx, type_);
+                                // impls do not yet have generic params, but act as if they did so
+                                // we can reuse logic
+                                let scheme = self.assoc_item_scheme(
+                                    &mut icx,
+                                    *parent_def_id,
+                                    // No generic params for assoc types yet, so pass empty vec
+                                    ThinVec::new(),
+                                    body,
+                                );
+                                self.item_schemes.insert(def_id, scheme);
+                            }
+                            _ => {
+                                todo!("impl assoc type for other parent kinds (e.g. struct)");
+                            }
+                        }
                     }
                 },
                 OwnerNode::Crate => {}
@@ -181,6 +185,42 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
+        }
+    }
+
+    fn assoc_item_scheme(
+        &self,
+        icx: &mut InferCtx,
+        parent_def_id: DefId,
+        mut scheme_vars: ThinVec<TyVarId>,
+        body: Ty,
+    ) -> Scheme {
+        let parent_info = self
+            .coherence
+            .generic_params
+            .get(&parent_def_id)
+            .expect("assoc item parent has generic params");
+        let parent_vars: ThinVec<TyVarId> = parent_info
+            .hir_ids
+            .iter()
+            .map(|hir_id| {
+                *icx.hir_id_to_ty_var
+                    .get(hir_id)
+                    .expect("parent generic param registered")
+            })
+            .collect();
+        let parent_params: ThinVec<Ty> = parent_vars.iter().map(|&v| Ty::Var(v)).collect();
+        scheme_vars = parent_vars.into_iter().chain(scheme_vars).collect();
+        let body = fold_ty(&body, &mut |ty| match ty {
+            Ty::Adt(id, None) if id == parent_def_id => Ty::Adt(
+                id,
+                (!parent_params.is_empty()).then_some(parent_params.clone()),
+            ),
+            t => t,
+        });
+        Scheme {
+            vars: scheme_vars,
+            body,
         }
     }
 

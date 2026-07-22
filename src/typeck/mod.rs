@@ -158,6 +158,8 @@ pub struct CoherenceTable {
     pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
     /// maps (assoc item def id) -> (parent struct/trait def id)
     pub assoc_to_parent: FxHashMap<DefId, DefId>,
+    /// maps (assoc type def id) -> default HIR type
+    pub assoc_type_defaults: FxHashMap<DefId, Option<hir::Ty>>,
 }
 
 #[derive(Debug, Clone, Default)]

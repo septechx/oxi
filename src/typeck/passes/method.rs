@@ -1,4 +1,4 @@
-use crate::hir::{DefId, ItemKind, OwnerNode};
+use crate::hir::{DefId, DefKind, ItemKind, OwnerNode};
 use crate::typeck::Typeck;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -22,12 +22,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let def_id = DefId(i as u32);
             let entry = self.inherent_methods.entry(def_id).or_default();
             for &item in items {
-                entry.insert(
-                    self.resolver.defs[item.0 as usize]
-                        .name
-                        .expect("item has name"),
-                    item,
-                );
+                if self.resolver.def(item).kind != DefKind::AssocFn {
+                    continue;
+                }
+                entry.insert(self.resolver.def(item).name.expect("item has name"), item);
             }
         }
     }
@@ -50,12 +48,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 };
                 let entry = self.trait_methods.entry(*struct_def_id).or_default();
                 for &item in items {
+                    if self.resolver.def(item).kind != DefKind::AssocFn {
+                        continue;
+                    }
                     entry
-                        .entry(
-                            self.resolver.defs[item.0 as usize]
-                                .name
-                                .expect("item has name"),
-                        )
+                        .entry(self.resolver.def(item).name.expect("item has name"))
                         .or_default()
                         .push((*trait_def_id, item));
                 }
