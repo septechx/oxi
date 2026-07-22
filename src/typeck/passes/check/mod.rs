@@ -252,6 +252,7 @@ impl<'a, 'b, 'ctx, 'res> BodyChecker<'a, 'b, 'ctx, 'res> {
                                     found = args.len(),
                                 },
                             );
+                            return Ty::Error;
                         }
                         let mapping: FxHashMap<TyVarId, Ty> = scheme
                             .vars
