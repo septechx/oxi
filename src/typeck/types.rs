@@ -83,7 +83,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
-    /// Resolve `QPath::TypeRelative` in a trait to a `Ty::Projection`
+    /// Resolve `QPath::TypeRelative` to a `Ty::Projection`
     fn resolve_type_relative_projection(
         &self,
         icx: &mut InferCtx,
@@ -108,28 +108,50 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             QPath::TypeRelative { .. } => return Ty::Error,
         };
 
-        let Ty::Adt(trait_def_id, _) = &qself_ty else {
+        let Ty::Adt(qself_def_id, qself_generic_args) = &qself_ty else {
             return Ty::Error;
         };
 
-        if self.resolver.def(*trait_def_id).kind != DefKind::Trait {
-            return Ty::Error;
-        }
-
         let assoc_name = segment.ident.value;
-        let Some(assoc_def_id) = self.find_assoc_type(*trait_def_id, assoc_name) else {
-            return Ty::Error;
+
+        let (trait_def_id, assoc_def_id) = match self.resolver.def(*qself_def_id).kind {
+            DefKind::Trait => match self.find_assoc_type(*qself_def_id, assoc_name) {
+                Some(assoc_def_id) => (*qself_def_id, assoc_def_id),
+                None => return Ty::Error,
+            },
+            DefKind::Struct => {
+                match self.find_trait_assoc_type_for_struct(*qself_def_id, assoc_name) {
+                    Some(result) => result,
+                    None => return Ty::Error,
+                }
+            }
+            _ => return Ty::Error,
         };
 
         Ty::Projection {
-            trait_def_id: *trait_def_id,
+            trait_def_id,
             assoc_def_id,
-            self_ty: Box::new(qself_ty),
+            self_ty: Box::new(Ty::Adt(*qself_def_id, qself_generic_args.clone())),
             generic_args: segment
                 .generic_args
                 .as_ref()
                 .map(|args| args.iter().map(|ty| self.ty_from_hir(icx, ty)).collect()),
         }
+    }
+
+    fn find_trait_assoc_type_for_struct(
+        &self,
+        struct_def_id: DefId,
+        assoc_name: Symbol,
+    ) -> Option<(DefId, DefId)> {
+        for &(trait_id, impl_struct_id) in self.coherence.impls.keys() {
+            if impl_struct_id == struct_def_id
+                && let Some(assoc_def_id) = self.find_assoc_type(trait_id, assoc_name)
+            {
+                return Some((trait_id, assoc_def_id));
+            }
+        }
+        None
     }
 
     fn find_assoc_type(&self, parent: DefId, name: Symbol) -> Option<DefId> {

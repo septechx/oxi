@@ -81,6 +81,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             adjustments: &mut adjustments,
             env: ScopeEnv::new(),
             module_id: ModuleId(0),
+            current_assoc_types: FxHashMap::default(),
         };
 
         for (def_id, owner, module_id) in owners.iter() {
@@ -111,11 +112,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
                     AssocItemKind::Fn(fun) => {
-                        if let Some(&parent_def_id) =
-                            checker.typeck.coherence.assoc_to_parent.get(def_id)
-                        {
-                            checker.register_if_generic_def(parent_def_id);
-                        }
+                        let parent_def_id = checker
+                            .typeck
+                            .coherence
+                            .assoc_to_parent
+                            .get(def_id)
+                            .copied()
+                            .expect("assoc item has parent");
+                        checker.register_if_generic_def(parent_def_id);
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
                             && let Some(body) = info.nodes.body(body_id)
@@ -123,7 +127,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             checker.check_fn_body(&fun.decl, body);
                         }
                     }
-                    AssocItemKind::Type { .. } => {}
+                    AssocItemKind::Type { .. } => {
+                        let parent_def_id = checker
+                            .typeck
+                            .coherence
+                            .assoc_to_parent
+                            .get(def_id)
+                            .copied()
+                            .expect("assoc item has parent");
+                        checker.current_assoc_types = checker.compute_assoc_types(parent_def_id);
+                    }
                 },
                 OwnerNode::Crate => {}
             }
@@ -207,6 +220,7 @@ struct BodyChecker<'a, 'ctx, 'hir, 'res> {
     local_schemes: &'a mut FxHashMap<HirId, Scheme>,
     adjustments: &'a mut FxHashMap<HirId, Vec<Adjustment>>,
     env: ScopeEnv,
+    current_assoc_types: FxHashMap<Symbol, Ty>,
 }
 
 impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
@@ -233,6 +247,24 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     fn ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> Ty {
         let ty = self.typeck.ty_from_hir(self.icx, hir_ty);
         self.normalize_aliases(ty, hir_ty.span)
+    }
+
+    pub fn compute_assoc_types(&self, parent_def_id: DefId) -> FxHashMap<Symbol, Ty> {
+        let mut assoc_types = FxHashMap::default();
+        if self.typeck.resolver.def(parent_def_id).kind == DefKind::Impl {
+            for (&item_def_id, &item_parent) in &self.typeck.coherence.assoc_to_parent {
+                if item_parent == parent_def_id {
+                    let def = self.typeck.resolver.def(item_def_id);
+                    if def.kind == DefKind::AssocType
+                        && let Some(name) = def.name
+                        && let Some(scheme) = self.typeck.item_schemes.get(&item_def_id)
+                    {
+                        assoc_types.insert(name, scheme.body.clone());
+                    }
+                }
+            }
+        }
+        assoc_types
     }
 
     pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> Ty {
@@ -269,6 +301,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     self.normalize_aliases(resolved, span)
                 } else {
                     Ty::Adt(def_id, generic_args)
+                }
+            }
+            Ty::Projection { assoc_def_id, .. } => {
+                let def = &self.typeck.resolver.defs[assoc_def_id.0 as usize];
+                if let Some(name) = def.name
+                    && let Some(concrete) = self.current_assoc_types.get(&name)
+                {
+                    concrete.clone()
+                } else {
+                    ty
                 }
             }
             ty => ty,
