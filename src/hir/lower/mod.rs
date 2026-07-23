@@ -2,6 +2,8 @@ mod expr;
 mod item;
 mod stmt;
 
+use thin_vec::ThinVec;
+
 use crate::ast::{self, NodeId};
 use crate::diag_params;
 use crate::errors::builders;
@@ -157,6 +159,25 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             }
             ast::TypeKind::Tuple(elements) => {
                 TyKind::Tuple(elements.iter().map(|e| self.lower_type(e)).collect())
+            }
+            ast::TypeKind::Projection {
+                base,
+                trait_,
+                assoc,
+                generic_args,
+            } => {
+                let base = Box::new(self.lower_type(base));
+                let generic_args = generic_args.as_ref().map(|args| {
+                    args.iter()
+                        .map(|t| self.lower_type(t))
+                        .collect::<ThinVec<_>>()
+                });
+                TyKind::Projection {
+                    base,
+                    trait_: self.lower_qpath(&trait_.0, trait_.1),
+                    assoc: *assoc,
+                    generic_args,
+                }
             }
             ast::TypeKind::Infer => TyKind::Infer,
             ast::TypeKind::Never => TyKind::Never,

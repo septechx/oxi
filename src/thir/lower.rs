@@ -662,7 +662,7 @@ impl<'a> ThirLowerer<'a> {
     }
 }
 
-// TODO: We probably should be using typeck resolts for this
+// FIXME: This function is never called at runtime, remove it ASAP
 fn hir_ty_to_ty(
     hir_ty: &hir::Ty,
     hir_id_to_ty_var: &FxHashMap<HirId, TyVarId>,
@@ -753,6 +753,9 @@ fn hir_ty_to_ty(
             .get(hir_id)
             .map(|&ty_var| Ty::Var(ty_var))
             .unwrap_or(Ty::Error),
+        hir::TyKind::Projection { .. } => {
+            unimplemented!("Not yet implemented since this function will be removed")
+        }
     };
     assert!(!ty.is_error());
     ty

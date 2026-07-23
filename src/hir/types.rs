@@ -414,6 +414,28 @@ impl Ty {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            TyKind::Projection {
+                base,
+                trait_,
+                assoc,
+                generic_args,
+            } => format!(
+                "<{} as {}>::{}{}",
+                base.display(ctx),
+                trait_.display(ctx),
+                ctx.interner.lookup(assoc.value),
+                if let Some(args) = generic_args {
+                    format!(
+                        "::<{}>",
+                        args.iter()
+                            .map(|t| t.display(ctx))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    String::new()
+                }
+            ),
             TyKind::Infer => "_".to_string(),
             TyKind::Never => "!".to_string(),
         }
@@ -441,6 +463,13 @@ pub enum TyKind {
     },
     /// Tuple type: (T, T, ...)
     Tuple(ThinVec<Ty>),
+    /// Projection type: <T as Trait>::Assoc
+    Projection {
+        base: Box<Ty>,
+        trait_: QPath,
+        assoc: Ident,
+        generic_args: Option<ThinVec<Ty>>,
+    },
     /// Inferred type
     Infer,
     /// Never type: !

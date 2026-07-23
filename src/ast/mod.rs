@@ -277,6 +277,28 @@ impl Type {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            TypeKind::Projection {
+                base,
+                trait_,
+                assoc,
+                generic_args,
+            } => format!(
+                "<{} as {}>::{}{}",
+                base.display(ctx),
+                trait_.0.display(ctx),
+                ctx.interner.lookup(assoc.value),
+                if let Some(args) = generic_args {
+                    format!(
+                        "::<{}>",
+                        args.iter()
+                            .map(|t| t.display(ctx))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    String::new()
+                }
+            ),
             TypeKind::Infer => "_".to_string(),
             TypeKind::Never => "!".to_string(),
         }
@@ -294,6 +316,12 @@ pub enum TypeKind {
         ret: Box<Type>,
     },
     Tuple(ThinVec<Type>),
+    Projection {
+        base: Box<Type>,
+        trait_: (Path, NodeId),
+        assoc: Ident,
+        generic_args: Option<ThinVec<Type>>,
+    },
     Infer,
     Never,
 }

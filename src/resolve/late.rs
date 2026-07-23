@@ -560,6 +560,20 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
             TypeKind::Tuple(elements) => {
                 elements.visit(self);
             }
+            TypeKind::Projection {
+                base,
+                trait_,
+                generic_args,
+                ..
+            } => {
+                if let Some(generic_args) = generic_args {
+                    for ty in generic_args {
+                        ty.visit(self);
+                    }
+                }
+                base.visit(self);
+                self.resolve_path(&trait_.0, trait_.1);
+            }
             TypeKind::Infer => {}
             TypeKind::Never => {}
         }

@@ -672,6 +672,14 @@ impl Visitable for Type {
                 TypeKind::Tuple(elements) => {
                     elements.visit(visitor);
                 }
+                TypeKind::Projection {
+                    base, generic_args, ..
+                } => {
+                    base.visit(visitor);
+                    if let Some(args) = generic_args {
+                        args.visit(visitor);
+                    }
+                }
                 TypeKind::Infer => {
                     // Leaf
                 }
@@ -702,6 +710,14 @@ impl Visitable for Type {
                 }
                 TypeKind::Tuple(elements) => {
                     elements.visit_mut(visitor);
+                }
+                TypeKind::Projection {
+                    base, generic_args, ..
+                } => {
+                    base.visit_mut(visitor);
+                    if let Some(args) = generic_args {
+                        args.visit_mut(visitor);
+                    }
                 }
                 TypeKind::Infer => {
                     // Leaf

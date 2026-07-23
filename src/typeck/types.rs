@@ -80,6 +80,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
                 Ty::Var(*ty_var)
             }
+            TyKind::Projection { .. } => unimplemented!("Not yet implemented"),
         }
     }
 

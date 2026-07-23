@@ -67,6 +67,7 @@ impl NodeCounts {
             TypeKind::FixedArray(..) => "FixedArrayType",
             TypeKind::Function { .. } => "FunctionType",
             TypeKind::Tuple(_) => "TupleType",
+            TypeKind::Projection { .. } => "ProjectionType",
             TypeKind::Infer => "Infer",
             TypeKind::Never => "Never",
         };
