@@ -305,15 +305,31 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     Ty::Adt(def_id, generic_args)
                 }
             }
-            Ty::Projection { assoc_def_id, .. } => {
-                let def = &self.typeck.resolver.defs[assoc_def_id.0 as usize];
-                if let Some(name) = def.name
-                    && let Some(concrete) = self.current_assoc_types.get(&name)
-                {
-                    concrete.clone()
-                } else {
-                    ty
+            Ty::Projection {
+                trait_def_id,
+                assoc_def_id,
+                self_ty,
+                ..
+            } => {
+                if let Some(name) = self.typeck.resolver.def(assoc_def_id).name {
+                    if let Some(concrete) = self.current_assoc_types.get(&name) {
+                        return concrete.clone();
+                    }
+                    if let Ty::Adt(self_def_id, _) = self_ty.as_ref()
+                        && let Some(impl_def_ids) = self
+                            .typeck
+                            .coherence
+                            .impls
+                            .get(&(trait_def_id, *self_def_id))
+                        && let Some(impl_def_id) = impl_def_ids.first()
+                    {
+                        let assoc_types = self.compute_assoc_types(*impl_def_id);
+                        if let Some(concrete) = assoc_types.get(&name) {
+                            return concrete.clone();
+                        }
+                    }
                 }
+                unreachable!()
             }
             ty => ty,
         })
