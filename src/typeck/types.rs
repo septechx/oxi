@@ -98,6 +98,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let Res::Def(trait_def_id) = path.res else {
                     return Ty::Error;
                 };
+                if self.resolver.def(trait_def_id).kind != DefKind::Trait {
+                    return Ty::Error;
+                }
                 let assoc_def_id = match self.find_assoc_type(trait_def_id, assoc_name) {
                     Some(id) => id,
                     None => return Ty::Error,
