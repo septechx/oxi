@@ -65,7 +65,7 @@ fn parse_path_segment(parser: &mut Parser) -> Result<PathSegment> {
     })
 }
 
-fn parse_generic_args(parser: &mut Parser) -> Result<(ThinVec<Type>, Span)> {
+pub fn parse_generic_args(parser: &mut Parser) -> Result<(ThinVec<Type>, Span)> {
     parser.expect(TokenKind::Less)?;
     let mut args = ThinVec::new();
     while parser.current_token().kind != TokenKind::More {

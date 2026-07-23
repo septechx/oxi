@@ -1,6 +1,7 @@
 mod early;
 mod late;
 mod path;
+mod prepass;
 
 mod mod_tree;
 pub use mod_tree::{ModuleTree, build_module_tree};

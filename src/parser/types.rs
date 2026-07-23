@@ -6,15 +6,16 @@ use thin_vec::ThinVec;
 
 use colored::Colorize;
 
-use crate::ast::{Mutability, NodeId, Type, TypeKind};
+use crate::ast::{ExprKind, Mutability, NodeId, Type, TypeKind};
 use crate::diag_params;
 use crate::errors::builders;
 use crate::lexer::token::TokenKind::{self, self as T};
+use crate::parser::expr::parse_expr;
 use crate::parser::lookups::{
     BindingPower::{self, self as BP},
     BpLookup,
 };
-use crate::parser::utils::parse_path;
+use crate::parser::utils::{parse_generic_args, parse_path};
 use crate::parser::{Parser, diag};
 use crate::span::Span;
 
@@ -55,6 +56,7 @@ pub fn create_token_type_lookups() {
         type_nud(T::OpenBracket, parse_array_type, &mut nud_lu);
         type_nud(T::OpenParen, parse_parenthesis_type, &mut nud_lu);
         type_nud(T::Amp, parse_pointer_type, &mut nud_lu);
+        type_nud(T::Less, parse_projection_type, &mut nud_lu);
 
         let _ = TYPE_BP_LU.set(bp_lu);
         let _ = TYPE_NUD_LU.set(nud_lu);
@@ -138,6 +140,79 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
     }
 }
 
+fn parse_parenthesis_type(parser: &mut Parser) -> Result<Type> {
+    let start_token = parser.advance();
+
+    let mut types = ThinVec::new();
+
+    while parser.current_token().kind != TokenKind::CloseParen {
+        types.push(parse_type(parser, BindingPower::DefaultBp)?);
+
+        if parser.current_token().kind == TokenKind::Comma {
+            parser.advance();
+        } else if parser.current_token().kind != TokenKind::CloseParen {
+            bail!("Expected comma or closing parenthesis in type".red().bold());
+        }
+    }
+    let close_token = parser.expect(TokenKind::CloseParen)?;
+
+    if parser.current_token().kind == TokenKind::Arrow {
+        parser.expect(TokenKind::Arrow)?;
+        let return_type = parse_type(parser, BindingPower::DefaultBp)?;
+        let end_span = return_type.span;
+
+        Ok(Type {
+            kind: TypeKind::Function {
+                params: types,
+                ret: Box::new(return_type),
+            },
+            span: Span::new(start_token.span.start(), end_span.end()),
+            node_id: NodeId::default(),
+        })
+    } else {
+        Ok(Type {
+            kind: TypeKind::Tuple(types),
+            span: Span::new(start_token.span.start(), close_token.span.end()),
+            node_id: NodeId::default(),
+        })
+    }
+}
+
+fn parse_projection_type(parser: &mut Parser) -> Result<Type> {
+    let start_token = parser.advance();
+
+    let base = parse_type(parser, BindingPower::DefaultBp)?;
+    parser.expect(T::As)?;
+    let trait_ = match parse_expr(parser, BindingPower::Primary)?.kind {
+        ExprKind::Path(path) => path,
+        _ => bail!("Expected symbol for struct instantiation"),
+    };
+    parser.expect(T::More)?;
+    parser.expect(T::ColonColon)?;
+    let assoc = parser.expect_identifier()?;
+
+    let mut span_end = assoc.span.end();
+    let generic_args = if parser.current_token().kind == T::ColonColon {
+        parser.expect(T::ColonColon)?;
+        let (generic_args, end_span) = parse_generic_args(parser)?;
+        span_end = end_span.end();
+        Some(generic_args)
+    } else {
+        None
+    };
+
+    Ok(Type {
+        kind: TypeKind::Projection {
+            base: Box::new(base),
+            trait_: (trait_, NodeId::default()),
+            assoc,
+            generic_args,
+        },
+        node_id: NodeId::default(),
+        span: Span::new(start_token.span.start(), span_end),
+    })
+}
+
 pub fn parse_type(parser: &mut Parser, bp: BindingPower) -> Result<Type> {
     let token = parser.current_token();
 
@@ -189,43 +264,4 @@ pub fn parse_type(parser: &mut Parser, bp: BindingPower) -> Result<Type> {
     }
 
     Ok(left)
-}
-
-fn parse_parenthesis_type(parser: &mut Parser) -> Result<Type> {
-    let start_token = parser.current_token();
-
-    let mut types = ThinVec::new();
-    parser.advance();
-
-    while parser.current_token().kind != TokenKind::CloseParen {
-        types.push(parse_type(parser, BindingPower::DefaultBp)?);
-
-        if parser.current_token().kind == TokenKind::Comma {
-            parser.advance();
-        } else if parser.current_token().kind != TokenKind::CloseParen {
-            bail!("Expected comma or closing parenthesis in type".red().bold());
-        }
-    }
-    let close_token = parser.expect(TokenKind::CloseParen)?;
-
-    if parser.current_token().kind == TokenKind::Arrow {
-        parser.expect(TokenKind::Arrow)?;
-        let return_type = parse_type(parser, BindingPower::DefaultBp)?;
-        let end_span = return_type.span;
-
-        Ok(Type {
-            kind: TypeKind::Function {
-                params: types,
-                ret: Box::new(return_type),
-            },
-            span: Span::new(start_token.span.start(), end_span.end()),
-            node_id: NodeId::default(),
-        })
-    } else {
-        Ok(Type {
-            kind: TypeKind::Tuple(types),
-            span: Span::new(start_token.span.start(), close_token.span.end()),
-            node_id: NodeId::default(),
-        })
-    }
 }
