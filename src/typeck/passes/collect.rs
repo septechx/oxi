@@ -150,12 +150,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .expect("assoc item has parent");
 
                         match self.resolver.def(*parent_def_id).kind {
-                            DefKind::Trait => {
-                                // Type is abstract and can only be used in a projection, so only store the default type
-                                self.coherence
-                                    .assoc_type_defaults
-                                    .insert(def_id, type_.clone());
-                            }
+                            DefKind::Trait => {}
                             DefKind::Impl => {
                                 let Some(type_) = type_ else {
                                     unreachable!("impl assoc type must have a type");

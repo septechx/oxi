@@ -34,6 +34,10 @@ message = "Field `{field}` has already been defined in struct `{struct}`"
 level = "Error"
 message = "Expected trait method to not have a body"
 
+[trait_assoc_type_has_body]
+level = "Error"
+message = "Expected trait associated type to not have a body"
+
 [expected_term_or_body_after_signature]
 level = "Fatal"
 message = "Expected function body or terminator after signature"

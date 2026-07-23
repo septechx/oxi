@@ -292,6 +292,15 @@ pub fn parse_trait_decl_item(
         match parser.current_token().kind {
             TokenKind::Type => {
                 let mut assoc = parse_type_assoc_item(parser)?;
+                if matches!(&assoc.kind, AssocItemKind::Type { type_: Some(_), .. }) {
+                    builders::emit_at(
+                        parser.ctx,
+                        assoc.span,
+                        parser.current_token().module_id,
+                        diag::TraitAssocTypeHasBody,
+                        diag_params! {},
+                    );
+                }
                 assoc.visibility = Visibility::Private;
                 items.push(assoc);
             }
