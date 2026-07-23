@@ -60,7 +60,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     .collect(),
             ),
             TyKind::Path(qpath) => match qpath {
-                QPath::Resolved(path) => match path.res {
+                QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                         let generic_args = self.ty_hir_generic_args(icx, path);
                         Ty::Adt(def_id, generic_args)
@@ -80,7 +80,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
                 Ty::Var(*ty_var)
             }
-            TyKind::Projection { .. } => todo!(),
         }
     }
 
@@ -91,16 +90,45 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         qself: &QPath,
         segment: &hir::PathSegment,
     ) -> Ty {
-        let qself_ty = match qself {
-            QPath::Resolved(path) => match path.res {
+        let assoc_name = segment.ident.value;
+
+        let (trait_def_id, assoc_def_id, self_ty) = match qself {
+            // <Struct as Trait>::AssocType: explicit trait ref
+            QPath::Resolved(Some(self_ty), path) => {
+                let Res::Def(trait_def_id) = path.res else {
+                    return Ty::Error;
+                };
+                let assoc_def_id = match self.find_assoc_type(trait_def_id, assoc_name) {
+                    Some(id) => id,
+                    None => return Ty::Error,
+                };
+                (trait_def_id, assoc_def_id, self.ty_from_hir(icx, self_ty))
+            }
+            // `Struct::AssocType`: struct in impl body context
+            QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     let generic_args = self.ty_hir_generic_args(icx, path);
-                    Ty::Adt(def_id, generic_args)
+                    let self_ty = Ty::Adt(def_id, generic_args);
+                    match self.resolver.def(def_id).kind {
+                        DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
+                            Some(assoc_def_id) => (def_id, assoc_def_id, self_ty),
+                            None => return Ty::Error,
+                        },
+                        DefKind::Struct => {
+                            match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
+                                Some((trait_id, assoc_id)) => (trait_id, assoc_id, self_ty),
+                                None => return Ty::Error,
+                            }
+                        }
+                        _ => return Ty::Error,
+                    }
                 }
                 Res::GenericParam(hir_id) => {
                     let ty_var = icx.hir_id_to_ty_var.get(&hir_id);
                     match ty_var {
-                        Some(&var) => Ty::Var(var),
+                        Some(&var) => {
+                            return Ty::Var(var);
+                        }
                         None => return Ty::Error,
                     }
                 }
@@ -109,30 +137,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             QPath::TypeRelative { .. } => return Ty::Error,
         };
 
-        let Ty::Adt(qself_def_id, qself_generic_args) = &qself_ty else {
-            return Ty::Error;
-        };
-
-        let assoc_name = segment.ident.value;
-
-        let (trait_def_id, assoc_def_id) = match self.resolver.def(*qself_def_id).kind {
-            DefKind::Trait => match self.find_assoc_type(*qself_def_id, assoc_name) {
-                Some(assoc_def_id) => (*qself_def_id, assoc_def_id),
-                None => return Ty::Error,
-            },
-            DefKind::Struct => {
-                match self.find_trait_assoc_type_for_struct(*qself_def_id, assoc_name) {
-                    Some(result) => result,
-                    None => return Ty::Error,
-                }
-            }
-            _ => return Ty::Error,
-        };
-
         Ty::Projection {
             trait_def_id,
             assoc_def_id,
-            self_ty: Box::new(Ty::Adt(*qself_def_id, qself_generic_args.clone())),
+            self_ty: Box::new(self_ty),
             generic_args: segment
                 .generic_args
                 .as_ref()

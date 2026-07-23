@@ -614,7 +614,7 @@ impl<'a> ThirLowerer<'a> {
     }
 
     fn lower_path(&mut self, qpath: &QPath, ty: &Ty, span: Span, hir_id: HirId) -> ExprId {
-        let QPath::Resolved(path) = qpath else {
+        let QPath::Resolved(_, path) = qpath else {
             unreachable!();
         };
         match &path.res {

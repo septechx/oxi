@@ -514,7 +514,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     fn check_path(&mut self, qpath: &QPath) -> Ty {
         match qpath {
-            QPath::Resolved(path) => match &path.res {
+            QPath::Resolved(_, path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     let scheme = match self.typeck.item_schemes.get(def_id) {
                         Some(scheme) => scheme.clone(),
@@ -637,7 +637,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     fn qpath_recv_ty(&mut self, qpath: &QPath) -> Option<Ty> {
         let base = match qpath {
-            QPath::Resolved(path) => match &path.res {
+            QPath::Resolved(_, path) => match &path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     match self.typeck.item_schemes.get(def_id).cloned() {
                         Some(scheme) => {

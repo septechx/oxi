@@ -414,28 +414,6 @@ impl Ty {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            TyKind::Projection {
-                base,
-                trait_,
-                assoc,
-                generic_args,
-            } => format!(
-                "<{} as {}>::{}{}",
-                base.display(ctx),
-                trait_.display(ctx),
-                ctx.interner.lookup(assoc.value),
-                if let Some(args) = generic_args {
-                    format!(
-                        "::<{}>",
-                        args.iter()
-                            .map(|t| t.display(ctx))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                } else {
-                    String::new()
-                }
-            ),
             TyKind::Infer => "_".to_string(),
             TyKind::Never => "!".to_string(),
         }
@@ -463,13 +441,6 @@ pub enum TyKind {
     },
     /// Tuple type: (T, T, ...)
     Tuple(ThinVec<Ty>),
-    /// Projection type: <T as Trait>::Assoc
-    Projection {
-        base: QPath,
-        trait_: QPath,
-        assoc: Ident,
-        generic_args: Option<ThinVec<Ty>>,
-    },
     /// Inferred type
     Infer,
     /// Never type: !
@@ -518,8 +489,8 @@ impl PathSegment {
 /// A path that may still have associated-item suffixes to resolve during type checking.
 #[derive(Debug, Clone)]
 pub enum QPath {
-    /// Fully resolved path
-    Resolved(Path),
+    /// Fully resolved path, optionally with a Self type for `<Self as Trait>` qselfs
+    Resolved(Option<Box<Ty>>, Path),
     /// Type-relative path: `T::Assoc`
     TypeRelative {
         qself: Box<QPath>,
@@ -530,7 +501,13 @@ pub enum QPath {
 impl QPath {
     pub fn display(&self, ctx: &Ctx) -> String {
         match self {
-            QPath::Resolved(path) => path.display(ctx),
+            QPath::Resolved(self_ty, path) => {
+                if let Some(self_ty) = self_ty {
+                    format!("<{} as {}>", self_ty.display(ctx), path.display(ctx))
+                } else {
+                    path.display(ctx)
+                }
+            }
             QPath::TypeRelative { qself, segment } => {
                 format!("{}::{}", qself.display(ctx), segment.display(ctx))
             }

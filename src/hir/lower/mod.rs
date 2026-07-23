@@ -37,7 +37,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let unresolved = partial.unresolved_segments();
 
         if unresolved == 0 {
-            return QPath::Resolved(self.lower_resolved_path(path, partial.base_res()));
+            return QPath::Resolved(None, self.lower_resolved_path(path, partial.base_res()));
         }
 
         let start = path.segments.len() - unresolved;
@@ -49,7 +49,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
 
         let tail = &path.segments[start..];
         tail.iter()
-            .fold(QPath::Resolved(resolved), |qself, segment| {
+            .fold(QPath::Resolved(None, resolved), |qself, segment| {
                 QPath::TypeRelative {
                     qself: Box::new(qself),
                     segment: self.lower_path_segment(segment),
@@ -112,7 +112,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                     ),
                     _ => {
                         let qpath = self.lower_qpath(path, ty.node_id);
-                        if let QPath::Resolved(resolved) = &qpath
+                        if let QPath::Resolved(_, resolved) = &qpath
                             && let Res::Def(def_id) = resolved.res
                             && self.resolver.defs[def_id.0 as usize].kind == DefKind::Trait
                             && let Some(module_id) = self
@@ -171,12 +171,25 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                         .map(|t| self.lower_type(t))
                         .collect::<ThinVec<_>>()
                 });
-                TyKind::Projection {
-                    base: self.lower_qpath(&base.0, base.1),
-                    trait_: self.lower_qpath(&trait_.0, trait_.1),
-                    assoc: *assoc,
+                let base_qpath = self.lower_qpath(&base.0, base.1);
+                let trait_qpath = self.lower_qpath(&trait_.0, trait_.1);
+                let base_ty = Ty {
+                    hir_id: self.next_hir_id(),
+                    kind: TyKind::Path(base_qpath),
+                    span: ty.span,
+                };
+                let QPath::Resolved(_, trait_path) = trait_qpath else {
+                    unreachable!()
+                };
+                let qself = QPath::Resolved(Some(Box::new(base_ty)), trait_path);
+                let segment = PathSegment {
+                    ident: *assoc,
                     generic_args,
-                }
+                };
+                TyKind::Path(QPath::TypeRelative {
+                    qself: Box::new(qself),
+                    segment,
+                })
             }
             ast::TypeKind::Infer => TyKind::Infer,
             ast::TypeKind::Never => TyKind::Never,
