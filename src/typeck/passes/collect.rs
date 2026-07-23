@@ -174,7 +174,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 self.item_schemes.insert(def_id, scheme);
                             }
                             _ => {
-                                todo!("impl assoc type for other parent kinds (e.g. struct)");
+                                let Some(type_) = type_ else {
+                                    unreachable!("struct assoc type must have a type");
+                                };
+                                let body = self.ty_from_hir(&mut icx, type_);
+                                let scheme = self.assoc_item_scheme(
+                                    &mut icx,
+                                    *parent_def_id,
+                                    // No generic params for assoc types yet, so pass empty vec
+                                    ThinVec::new(),
+                                    body,
+                                );
+                                self.item_schemes.insert(def_id, scheme);
                             }
                         }
                     }

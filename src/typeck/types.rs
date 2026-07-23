@@ -115,6 +115,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             None => return Ty::Error,
                         },
                         DefKind::Struct => {
+                            if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {
+                                if let Some(scheme) = self.item_schemes.get(&assoc_def_id) {
+                                    return scheme.body.clone();
+                                }
+                                return Ty::Error;
+                            }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
                                 Some((trait_id, assoc_id)) => (trait_id, assoc_id, self_ty),
                                 None => return Ty::Error,
