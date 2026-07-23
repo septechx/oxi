@@ -284,7 +284,7 @@ impl Type {
                 generic_args,
             } => format!(
                 "<{} as {}>::{}{}",
-                base.display(ctx),
+                base.0.display(ctx),
                 trait_.0.display(ctx),
                 ctx.interner.lookup(assoc.value),
                 if let Some(args) = generic_args {
@@ -317,7 +317,7 @@ pub enum TypeKind {
     },
     Tuple(ThinVec<Type>),
     Projection {
-        base: Box<Type>,
+        base: (Path, NodeId),
         trait_: (Path, NodeId),
         assoc: Ident,
         generic_args: Option<ThinVec<Type>>,

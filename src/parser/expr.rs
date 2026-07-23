@@ -227,7 +227,7 @@ pub fn parse_struct_instantiation_expr(
 ) -> Result<Expr> {
     let struct_path = match left.kind {
         ExprKind::Path(path) => path,
-        _ => bail!("Expected symbol for struct instantiation"),
+        _ => bail!("Expected path for struct instantiation"),
     };
 
     parser.expect(TokenKind::OpenCurly)?;

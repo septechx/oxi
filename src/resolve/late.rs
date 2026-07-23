@@ -571,7 +571,7 @@ impl<'a, 'res, 'ctx> Visitor for LateResolutionVisitor<'a, 'res, 'ctx> {
                         ty.visit(self);
                     }
                 }
-                base.visit(self);
+                self.resolve_path(&base.0, base.1);
                 self.resolve_path(&trait_.0, trait_.1);
             }
             TypeKind::Infer => {}

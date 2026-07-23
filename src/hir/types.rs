@@ -465,7 +465,7 @@ pub enum TyKind {
     Tuple(ThinVec<Ty>),
     /// Projection type: <T as Trait>::Assoc
     Projection {
-        base: Box<Ty>,
+        base: QPath,
         trait_: QPath,
         assoc: Ident,
         generic_args: Option<ThinVec<Ty>>,

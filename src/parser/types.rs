@@ -181,11 +181,14 @@ fn parse_parenthesis_type(parser: &mut Parser) -> Result<Type> {
 fn parse_projection_type(parser: &mut Parser) -> Result<Type> {
     let start_token = parser.advance();
 
-    let base = parse_type(parser, BindingPower::DefaultBp)?;
+    let base = match parse_expr(parser, BindingPower::Primary)?.kind {
+        ExprKind::Path(path) => path,
+        _ => bail!("Expected path for projection base"),
+    };
     parser.expect(T::As)?;
     let trait_ = match parse_expr(parser, BindingPower::Primary)?.kind {
         ExprKind::Path(path) => path,
-        _ => bail!("Expected symbol for struct instantiation"),
+        _ => bail!("Expected path for projection trait"),
     };
     parser.expect(T::More)?;
     parser.expect(T::ColonColon)?;
@@ -203,7 +206,7 @@ fn parse_projection_type(parser: &mut Parser) -> Result<Type> {
 
     Ok(Type {
         kind: TypeKind::Projection {
-            base: Box::new(base),
+            base: (base, NodeId::default()),
             trait_: (trait_, NodeId::default()),
             assoc,
             generic_args,

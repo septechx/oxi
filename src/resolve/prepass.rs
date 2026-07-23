@@ -119,7 +119,8 @@ impl<'ctx> VisitorMut for NodeIdAssigner<'ctx> {
     fn visit_type(&mut self, ty: &mut Type) -> VisitAction {
         ty.node_id = self.next_node_id();
 
-        if let TypeKind::Projection { trait_, .. } = &mut ty.kind {
+        if let TypeKind::Projection { base, trait_, .. } = &mut ty.kind {
+            base.1 = self.next_node_id();
             trait_.1 = self.next_node_id();
         }
 

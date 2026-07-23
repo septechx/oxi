@@ -166,14 +166,13 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 assoc,
                 generic_args,
             } => {
-                let base = Box::new(self.lower_type(base));
                 let generic_args = generic_args.as_ref().map(|args| {
                     args.iter()
                         .map(|t| self.lower_type(t))
                         .collect::<ThinVec<_>>()
                 });
                 TyKind::Projection {
-                    base,
+                    base: self.lower_qpath(&base.0, base.1),
                     trait_: self.lower_qpath(&trait_.0, trait_.1),
                     assoc: *assoc,
                     generic_args,
