@@ -63,6 +63,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
 
                         for &item_def_id in items {
+                            let def = &self.resolver.def(item_def_id);
+                            if def.kind == DefKind::AssocType
+                                && let Some(name) = def.name
+                            {
+                                self.coherence
+                                    .assoc_type_index
+                                    .insert((def_id, name), item_def_id);
+                            }
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
@@ -105,6 +113,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         self.coherence.register_trait(def_id, methods);
 
                         for &item_def_id in items {
+                            let def = &self.resolver.def(item_def_id);
+                            if def.kind == DefKind::AssocType
+                                && let Some(name) = def.name
+                            {
+                                self.coherence
+                                    .assoc_type_index
+                                    .insert((def_id, name), item_def_id);
+                            }
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
@@ -129,6 +145,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .entry((trait_def_id, struct_def_id))
                                 .or_default()
                                 .push(def_id);
+                            self.coherence
+                                .struct_to_traits
+                                .entry(struct_def_id)
+                                .or_default()
+                                .push(trait_def_id);
                         }
 
                         for &item_def_id in items {

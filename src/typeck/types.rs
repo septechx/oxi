@@ -162,9 +162,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         struct_def_id: DefId,
         assoc_name: Symbol,
     ) -> Option<(DefId, DefId)> {
-        for &(trait_id, impl_struct_id) in self.coherence.impls.keys() {
-            if impl_struct_id == struct_def_id
-                && let Some(assoc_def_id) = self.find_assoc_type(trait_id, assoc_name)
+        for &trait_id in self.coherence.struct_to_traits.get(&struct_def_id)? {
+            if let Some(&assoc_def_id) =
+                self.coherence.assoc_type_index.get(&(trait_id, assoc_name))
             {
                 return Some((trait_id, assoc_def_id));
             }
@@ -173,15 +173,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn find_assoc_type(&self, parent: DefId, name: Symbol) -> Option<DefId> {
-        for (&assoc_def_id, &parent_def_id) in &self.coherence.assoc_to_parent {
-            if parent_def_id == parent {
-                let def = self.resolver.def(assoc_def_id);
-                if def.kind == DefKind::AssocType && def.name == Some(name) {
-                    return Some(assoc_def_id);
-                }
-            }
-        }
-        None
+        self.coherence
+            .assoc_type_index
+            .get(&(parent, name))
+            .copied()
     }
 
     pub(super) fn ty_hir_generic_args(
