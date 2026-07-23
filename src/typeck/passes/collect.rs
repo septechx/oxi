@@ -72,6 +72,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     .insert((def_id, name), item_def_id);
                             }
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
+                            self.coherence
+                                .parent_to_assoc
+                                .entry(def_id)
+                                .or_default()
+                                .push(item_def_id);
                         }
                     }
                     ItemKind::TypeAlias {
@@ -122,6 +127,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     .insert((def_id, name), item_def_id);
                             }
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
+                            self.coherence
+                                .parent_to_assoc
+                                .entry(def_id)
+                                .or_default()
+                                .push(item_def_id);
                         }
                     }
                     ItemKind::Impl {
@@ -154,6 +164,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
                         for &item_def_id in items {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
+                            self.coherence
+                                .parent_to_assoc
+                                .entry(def_id)
+                                .or_default()
+                                .push(item_def_id);
                         }
                     }
                 },
@@ -186,35 +201,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
                         match self.resolver.def(*parent_def_id).kind {
                             DefKind::Trait => {}
-                            DefKind::Impl => {
+                            DefKind::Impl | DefKind::Struct => {
                                 let Some(type_) = type_ else {
-                                    unreachable!("impl assoc type must have a type");
+                                    unreachable!("impl/struct assoc type must have a type");
                                 };
                                 let body = self.ty_from_hir(&mut icx, type_);
-                                // impls do not yet have generic params, but act as if they did so
-                                // we can reuse logic
+                                // impls/structs do not yet have generic params, but act as if
+                                // they did so we can reuse logic
                                 let scheme = self.assoc_item_scheme(
                                     &mut icx,
                                     *parent_def_id,
-                                    // No generic params for assoc types yet, so pass empty vec
                                     ThinVec::new(),
                                     body,
                                 );
                                 self.item_schemes.insert(def_id, scheme);
                             }
                             _ => {
-                                let Some(type_) = type_ else {
-                                    unreachable!("struct assoc type must have a type");
-                                };
-                                let body = self.ty_from_hir(&mut icx, type_);
-                                let scheme = self.assoc_item_scheme(
-                                    &mut icx,
-                                    *parent_def_id,
-                                    // No generic params for assoc types yet, so pass empty vec
-                                    ThinVec::new(),
-                                    body,
-                                );
-                                self.item_schemes.insert(def_id, scheme);
+                                unreachable!("other defs cannot have assoc types");
                             }
                         }
                     }

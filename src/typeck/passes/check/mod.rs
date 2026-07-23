@@ -254,16 +254,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     pub fn compute_assoc_types(&self, parent_def_id: DefId) -> FxHashMap<Symbol, Ty> {
         let mut assoc_types = FxHashMap::default();
-        if self.typeck.resolver.def(parent_def_id).kind == DefKind::Impl {
-            for (&item_def_id, &item_parent) in &self.typeck.coherence.assoc_to_parent {
-                if item_parent == parent_def_id {
-                    let def = self.typeck.resolver.def(item_def_id);
-                    if def.kind == DefKind::AssocType
-                        && let Some(name) = def.name
-                        && let Some(scheme) = self.typeck.item_schemes.get(&item_def_id)
-                    {
-                        assoc_types.insert(name, scheme.body.clone());
-                    }
+        if self.typeck.resolver.def(parent_def_id).kind == DefKind::Impl
+            && let Some(item_ids) = self.typeck.coherence.parent_to_assoc.get(&parent_def_id)
+        {
+            for &item_def_id in item_ids {
+                let def = self.typeck.resolver.def(item_def_id);
+                if def.kind == DefKind::AssocType
+                    && let Some(name) = def.name
+                    && let Some(scheme) = self.typeck.item_schemes.get(&item_def_id)
+                {
+                    assoc_types.insert(name, scheme.body.clone());
                 }
             }
         }
