@@ -73,3 +73,7 @@ message = "Recursive type detected"
 [cannot_index]
 level = "Error"
 message = "Cannot index into non-array type `{type}`"
+
+[unresolved_expression]
+level = "Error"
+message = "Could not resolve expression"

@@ -94,6 +94,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             match &info.nodes.node() {
                 OwnerNode::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
+                        checker.current_assoc_types = FxHashMap::default();
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
                             && let Some(body) = info.nodes.body(body_id)
@@ -102,6 +103,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
                     }
                     ItemKind::Const { ty, body_id, .. } => {
+                        checker.current_assoc_types = FxHashMap::default();
                         if let Some(body_id) = body_id
                             && let Some(body) = info.nodes.body(*body_id)
                         {
@@ -407,7 +409,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     fn check_expr_kind(&mut self, kind: &ExprKind, hir_id: HirId, expr_span: Span) -> Ty {
         match kind {
-            ExprKind::Error => Ty::Error,
+            ExprKind::Error => {
+                builders::emit_at(
+                    self.typeck.ctx,
+                    expr_span,
+                    self.module_id,
+                    diag::UnresolvedExpression,
+                    diag_params! {},
+                );
+                Ty::Error
+            }
             ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
             ExprKind::Path(qpath) => self.check_path(qpath),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
