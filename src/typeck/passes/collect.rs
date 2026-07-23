@@ -148,9 +148,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .assoc_to_parent
                             .get(&def_id)
                             .expect("assoc item has parent");
-                        let parent_kind = self.resolver.def(*parent_def_id).kind;
 
-                        match parent_kind {
+                        match self.resolver.def(*parent_def_id).kind {
                             DefKind::Trait => {
                                 // Type is abstract and can only be used in a projection, so only store the default type
                                 self.coherence
