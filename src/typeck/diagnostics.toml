@@ -77,3 +77,7 @@ message = "Cannot index into non-array type `{type}`"
 [unresolved_expression]
 level = "Error"
 message = "Could not resolve expression"
+
+[unresolved_assoc_type]
+level = "Error"
+message = "Could not resolve associated type"

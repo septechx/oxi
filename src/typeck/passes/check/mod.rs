@@ -330,7 +330,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         }
                     }
                 }
-                unreachable!()
+                builders::emit_at(
+                    self.typeck.ctx,
+                    span,
+                    self.module_id,
+                    diag::UnresolvedAssocType,
+                    diag_params! {},
+                );
+                Ty::Error
             }
             ty => ty,
         })
