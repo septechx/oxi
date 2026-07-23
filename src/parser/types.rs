@@ -7,13 +7,15 @@ use thin_vec::ThinVec;
 use colored::Colorize;
 
 use crate::ast::{Mutability, NodeId, Type, TypeKind};
+use crate::diag_params;
+use crate::errors::builders;
 use crate::lexer::token::TokenKind::{self, self as T};
-use crate::parser::Parser;
 use crate::parser::lookups::{
     BindingPower::{self, self as BP},
     BpLookup,
 };
 use crate::parser::utils::parse_path;
+use crate::parser::{Parser, diag};
 use crate::span::Span;
 
 type TypeNudHandler = fn(&mut Parser) -> Result<Type>;
@@ -137,47 +139,53 @@ fn parse_array_type(parser: &mut Parser) -> Result<Type> {
 }
 
 pub fn parse_type(parser: &mut Parser, bp: BindingPower) -> Result<Type> {
-    let token_kind = parser.current_token().kind;
+    let token = parser.current_token();
 
     let bp_lu = TYPE_BP_LU.get().expect("Type lookups not initialized");
     let nud_lu = TYPE_NUD_LU.get().expect("Type lookups not initialized");
     let led_lu = TYPE_LED_LU.get().expect("Type lookups not initialized");
 
-    let nud_fn = {
-        nud_lu.get(&token_kind).cloned().ok_or_else(|| {
-            anyhow!(
-                format!("Type nud handler expected for token {token_kind:?}")
-                    .red()
-                    .bold()
-            )
-        })?
+    let nud_fn = match nud_lu.get(&token.kind).cloned() {
+        Some(nud_fn) => nud_fn,
+        None => {
+            builders::emit_at(
+                parser.ctx,
+                parser.current_token().span,
+                token.module_id,
+                diag::UnexpectedToken,
+                diag_params! { actual = token.kind },
+            );
+            return Err(anyhow!("Unexpected token"));
+        }
     };
 
     let mut left = nud_fn(parser)?;
 
     loop {
-        let current_bp = {
-            *bp_lu
-                .get(&parser.current_token().kind)
-                .unwrap_or(&BindingPower::DefaultBp)
-        };
+        let current_bp = bp_lu
+            .get(&parser.current_token().kind)
+            .unwrap_or(&BindingPower::DefaultBp);
 
-        if current_bp <= bp {
+        if *current_bp <= bp {
             break;
         }
 
-        let token_kind = parser.current_token().kind;
-        let led_fn = {
-            led_lu.get(&token_kind).cloned().ok_or_else(|| {
-                anyhow!(
-                    format!("Type led handler expected for token {token_kind:?}")
-                        .red()
-                        .bold()
-                )
-            })?
+        let token = parser.current_token();
+        let led_fn = match led_lu.get(&token.kind).cloned() {
+            Some(led_fn) => led_fn,
+            None => {
+                builders::emit_at(
+                    parser.ctx,
+                    parser.current_token().span,
+                    token.module_id,
+                    diag::UnexpectedToken,
+                    diag_params! { actual = token.kind },
+                );
+                return Err(anyhow!("Unexpected token"));
+            }
         };
 
-        left = led_fn(parser, left, current_bp)?;
+        left = led_fn(parser, left, *current_bp)?;
     }
 
     Ok(left)

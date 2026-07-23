@@ -1,5 +1,9 @@
 [unexpected_token]
 level = "Fatal"
+message = "Unexpected token `{actual}`"
+
+[expected_token]
+level = "Fatal"
 message = "Expected `{expected}` but received `{actual}` instead."
 
 [expected_identifier]

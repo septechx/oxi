@@ -16,7 +16,7 @@ pub fn unexpected_token(ctx: &mut Ctx, token: Token, expected: impl std::fmt::Di
         ctx,
         token.span,
         token.module_id,
-        diag::UnexpectedToken,
+        diag::ExpectedToken,
         diag_params! { expected = expected, actual = token.kind },
     );
     unreachable!()
