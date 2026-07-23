@@ -250,6 +250,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
             }
 
+            // Build assoc type substitution
+            let mut assoc_types: FxHashMap<Symbol, &Ty> = FxHashMap::default();
+            for &impl_item_def_id in items {
+                let impl_def = &self.resolver.defs[impl_item_def_id.0 as usize];
+                if impl_def.kind == DefKind::AssocType {
+                    let name = impl_def.name.expect("assoc type has name");
+                    let scheme = self
+                        .item_schemes
+                        .get(&impl_item_def_id)
+                        .expect("assoc type has scheme");
+                    assoc_types.insert(name, &scheme.body);
+                }
+            }
+
             for (name, trait_method) in trait_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
                     let method = self.ctx.interner.lookup(*name).to_string();
@@ -268,6 +282,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let trait_sig_sub =
                         substitute_self(&trait_sig.body, trait_def_id, struct_def_id);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
+                    // Normalize projections
+                    let trait_sig_sub = fold_ty(&trait_sig_sub, &mut |ty| match ty {
+                        Ty::Projection { assoc_def_id, .. } => {
+                            if let Some(name) = self.resolver.def(assoc_def_id).name
+                                && let Some(&concrete) = assoc_types.get(&name)
+                            {
+                                concrete.clone()
+                            } else {
+                                ty
+                            }
+                        }
+                        t => t,
+                    });
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
