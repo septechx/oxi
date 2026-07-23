@@ -7,7 +7,6 @@ pub use types::*;
 use thin_vec::thin_vec;
 
 use crate::hir::{self, AssocItemKind, DefId, ItemKind, MaybeOwner, Node};
-use crate::resolve::ResolverOutputs;
 use crate::thir::lower::lower_body;
 use crate::thir::scope::ScopeTrees;
 use crate::typeck::TypeckOutputs;
@@ -16,7 +15,6 @@ pub fn lower_thir(
     krate: &hir::Crate,
     typeck: &TypeckOutputs,
     scope_trees: &ScopeTrees,
-    resolver: &ResolverOutputs,
 ) -> ThirCrate {
     let mut thir = ThirCrate {
         bodies: Default::default(),
@@ -36,8 +34,7 @@ pub fn lower_thir(
                 ItemKind::Fn(fun) => {
                     if let Some(body_id) = fun.body_id {
                         let body = info.nodes.body(body_id).expect("body exists");
-                        let thir_body =
-                            lower_body(&fun.decl.params, body, typeck, scope_tree, resolver);
+                        let thir_body = lower_body(&fun.decl.params, body, typeck, scope_tree);
                         thir.bodies.insert(def_id, thir_body);
                     }
                 }
@@ -46,7 +43,7 @@ pub fn lower_thir(
                     ..
                 } => {
                     let body = info.nodes.body(*body_id).expect("body exists");
-                    let thir_body = lower_body(&thin_vec![], body, typeck, scope_tree, resolver);
+                    let thir_body = lower_body(&thin_vec![], body, typeck, scope_tree);
                     thir.bodies.insert(def_id, thir_body);
                 }
                 _ => {}
@@ -57,8 +54,7 @@ pub fn lower_thir(
                 };
                 if let Some(body_id) = fun.body_id {
                     let body = info.nodes.body(body_id).expect("body exists");
-                    let thir_body =
-                        lower_body(&fun.decl.params, body, typeck, scope_tree, resolver);
+                    let thir_body = lower_body(&fun.decl.params, body, typeck, scope_tree);
                     thir.bodies.insert(def_id, thir_body);
                 }
             }

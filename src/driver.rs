@@ -84,7 +84,7 @@ pub fn compile_source(
     }
 
     let scope_trees = build_scope_trees(&hir_crate);
-    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees, &resolver);
+    let thir_crate = lower_thir(&hir_crate, &typeck, &scope_trees);
     thir_crate.assert_no_free_vars(&typeck);
     if matches!(unpretty, Some(UnprettyPrintable::Thir)) {
         println!("{:#?}", thir_crate);
