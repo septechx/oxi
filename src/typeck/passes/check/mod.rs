@@ -314,7 +314,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             } => {
                 if let Some(name) = self.typeck.resolver.def(assoc_def_id).name {
                     if let Some(concrete) = self.current_assoc_types.get(&name) {
-                        return concrete.clone();
+                        return self.normalize_aliases(concrete.clone(), span);
                     }
                     if let Ty::Adt(self_def_id, _) = self_ty.as_ref()
                         && let Some(impl_def_ids) = self

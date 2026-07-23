@@ -193,9 +193,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 .insert(def_id, trait_generic_args.clone());
 
             let key = (trait_def_id, struct_def_id);
+            // Check for conflicts against other existing impls (exclude self)
             let is_conflicting = self.coherence.impls.get(&key).is_some_and(|existing| {
-                self.coherence
-                    .has_conflicting_impl(existing, &trait_generic_args)
+                let others: Vec<_> = existing
+                    .iter()
+                    .copied()
+                    .filter(|&id| id != def_id)
+                    .collect();
+                if others.is_empty() {
+                    false
+                } else {
+                    self.coherence
+                        .has_conflicting_impl(&others, &trait_generic_args)
+                }
             });
             if is_conflicting {
                 let trait_ = self
@@ -226,7 +236,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
                 continue;
             }
-            self.coherence.impls.entry(key).or_default().push(def_id);
+            if !self
+                .coherence
+                .impls
+                .get(&key)
+                .is_some_and(|existing| existing.contains(&def_id))
+            {
+                self.coherence.impls.entry(key).or_default().push(def_id);
+            }
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
             if let (Some(scheme), Some(ref args)) = (trait_scheme, trait_generic_args) {
@@ -282,25 +299,36 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let trait_sig_sub =
                         substitute_self(&trait_sig.body, trait_def_id, struct_def_id);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
-                    // Normalize projections
-                    let trait_sig_sub = fold_ty(&trait_sig_sub, &mut |ty| match ty {
-                        Ty::Projection { assoc_def_id, .. } => {
-                            if let Some(name) = self.resolver.def(assoc_def_id).name
-                                && let Some(&concrete) = assoc_types.get(&name)
-                            {
-                                concrete.clone()
-                            } else {
-                                ty
+                    // Normalize projections recursively until stable
+                    let normalize_projections = |ty: Ty| -> Ty {
+                        let mut prev = ty;
+                        loop {
+                            let next = fold_ty(&prev, &mut |inner| match inner {
+                                Ty::Projection { assoc_def_id, .. } => {
+                                    if let Some(name) = self.resolver.def(assoc_def_id).name
+                                        && let Some(&concrete) = assoc_types.get(&name)
+                                    {
+                                        concrete.clone()
+                                    } else {
+                                        inner
+                                    }
+                                }
+                                t => t,
+                            });
+                            if next == prev {
+                                break next;
                             }
+                            prev = next;
                         }
-                        t => t,
-                    });
+                    };
+                    let trait_sig_sub = normalize_projections(trait_sig_sub);
+                    let impl_sig_sub = normalize_projections(impl_sig.body.clone());
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
                         &mut icx,
                         &trait_sig_sub,
-                        &impl_sig.body,
+                        &impl_sig_sub,
                         method_span,
                         impl_module,
                     )
@@ -320,7 +348,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
-    fn resolve_struct(&self, res: Res<HirId>) -> Option<DefId> {
+    pub(super) fn resolve_struct(&self, res: Res<HirId>) -> Option<DefId> {
         let Res::Def(def_id) = res else {
             return None;
         };
@@ -330,7 +358,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
-    fn resolve_trait(&self, res: Res<HirId>) -> Option<DefId> {
+    pub(super) fn resolve_trait(&self, res: Res<HirId>) -> Option<DefId> {
         let Res::Def(def_id) = res else {
             return None;
         };

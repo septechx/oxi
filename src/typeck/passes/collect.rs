@@ -108,7 +108,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
                         }
                     }
-                    ItemKind::Impl { items, .. } => {
+                    ItemKind::Impl {
+                        self_ty,
+                        trait_ty,
+                        items,
+                    } => {
                         self.coherence.generic_params.insert(
                             def_id,
                             GenericParamInfo {
@@ -116,6 +120,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 defaults: ThinVec::new(),
                             },
                         );
+
+                        if let Some(struct_def_id) = self.resolve_struct(self_ty.res)
+                            && let Some(trait_def_id) = self.resolve_trait(trait_ty.res)
+                        {
+                            self.coherence
+                                .impls
+                                .entry((trait_def_id, struct_def_id))
+                                .or_default()
+                                .push(def_id);
+                        }
 
                         for &item_def_id in items {
                             self.coherence.assoc_to_parent.insert(item_def_id, def_id);
