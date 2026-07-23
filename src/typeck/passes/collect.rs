@@ -19,7 +19,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut icx = InferCtx::default();
         icx.push_level();
 
-        for (i, owner) in self.krate.owners.iter().enumerate() {
+        // Take ownership of the crate's owners to avoid borrowing issues
+        let owners = std::mem::take(&mut self.krate.owners);
+        for (i, owner) in owners.iter().enumerate() {
             let def_id = DefId(i as u32);
             let Some(info) = owner.as_owner() else {
                 continue;
@@ -180,11 +182,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .coherence
                             .assoc_to_parent
                             .get(&def_id)
+                            .copied()
                             .expect("assoc item has parent");
 
                         let body = self.fn_ty(&mut icx, &fun.decl);
                         let scheme =
-                            self.assoc_item_scheme(&mut icx, *parent_def_id, scheme_vars, body);
+                            self.assoc_item_scheme(&mut icx, parent_def_id, scheme_vars, body);
                         self.item_schemes.insert(def_id, scheme);
                         if !hir_ids.is_empty() {
                             self.coherence
@@ -197,9 +200,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .coherence
                             .assoc_to_parent
                             .get(&def_id)
+                            .copied()
                             .expect("assoc item has parent");
 
-                        match self.resolver.def(*parent_def_id).kind {
+                        match self.resolver.def(parent_def_id).kind {
                             DefKind::Trait => {}
                             DefKind::Impl | DefKind::Struct => {
                                 let Some(type_) = type_ else {
@@ -210,7 +214,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 // they did so we can reuse logic
                                 let scheme = self.assoc_item_scheme(
                                     &mut icx,
-                                    *parent_def_id,
+                                    parent_def_id,
                                     ThinVec::new(),
                                     body,
                                 );
@@ -225,6 +229,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 OwnerNode::Crate => {}
             }
         }
+        // Restore the crate's owners
+        self.krate.owners = owners;
 
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
@@ -414,7 +420,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .unwrap_or_default()
     }
 
-    fn fn_ty(&self, icx: &mut InferCtx, decl: &FnDecl) -> Ty {
+    fn fn_ty(&mut self, icx: &mut InferCtx, decl: &FnDecl) -> Ty {
         let params: ThinVec<Ty> = decl
             .params
             .iter()

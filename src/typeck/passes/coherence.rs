@@ -17,7 +17,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut icx = InferCtx::default();
         icx.push_level();
 
-        for (i, owner) in self.krate.owners.iter().enumerate() {
+        // Take ownership of the crate's owners to avoid borrowing issues
+        let owners = std::mem::take(&mut self.krate.owners);
+        for (i, owner) in owners.iter().enumerate() {
             let def_id = DefId(i as u32);
             let Some(item) = owner
                 .as_owner()
@@ -67,10 +69,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
 
             // 1. Extract and validate trait generic args from the path
-            let trait_scheme = self.item_schemes.get(&trait_def_id);
+            let trait_scheme = self.item_schemes.get(&trait_def_id).cloned();
             let trait_generic_args = self.ty_hir_generic_args(&mut icx, trait_ty);
 
-            if let Some(scheme) = trait_scheme
+            if let Some(scheme) = &trait_scheme
                 && !scheme.vars.is_empty()
                 && let Some(info) = self.coherence.generic_params.get(&trait_def_id)
             {
@@ -83,9 +85,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
 
             // If no explicit generic args were provided and the trait has defaults, fill them in
-            let trait_generic_args = match (trait_scheme, &trait_generic_args) {
+            let trait_generic_args = match (&trait_scheme, &trait_generic_args) {
                 (Some(scheme), None) if !scheme.vars.is_empty() => {
-                    if let Some(info) = self.coherence.generic_params.get(&trait_def_id)
+                    if let Some(info) = self.coherence.generic_params.get(&trait_def_id).cloned()
                         && info.defaults.iter().all(|d| d.is_some())
                     {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
@@ -121,7 +123,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
                 (Some(scheme), Some(args)) if scheme.vars.len() != args.len() => {
                     if args.len() < scheme.vars.len() {
-                        match self.coherence.generic_params.get(&trait_def_id) {
+                        match self.coherence.generic_params.get(&trait_def_id).cloned() {
                             Some(info)
                                 if info.defaults[args.len()..].iter().all(|d| d.is_some()) =>
                             {
@@ -346,6 +348,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
         }
+        // Restore the crate's owners
+        self.krate.owners = owners;
     }
 
     pub(super) fn resolve_struct(&self, res: Res<HirId>) -> Option<DefId> {

@@ -1,12 +1,14 @@
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
-use crate::hir::{self, DefId, DefKind, PrimTy, QPath, TyKind};
+use crate::diag_params;
+use crate::errors::builders;
+use crate::hir::{self, DefId, DefKind, ModuleId, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::Typeck;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
+use crate::typeck::{Typeck, diag};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
@@ -37,7 +39,7 @@ pub enum Ty {
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub fn ty_from_hir(&self, icx: &mut InferCtx, hir_ty: &hir::Ty) -> Ty {
+    pub fn ty_from_hir(&mut self, icx: &mut InferCtx, hir_ty: &hir::Ty) -> Ty {
         match &hir_ty.kind {
             TyKind::Error => Ty::Error,
             TyKind::Never => Ty::Never,
@@ -85,7 +87,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
     /// Resolve `QPath::TypeRelative` to a `Ty::Projection`
     fn resolve_type_relative_projection(
-        &self,
+        &mut self,
         icx: &mut InferCtx,
         qself: &QPath,
         segment: &hir::PathSegment,
@@ -103,7 +105,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
                 let assoc_def_id = match self.find_assoc_type(trait_def_id, assoc_name) {
                     Some(id) => id,
-                    None => return Ty::Error,
+                    None => {
+                        builders::emit_at(
+                            self.ctx,
+                            segment.ident.span,
+                            ModuleId(0),
+                            diag::UnresolvedAssocType,
+                            diag_params! {},
+                        );
+                        return Ty::Error;
+                    }
                 };
                 (trait_def_id, assoc_def_id, self.ty_from_hir(icx, self_ty))
             }
@@ -180,7 +191,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     pub(super) fn ty_hir_generic_args(
-        &self,
+        &mut self,
         icx: &mut InferCtx,
         path: &hir::Path,
     ) -> Option<ThinVec<Ty>> {
