@@ -121,6 +121,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(def_id)
                             .copied()
                             .expect("assoc item has parent");
+                        checker.current_assoc_types = checker.compute_assoc_types(parent_def_id);
                         checker.register_if_generic_def(parent_def_id);
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
