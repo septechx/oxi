@@ -316,17 +316,25 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     if let Some(concrete) = self.current_assoc_types.get(&name) {
                         return self.normalize_aliases(concrete.clone(), span);
                     }
-                    if let Ty::Adt(self_def_id, _) = self_ty.as_ref()
+                    if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
                         && let Some(impl_def_ids) = self
                             .typeck
                             .coherence
                             .impls
                             .get(&(trait_def_id, *self_def_id))
-                        && let Some(impl_def_id) = impl_def_ids.first()
                     {
-                        let assoc_types = self.compute_assoc_types(*impl_def_id);
-                        if let Some(concrete) = assoc_types.get(&name) {
-                            return concrete.clone();
+                        let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
+                        if let Some(impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
+                            self.typeck
+                                .coherence
+                                .impl_resolved_self_type
+                                .get(impl_def_id)
+                                == Some(&target_self_ty)
+                        }) {
+                            let assoc_types = self.compute_assoc_types(*impl_def_id);
+                            if let Some(concrete) = assoc_types.get(&name) {
+                                return concrete.clone();
+                            }
                         }
                     }
                 }
