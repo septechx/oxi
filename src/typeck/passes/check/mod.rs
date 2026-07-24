@@ -299,7 +299,22 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                             .collect();
                         substitute_ty_vars(&scheme.body, &mapping)
                     } else {
-                        scheme.body.clone()
+                        if scheme.vars.is_empty() {
+                            scheme.body.clone()
+                        } else {
+                            builders::emit_at(
+                                self.typeck.ctx,
+                                span,
+                                self.module_id,
+                                diag::UnexpectedGenericArgs,
+                                diag_params! {
+                                    expected = scheme.vars.len(),
+                                    s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                    found = 0,
+                                },
+                            );
+                            Ty::Error
+                        }
                     };
                     self.normalize_aliases(resolved, span)
                 } else {
