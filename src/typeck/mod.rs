@@ -154,8 +154,10 @@ pub struct CoherenceTable {
     pub struct_fields: FxHashMap<DefId, FxHashMap<Symbol, (hir::Ty, usize)>>,
     /// maps (def id) -> (generic param info)
     pub generic_params: FxHashMap<DefId, GenericParamInfo>,
-    /// maps (impl def id) -> resolved trait generic args (for duplicate detection)
+    /// maps (impl def id) -> resolved trait generic args
     pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
+    /// maps (impl def id) -> resolved self type
+    pub impl_resolved_self_type: FxHashMap<DefId, Ty>,
     /// maps (assoc item def id) -> (parent struct/trait def id)
     pub assoc_to_parent: FxHashMap<DefId, DefId>,
     /// maps (parent def id) -> (assoc item def ids)
@@ -173,11 +175,20 @@ pub struct GenericParamInfo {
 }
 
 impl CoherenceTable {
-    pub fn has_conflicting_impl(&self, existing: &[DefId], new_args: &Option<ThinVec<Ty>>) -> bool {
+    pub fn has_conflicting_impl(
+        &self,
+        existing: &[DefId],
+        new_args: &Option<ThinVec<Ty>>,
+        new_self_ty: &Ty,
+    ) -> bool {
         existing.iter().any(|&existing_def_id| {
             self.impl_resolved_generic_args
                 .get(&existing_def_id)
                 .is_some_and(|existing_args| existing_args == new_args)
+                && self
+                    .impl_resolved_self_type
+                    .get(&existing_def_id)
+                    .is_some_and(|existing_self_ty| existing_self_ty == new_self_ty)
         })
     }
 

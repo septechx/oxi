@@ -190,9 +190,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
 
             // 2. Check for duplicate impls using resolved generic args
+            let self_type_generic_args = self.ty_hir_generic_args(&mut icx, self_ty);
+            let self_type = Ty::Adt(struct_def_id, self_type_generic_args);
             self.coherence
                 .impl_resolved_generic_args
                 .insert(def_id, trait_generic_args.clone());
+            self.coherence
+                .impl_resolved_self_type
+                .insert(def_id, self_type.clone());
 
             let key = (trait_def_id, struct_def_id);
             // Check for conflicts against other existing impls (exclude self)
@@ -206,7 +211,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     false
                 } else {
                     self.coherence
-                        .has_conflicting_impl(&others, &trait_generic_args)
+                        .has_conflicting_impl(&others, &trait_generic_args, &self_type)
                 }
             });
             if is_conflicting {
