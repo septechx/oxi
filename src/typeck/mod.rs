@@ -82,6 +82,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn run(&mut self) {
         self.collect_signatures();
         self.check_type_aliases();
+        if self.ctx.errors.has_errors() {
+            return;
+        }
         self.check_coherence();
         self.build_method_tables();
         self.check_bodies();

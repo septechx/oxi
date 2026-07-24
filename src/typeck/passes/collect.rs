@@ -9,6 +9,7 @@ use crate::hir::{
     self, AssocItemKind, Def, DefId, DefKind, FnDecl, GenericParam, HirId, ItemKind, OwnerNode,
 };
 use crate::interner::Symbol;
+use crate::resolve::Res;
 use crate::typeck::fold::fold_ty;
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
@@ -323,6 +324,76 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 );
             }
         }
+
+        let mut full_assoc_type_index = self.coherence.assoc_type_index.clone();
+        for (&(_, struct_def_id), impl_def_ids) in &self.coherence.impls {
+            for &impl_def_id in impl_def_ids {
+                if let Some(assoc_def_ids) = self.coherence.parent_to_assoc.get(&impl_def_id) {
+                    for &assoc_def_id in assoc_def_ids {
+                        let def = &self.resolver.def(assoc_def_id);
+                        if def.kind == DefKind::AssocType {
+                            let name = def.name.expect("assoc type has name");
+                            full_assoc_type_index.insert((struct_def_id, name), assoc_def_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // The resolved scheme bodies for recursive associated types are
+        // Ty::Error or Ty::Projection, so walk the original HIR types instead.
+        let struct_assoc_types = self
+            .krate
+            .owners
+            .iter()
+            .enumerate()
+            .filter_map(|(i, owner)| {
+                let info = owner.as_owner()?;
+                let OwnerNode::AssocItem(assoc) = info.nodes.node() else {
+                    return None;
+                };
+                let AssocItemKind::Type { type_: Some(_), .. } = &assoc.kind else {
+                    return None;
+                };
+                let def_id = DefId(i as u32);
+                let parent_def_id = self.coherence.assoc_to_parent.get(&def_id).copied()?;
+                let kind = self.resolver.def(parent_def_id).kind;
+                (kind == DefKind::Struct || kind == DefKind::Impl).then_some((def_id, assoc.span))
+            });
+
+        for (def_id, span) in struct_assoc_types {
+            if !visited.insert(def_id) {
+                continue;
+            }
+
+            let mut in_progress = FxHashSet::default();
+
+            if Self::visit_hir_assoc_type_alias(
+                def_id,
+                def_id,
+                self.krate,
+                &full_assoc_type_index,
+                &self.coherence.assoc_to_parent,
+                &self.resolver.defs,
+                &mut visited,
+                &mut in_progress,
+            ) {
+                let module_id = self
+                    .resolver
+                    .def_to_module
+                    .get(&def_id)
+                    .copied()
+                    .unwrap_or_default();
+
+                builders::emit_at(
+                    self.ctx,
+                    span,
+                    module_id,
+                    diag::RecursiveType,
+                    diag_params! {},
+                );
+            }
+        }
     }
 
     fn visit_alias(
@@ -399,6 +470,220 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         in_progress.remove(&current);
 
         found_cycle
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn visit_hir_assoc_type_alias(
+        current: DefId,
+        start: DefId,
+        krate: &hir::Crate,
+        assoc_type_index: &FxHashMap<(DefId, Symbol), DefId>,
+        assoc_to_parent: &FxHashMap<DefId, DefId>,
+        defs: &ThinVec<Def>,
+        visited: &mut FxHashSet<DefId>,
+        in_progress: &mut FxHashSet<DefId>,
+    ) -> bool {
+        let Some(info) = krate.owners[current.0 as usize].as_owner() else {
+            return false;
+        };
+        let OwnerNode::AssocItem(assoc) = info.nodes.node() else {
+            return false;
+        };
+        let AssocItemKind::Type {
+            type_: Some(type_), ..
+        } = &assoc.kind
+        else {
+            return false;
+        };
+
+        in_progress.insert(current);
+        let found = Self::walk_hir_ty_for_cycles(
+            type_,
+            start,
+            krate,
+            assoc_type_index,
+            assoc_to_parent,
+            defs,
+            visited,
+            in_progress,
+        );
+        in_progress.remove(&current);
+        found
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_hir_ty_for_cycles(
+        ty: &hir::Ty,
+        start: DefId,
+        krate: &hir::Crate,
+        assoc_type_index: &FxHashMap<(DefId, Symbol), DefId>,
+        assoc_to_parent: &FxHashMap<DefId, DefId>,
+        defs: &ThinVec<Def>,
+        visited: &mut FxHashSet<DefId>,
+        in_progress: &mut FxHashSet<DefId>,
+    ) -> bool {
+        match &ty.kind {
+            hir::TyKind::Path(qpath) => Self::walk_hir_qpath_for_cycles(
+                qpath,
+                start,
+                krate,
+                assoc_type_index,
+                assoc_to_parent,
+                defs,
+                visited,
+                in_progress,
+            ),
+            hir::TyKind::Ptr(inner, _) | hir::TyKind::Slice(inner) => Self::walk_hir_ty_for_cycles(
+                inner,
+                start,
+                krate,
+                assoc_type_index,
+                assoc_to_parent,
+                defs,
+                visited,
+                in_progress,
+            ),
+            hir::TyKind::Array(inner, _) => Self::walk_hir_ty_for_cycles(
+                inner,
+                start,
+                krate,
+                assoc_type_index,
+                assoc_to_parent,
+                defs,
+                visited,
+                in_progress,
+            ),
+            hir::TyKind::Fn { params, ret } => {
+                for param in params {
+                    if Self::walk_hir_ty_for_cycles(
+                        param,
+                        start,
+                        krate,
+                        assoc_type_index,
+                        assoc_to_parent,
+                        defs,
+                        visited,
+                        in_progress,
+                    ) {
+                        return true;
+                    }
+                }
+                Self::walk_hir_ty_for_cycles(
+                    ret,
+                    start,
+                    krate,
+                    assoc_type_index,
+                    assoc_to_parent,
+                    defs,
+                    visited,
+                    in_progress,
+                )
+            }
+            hir::TyKind::Tuple(elements) => {
+                for element in elements {
+                    if Self::walk_hir_ty_for_cycles(
+                        element,
+                        start,
+                        krate,
+                        assoc_type_index,
+                        assoc_to_parent,
+                        defs,
+                        visited,
+                        in_progress,
+                    ) {
+                        return true;
+                    }
+                }
+                false
+            }
+            hir::TyKind::Error
+            | hir::TyKind::PrimTy(_)
+            | hir::TyKind::GenericParam(_, _)
+            | hir::TyKind::Infer
+            | hir::TyKind::Never => false,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_hir_qpath_for_cycles(
+        qpath: &hir::QPath,
+        start: DefId,
+        krate: &hir::Crate,
+        assoc_type_index: &FxHashMap<(DefId, Symbol), DefId>,
+        assoc_to_parent: &FxHashMap<DefId, DefId>,
+        defs: &ThinVec<Def>,
+        visited: &mut FxHashSet<DefId>,
+        in_progress: &mut FxHashSet<DefId>,
+    ) -> bool {
+        match qpath {
+            hir::QPath::TypeRelative { qself, segment } => {
+                if let Some(struct_def_id) = Self::resolve_qself_to_struct(qself, defs) {
+                    let name = segment.ident.value;
+                    if let Some(&assoc_def_id) = assoc_type_index.get(&(struct_def_id, name)) {
+                        if assoc_def_id == start || in_progress.contains(&assoc_def_id) {
+                            return true;
+                        }
+                        if !visited.insert(assoc_def_id) {
+                            return false;
+                        }
+                        return Self::visit_hir_assoc_type_alias(
+                            assoc_def_id,
+                            start,
+                            krate,
+                            assoc_type_index,
+                            assoc_to_parent,
+                            defs,
+                            visited,
+                            in_progress,
+                        );
+                    }
+                }
+                Self::walk_hir_qpath_for_cycles(
+                    qself,
+                    start,
+                    krate,
+                    assoc_type_index,
+                    assoc_to_parent,
+                    defs,
+                    visited,
+                    in_progress,
+                )
+            }
+            hir::QPath::Resolved(_, path) => {
+                for segment in &path.segments {
+                    if let Some(generic_args) = &segment.generic_args {
+                        for arg_ty in generic_args {
+                            if Self::walk_hir_ty_for_cycles(
+                                arg_ty,
+                                start,
+                                krate,
+                                assoc_type_index,
+                                assoc_to_parent,
+                                defs,
+                                visited,
+                                in_progress,
+                            ) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    #[allow(clippy::match_single_binding)]
+    fn resolve_qself_to_struct(qpath: &hir::QPath, defs: &ThinVec<Def>) -> Option<DefId> {
+        match qpath {
+            hir::QPath::Resolved(_, path) => match path.res {
+                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    (defs[def_id.0 as usize].kind == DefKind::Struct).then_some(def_id)
+                }
+                _ => None,
+            },
+            hir::QPath::TypeRelative { .. } => None,
+        }
     }
 
     fn collect_generic_params(
