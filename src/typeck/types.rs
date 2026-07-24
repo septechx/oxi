@@ -1,3 +1,4 @@
+use fxhash::FxHashMap;
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
@@ -6,7 +7,7 @@ use crate::errors::builders;
 use crate::hir::{self, DefId, DefKind, ModuleId, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::fold::fold_ty;
+use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 use crate::typeck::{Typeck, diag};
 
@@ -122,7 +123,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     let generic_args = self.ty_hir_generic_args(icx, path);
-                    let self_ty = Ty::Adt(def_id, generic_args);
+                    let self_ty = Ty::Adt(def_id, generic_args.clone());
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
                             Some(assoc_def_id) => (def_id, assoc_def_id, self_ty),
@@ -131,7 +132,39 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         DefKind::Struct => {
                             if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {
                                 if let Some(scheme) = self.item_schemes.get(&assoc_def_id) {
-                                    return scheme.body.clone();
+                                    if let Some(args) = &generic_args {
+                                        let mapping: FxHashMap<TyVarId, Ty> = scheme
+                                            .vars
+                                            .iter()
+                                            .copied()
+                                            .zip(args.iter().cloned())
+                                            .collect();
+                                        return substitute_ty_vars(&scheme.body, &mapping);
+                                    }
+                                    let scheme_body = scheme.body.clone();
+                                    let scheme_vars = scheme.vars.clone();
+                                    if scheme_vars.is_empty() {
+                                        return scheme_body;
+                                    }
+                                    if let Some(info) =
+                                        self.coherence.generic_params.get(&def_id).cloned()
+                                        && info.defaults.iter().all(|d| d.is_some())
+                                    {
+                                        let args: ThinVec<Ty> = info
+                                            .defaults
+                                            .iter()
+                                            .filter_map(|d| {
+                                                d.as_ref().map(|d| self.ty_from_hir(icx, d))
+                                            })
+                                            .collect();
+                                        if args.len() == scheme_vars.len() {
+                                            let mapping: FxHashMap<TyVarId, Ty> =
+                                                scheme_vars.into_iter().zip(args).collect();
+                                            return substitute_ty_vars(&scheme_body, &mapping);
+                                        }
+                                    }
+
+                                    return scheme_body;
                                 }
                                 return Ty::Error;
                             }
