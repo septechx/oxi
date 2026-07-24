@@ -348,7 +348,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         }) {
                             let assoc_types = self.compute_assoc_types(*impl_def_id);
                             if let Some(concrete) = assoc_types.get(&name) {
-                                return concrete.clone();
+                                return self.normalize_aliases(concrete.clone(), span);
                             }
                         }
                     }
