@@ -4,12 +4,12 @@ use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
 use crate::interner::Symbol;
-use crate::resolve::Res;
+use crate::resolve::{Res, ResolverOutputs};
 use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
-use crate::typeck::{Typeck, diag};
+use crate::typeck::{Scheme, Typeck, diag};
 use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -95,6 +95,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         for (i, default) in info.defaults.iter().enumerate() {
                             let mut ty = self
                                 .ty_from_hir(&mut icx, default.as_ref().expect("default exists"));
+                            ty = normalize_type_aliases(ty, self.resolver, &self.item_schemes);
                             if !subst.is_empty() {
                                 ty = substitute_ty_vars(&ty, &subst);
                             }
@@ -141,6 +142,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     let mut ty = self.ty_from_hir(
                                         &mut icx,
                                         default.as_ref().expect("default exists"),
+                                    );
+                                    ty = normalize_type_aliases(
+                                        ty,
+                                        self.resolver,
+                                        &self.item_schemes,
                                     );
                                     if !subst.is_empty() {
                                         ty = substitute_ty_vars(&ty, &subst);
@@ -376,6 +382,36 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             _ => None,
         }
     }
+}
+
+fn normalize_type_aliases(
+    ty: Ty,
+    resolver: &ResolverOutputs,
+    item_schemes: &FxHashMap<DefId, Scheme>,
+) -> Ty {
+    fold_ty(&ty, &mut |ty| match ty {
+        Ty::Adt(def_id, ref generic_args) if resolver.def(def_id).kind == DefKind::TypeAlias => {
+            if let Some(scheme) = item_schemes.get(&def_id) {
+                let resolved = match generic_args {
+                    Some(args) if args.len() == scheme.vars.len() => {
+                        let mapping: FxHashMap<TyVarId, Ty> = scheme
+                            .vars
+                            .iter()
+                            .copied()
+                            .zip(args.iter().cloned())
+                            .collect();
+                        substitute_ty_vars(&scheme.body, &mapping)
+                    }
+                    _ if scheme.vars.is_empty() => scheme.body.clone(),
+                    _ => ty,
+                };
+                normalize_type_aliases(resolved, resolver, item_schemes)
+            } else {
+                ty
+            }
+        }
+        t => t,
+    })
 }
 
 fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {

@@ -199,7 +199,85 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         let resolved: FxHashMap<HirId, Ty> = node_types
             .iter()
-            .map(|(&id, ty)| (id, icx.resolve(ty)))
+            .map(|(&id, ty)| {
+                let mut ty = icx.resolve(ty);
+                if let Ty::Adt(def_id, None) = &ty {
+                    let info = self.coherence.generic_params.get(def_id).cloned();
+                    if let Some(info) = info
+                        && !info.hir_ids.is_empty()
+                        && info.defaults.iter().all(|d| d.is_some())
+                    {
+                        for &hir_id in &info.hir_ids {
+                            if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                                let var = icx.next_ty_var();
+                                icx.hir_id_to_ty_var.insert(hir_id, var);
+                            }
+                        }
+                        let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                        let mut args: ThinVec<Ty> = ThinVec::new();
+                        for (i, default) in info.defaults.iter().enumerate() {
+                            let mut default_ty = self
+                                .ty_from_hir(&mut icx, default.as_ref().expect("default exists"));
+                            default_ty = fold_ty(&default_ty, &mut |ty| match &ty {
+                                Ty::Projection {
+                                    trait_def_id,
+                                    assoc_def_id,
+                                    self_ty,
+                                    ..
+                                } => {
+                                    if let Some(name) = self.resolver.def(*assoc_def_id).name
+                                        && let Ty::Adt(self_def_id, self_generic_args) =
+                                            self_ty.as_ref()
+                                        && let Some(impl_def_ids) =
+                                            self.coherence.impls.get(&(*trait_def_id, *self_def_id))
+                                    {
+                                        let target_self_ty =
+                                            Ty::Adt(*self_def_id, self_generic_args.clone());
+                                        for &impl_def_id in impl_def_ids {
+                                            if self
+                                                .coherence
+                                                .impl_resolved_self_type
+                                                .get(&impl_def_id)
+                                                != Some(&target_self_ty)
+                                            {
+                                                continue;
+                                            }
+                                            let Some(item_ids) =
+                                                self.coherence.parent_to_assoc.get(&impl_def_id)
+                                            else {
+                                                continue;
+                                            };
+                                            for &item_def_id in item_ids {
+                                                let def = self.resolver.def(item_def_id);
+                                                if def.kind == DefKind::AssocType
+                                                    && def.name == Some(name)
+                                                    && let Some(scheme) =
+                                                        self.item_schemes.get(&item_def_id)
+                                                {
+                                                    return scheme.body.clone();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    ty
+                                }
+                                _ => ty,
+                            });
+                            if !subst.is_empty() {
+                                default_ty = substitute_ty_vars(&default_ty, &subst);
+                            }
+                            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                                subst.insert(var, default_ty.clone());
+                            }
+                            args.push(default_ty);
+                        }
+                        if !args.iter().any(|t| t.is_error()) {
+                            ty = Ty::Adt(*def_id, Some(args));
+                        }
+                    }
+                }
+                (id, ty)
+            })
             .collect();
 
         self.node_types.extend(resolved);
@@ -904,6 +982,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             Some(info) => info,
             None => return,
         };
+
         let subst: FxHashMap<TyVarId, Ty> = info
             .hir_ids
             .iter()

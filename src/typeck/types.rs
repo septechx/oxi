@@ -99,9 +99,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             // <Struct as Trait>::AssocType: explicit trait ref
             QPath::Resolved(Some(self_ty), path) => {
                 let Res::Def(trait_def_id) = path.res else {
+                    builders::emit_at(
+                        self.ctx,
+                        path.span,
+                        ModuleId(0),
+                        crate::hir::diag::ExpectedPathToTrait,
+                        diag_params! { path = path.display(self.ctx) },
+                    );
                     return Ty::Error;
                 };
                 if self.resolver.def(trait_def_id).kind != DefKind::Trait {
+                    builders::emit_at(
+                        self.ctx,
+                        path.span,
+                        ModuleId(0),
+                        crate::hir::diag::ExpectedPathToTrait,
+                        diag_params! { path = path.display(self.ctx) },
+                    );
                     return Ty::Error;
                 }
                 let assoc_def_id = match self.find_assoc_type(trait_def_id, assoc_name) {
