@@ -5,11 +5,13 @@ use crate::errors::builders;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
 use crate::interner::Symbol;
 use crate::resolve::{Res, ResolverOutputs};
-use crate::typeck::fold::{fold_ty, substitute_ty_vars};
+use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
 use crate::typeck::{Scheme, Typeck, diag};
+
+use super::check::emit_unexpected_generic_args;
 use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -107,17 +109,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
                         Some(args)
                     } else {
-                        let provided_args_len = 0;
-                        builders::emit_at(
+                        emit_unexpected_generic_args(
                             self.ctx,
                             trait_ty.span,
                             impl_module,
-                            diag::UnexpectedGenericArgs,
-                            diag_params! {
-                                expected = scheme.vars.len(),
-                                s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                found = provided_args_len
-                            },
+                            scheme.vars.len(),
+                            0,
                         );
                         continue;
                     }
@@ -161,33 +158,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 Some(full_args)
                             }
                             _ => {
-                                let provided_args_len = args.len();
-                                builders::emit_at(
+                                emit_unexpected_generic_args(
                                     self.ctx,
                                     trait_ty.span,
                                     impl_module,
-                                    diag::UnexpectedGenericArgs,
-                                    diag_params! {
-                                        expected = scheme.vars.len(),
-                                        s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                        found = provided_args_len
-                                    },
+                                    scheme.vars.len(),
+                                    args.len(),
                                 );
                                 continue;
                             }
                         }
                     } else {
-                        let provided_args_len = args.len();
-                        builders::emit_at(
+                        emit_unexpected_generic_args(
                             self.ctx,
                             trait_ty.span,
                             impl_module,
-                            diag::UnexpectedGenericArgs,
-                            diag_params! {
-                                expected = scheme.vars.len(),
-                                s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                found = provided_args_len
-                            },
+                            scheme.vars.len(),
+                            args.len(),
                         );
                         continue;
                     }
@@ -364,23 +351,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     pub(super) fn resolve_struct(&self, res: Res<HirId>) -> Option<DefId> {
-        let Res::Def(def_id) = res else {
-            return None;
-        };
-        match self.resolver.defs[def_id.0 as usize].kind {
-            DefKind::Struct => Some(def_id),
-            _ => None,
-        }
+        self.resolve_def_kind(res, DefKind::Struct)
     }
 
     pub(super) fn resolve_trait(&self, res: Res<HirId>) -> Option<DefId> {
+        self.resolve_def_kind(res, DefKind::Trait)
+    }
+
+    fn resolve_def_kind(&self, res: Res<HirId>, kind: DefKind) -> Option<DefId> {
         let Res::Def(def_id) = res else {
             return None;
         };
-        match self.resolver.defs[def_id.0 as usize].kind {
-            DefKind::Trait => Some(def_id),
-            _ => None,
-        }
+        (self.resolver.def(def_id).kind == kind).then_some(def_id)
     }
 }
 
@@ -390,24 +372,15 @@ fn normalize_type_aliases(
     item_schemes: &FxHashMap<DefId, Scheme>,
 ) -> Ty {
     fold_ty(&ty, &mut |ty| match ty {
-        Ty::Adt(def_id, ref generic_args) if resolver.def(def_id).kind == DefKind::TypeAlias => {
+        Ty::Adt(def_id, generic_args) if resolver.def(def_id).kind == DefKind::TypeAlias => {
             if let Some(scheme) = item_schemes.get(&def_id) {
-                let resolved = match generic_args {
-                    Some(args) if args.len() == scheme.vars.len() => {
-                        let mapping: FxHashMap<TyVarId, Ty> = scheme
-                            .vars
-                            .iter()
-                            .copied()
-                            .zip(args.iter().cloned())
-                            .collect();
-                        substitute_ty_vars(&scheme.body, &mapping)
-                    }
-                    _ if scheme.vars.is_empty() => scheme.body.clone(),
-                    _ => ty,
+                let resolved = match resolve_scheme_with_args(scheme, &generic_args) {
+                    Some(resolved) => resolved,
+                    None => Ty::Adt(def_id, generic_args),
                 };
                 normalize_type_aliases(resolved, resolver, item_schemes)
             } else {
-                ty
+                Ty::Adt(def_id, generic_args)
             }
         }
         t => t,

@@ -1,6 +1,18 @@
+use thin_vec::ThinVec;
+
+use crate::hir::{DefId, HirId};
+use crate::resolve::Res;
 use crate::typeck::Ty;
 use crate::typeck::infctx::TyVarId;
+use crate::typeck::types::Scheme;
 use fxhash::FxHashMap;
+
+pub fn res_to_def_id(res: Res<HirId>) -> Option<DefId> {
+    match res {
+        Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => Some(def_id),
+        _ => None,
+    }
+}
 
 // TODO: Refactor into trait.
 pub fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
@@ -46,4 +58,21 @@ pub fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
         Ty::Var(v) => mapping.get(&v).cloned().unwrap_or(Ty::Var(v)),
         ty => ty,
     })
+}
+
+pub fn resolve_scheme_with_args(scheme: &Scheme, generic_args: &Option<ThinVec<Ty>>) -> Option<Ty> {
+    let resolved = match generic_args {
+        Some(args) if args.len() == scheme.vars.len() => {
+            let mapping: FxHashMap<TyVarId, Ty> = scheme
+                .vars
+                .iter()
+                .copied()
+                .zip(args.iter().cloned())
+                .collect();
+            substitute_ty_vars(&scheme.body, &mapping)
+        }
+        _ if scheme.vars.is_empty() => scheme.body.clone(),
+        _ => return None,
+    };
+    Some(resolved)
 }

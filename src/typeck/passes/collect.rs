@@ -9,8 +9,7 @@ use crate::hir::{
     self, AssocItemKind, Def, DefId, DefKind, FnDecl, GenericParam, HirId, ItemKind, OwnerNode,
 };
 use crate::interner::Symbol;
-use crate::resolve::Res;
-use crate::typeck::fold::fold_ty;
+use crate::typeck::fold::{fold_ty, res_to_def_id};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::{GenericParamInfo, TyVisitable, TyVisitor, Typeck, diag};
@@ -65,22 +64,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             entry.insert(field.name, (field.ty.clone(), index));
                         }
 
-                        for &item_def_id in items {
-                            let def = &self.resolver.def(item_def_id);
-                            if def.kind == DefKind::AssocType
-                                && let Some(name) = def.name
-                            {
-                                self.coherence
-                                    .assoc_type_index
-                                    .insert((def_id, name), item_def_id);
-                            }
-                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
-                            self.coherence
-                                .parent_to_assoc
-                                .entry(def_id)
-                                .or_default()
-                                .push(item_def_id);
-                        }
+                        self.register_assoc_items(def_id, items);
                     }
                     ItemKind::TypeAlias {
                         type_,
@@ -119,23 +103,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             })
                             .collect();
                         self.coherence.register_trait(def_id, methods);
-
-                        for &item_def_id in items {
-                            let def = &self.resolver.def(item_def_id);
-                            if def.kind == DefKind::AssocType
-                                && let Some(name) = def.name
-                            {
-                                self.coherence
-                                    .assoc_type_index
-                                    .insert((def_id, name), item_def_id);
-                            }
-                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
-                            self.coherence
-                                .parent_to_assoc
-                                .entry(def_id)
-                                .or_default()
-                                .push(item_def_id);
-                        }
+                        self.register_assoc_items(def_id, items);
                     }
                     ItemKind::Impl {
                         self_ty,
@@ -165,14 +133,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .push(trait_def_id);
                         }
 
-                        for &item_def_id in items {
-                            self.coherence.assoc_to_parent.insert(item_def_id, def_id);
-                            self.coherence
-                                .parent_to_assoc
-                                .entry(def_id)
-                                .or_default()
-                                .push(item_def_id);
-                        }
+                        self.register_assoc_items(def_id, items);
                     }
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
@@ -675,14 +636,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
     #[allow(clippy::match_single_binding)]
     fn resolve_qself_to_struct(qpath: &hir::QPath, defs: &ThinVec<Def>) -> Option<DefId> {
-        match qpath {
-            hir::QPath::Resolved(_, path) => match path.res {
-                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    (defs[def_id.0 as usize].kind == DefKind::Struct).then_some(def_id)
-                }
-                _ => None,
-            },
-            hir::QPath::TypeRelative { .. } => None,
+        let hir::QPath::Resolved(_, path) = qpath else {
+            return None;
+        };
+        let def_id = res_to_def_id(path.res)?;
+        (defs[def_id.0 as usize].kind == DefKind::Struct).then_some(def_id)
+    }
+
+    fn register_assoc_items(&mut self, parent_def_id: DefId, items: &[DefId]) {
+        for &item_def_id in items {
+            let def = &self.resolver.def(item_def_id);
+            if def.kind == DefKind::AssocType
+                && let Some(name) = def.name
+            {
+                self.coherence
+                    .assoc_type_index
+                    .insert((parent_def_id, name), item_def_id);
+            }
+            self.coherence
+                .assoc_to_parent
+                .insert(item_def_id, parent_def_id);
+            self.coherence
+                .parent_to_assoc
+                .entry(parent_def_id)
+                .or_default()
+                .push(item_def_id);
         }
     }
 

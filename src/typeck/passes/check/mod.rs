@@ -16,7 +16,7 @@ use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
-use crate::typeck::fold::{fold_ty, substitute_ty_vars};
+use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
@@ -354,44 +354,18 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 if self.typeck.resolver.def(def_id).kind == DefKind::TypeAlias =>
             {
                 if let Some(scheme) = self.typeck.item_schemes.get(&def_id) {
-                    let resolved = if let Some(args) = &generic_args {
-                        if args.len() != scheme.vars.len() {
-                            builders::emit_at(
+                    let resolved = match resolve_scheme_with_args(scheme, &generic_args) {
+                        Some(resolved) => resolved,
+                        None => {
+                            let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
+                            emit_unexpected_generic_args(
                                 self.typeck.ctx,
                                 span,
                                 self.module_id,
-                                diag::UnexpectedGenericArgs,
-                                diag_params! {
-                                    expected = scheme.vars.len(),
-                                    s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                    found = args.len(),
-                                },
+                                scheme.vars.len(),
+                                found,
                             );
                             return Ty::Error;
-                        }
-                        let mapping: FxHashMap<TyVarId, Ty> = scheme
-                            .vars
-                            .iter()
-                            .copied()
-                            .zip(args.iter().cloned())
-                            .collect();
-                        substitute_ty_vars(&scheme.body, &mapping)
-                    } else {
-                        if scheme.vars.is_empty() {
-                            scheme.body.clone()
-                        } else {
-                            builders::emit_at(
-                                self.typeck.ctx,
-                                span,
-                                self.module_id,
-                                diag::UnexpectedGenericArgs,
-                                diag_params! {
-                                    expected = scheme.vars.len(),
-                                    s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                    found = 0,
-                                },
-                            );
-                            Ty::Error
                         }
                     };
                     self.normalize_aliases(resolved, span)
@@ -705,16 +679,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let provided = explicit_args.len();
         let mut args = explicit_args.clone();
         if !self.try_complete_generic_args(def_id, &mut args, scheme.vars.len()) {
-            builders::emit_at(
+            emit_unexpected_generic_args(
                 self.typeck.ctx,
                 span,
                 self.module_id,
-                diag::UnexpectedGenericArgs,
-                diag_params! {
-                    expected = scheme.vars.len(),
-                    s = if scheme.vars.len() == 1 { "" } else { "s" },
-                    found = provided,
-                },
+                scheme.vars.len(),
+                provided,
             );
             return Ty::Error;
         }
@@ -931,16 +901,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             let provided = generic_args.len();
             let mut hir_args = generic_args.clone();
             if !self.try_complete_generic_args(def, &mut hir_args, param_hir_ids.len()) {
-                builders::emit_at(
+                emit_unexpected_generic_args(
                     self.typeck.ctx,
                     span,
                     self.module_id,
-                    diag::UnexpectedGenericArgs,
-                    diag_params! {
-                        expected = param_hir_ids.len(),
-                        s = if param_hir_ids.len() == 1 { "" } else { "s" },
-                        found = provided,
-                    },
+                    param_hir_ids.len(),
+                    provided,
                 );
                 return Ty::Error;
             }
@@ -1428,6 +1394,26 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     fn report_type_error(&mut self, err: UnifyError) {
         emit_unify_error(&err, self.typeck.resolver, self.typeck.ctx, self.icx);
     }
+}
+
+pub(super) fn emit_unexpected_generic_args(
+    ctx: &mut Ctx,
+    span: Span,
+    module_id: ModuleId,
+    expected: usize,
+    found: usize,
+) {
+    builders::emit_at(
+        ctx,
+        span,
+        module_id,
+        diag::UnexpectedGenericArgs,
+        diag_params! {
+            expected = expected,
+            s = if expected == 1 { "" } else { "s" },
+            found = found,
+        },
+    );
 }
 
 pub(super) fn emit_unify_error(
