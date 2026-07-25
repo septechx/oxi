@@ -141,7 +141,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
                             Some(assoc_def_id) => (def_id, assoc_def_id, self_ty),
-                            None => return Ty::Error,
+                            None => {
+                                builders::emit_at(
+                                    self.ctx,
+                                    segment.ident.span,
+                                    ModuleId(0),
+                                    diag::UnresolvedAssocType,
+                                    diag_params! {},
+                                );
+                                return Ty::Error;
+                            }
                         },
                         DefKind::Struct => {
                             if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {

@@ -1,7 +1,7 @@
 trait Bar {
     type BarTy;
 
-    fn qux() Self::BazTy;
+    fn qux() Self::BarTy;
 }
 
 struct Foo<T> {}
