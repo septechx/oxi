@@ -147,6 +147,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {
                                 if let Some(scheme) = self.item_schemes.get(&assoc_def_id) {
                                     if let Some(args) = &generic_args {
+                                        if args.len() != scheme.vars.len() {
+                                            builders::emit_at(
+                                                self.ctx,
+                                                path.span,
+                                                ModuleId(0),
+                                                diag::UnexpectedGenericArgs,
+                                                diag_params! {
+                                                    expected = scheme.vars.len(),
+                                                    s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                                    found = args.len(),
+                                                },
+                                            );
+                                            return Ty::Error;
+                                        }
                                         let mapping: FxHashMap<TyVarId, Ty> = scheme
                                             .vars
                                             .iter()
@@ -178,7 +192,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                         }
                                     }
 
-                                    return scheme_body;
+                                    builders::emit_at(
+                                        self.ctx,
+                                        path.span,
+                                        ModuleId(0),
+                                        diag::UnexpectedGenericArgs,
+                                        diag_params! {
+                                            expected = scheme_vars.len(),
+                                            s = if scheme_vars.len() == 1 { "" } else { "s" },
+                                            found = 0,
+                                        },
+                                    );
+                                    return Ty::Error;
                                 }
                                 return Ty::Error;
                             }
