@@ -16,7 +16,7 @@ use crate::interner::{Interner, Symbol};
 use crate::resolve::{Res, ResolverOutputs};
 use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
-use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
+use crate::typeck::fold::{AliasExpand, expand_type_alias, fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
@@ -121,7 +121,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        checker.current_assoc_types = checker.compute_assoc_types(parent_def_id);
+                        checker.current_assoc_types =
+                            checker.typeck.compute_assoc_types(parent_def_id);
                         checker.register_if_generic_def(parent_def_id);
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
@@ -138,7 +139,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        checker.current_assoc_types = checker.compute_assoc_types(parent_def_id);
+                        checker.current_assoc_types =
+                            checker.typeck.compute_assoc_types(parent_def_id);
                     }
                 },
                 OwnerNode::Crate => {}
@@ -218,51 +220,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         for (i, default) in info.defaults.iter().enumerate() {
                             let mut default_ty = self
                                 .ty_from_hir(&mut icx, default.as_ref().expect("default exists"));
-                            default_ty = fold_ty(&default_ty, &mut |ty| match &ty {
-                                Ty::Projection {
-                                    trait_def_id,
-                                    assoc_def_id,
-                                    self_ty,
-                                    ..
-                                } => {
-                                    if let Some(name) = self.resolver.def(*assoc_def_id).name
-                                        && let Ty::Adt(self_def_id, self_generic_args) =
-                                            self_ty.as_ref()
-                                        && let Some(impl_def_ids) =
-                                            self.coherence.impls.get(&(*trait_def_id, *self_def_id))
-                                    {
-                                        let target_self_ty =
-                                            Ty::Adt(*self_def_id, self_generic_args.clone());
-                                        for &impl_def_id in impl_def_ids {
-                                            if self
-                                                .coherence
-                                                .impl_resolved_self_type
-                                                .get(&impl_def_id)
-                                                != Some(&target_self_ty)
-                                            {
-                                                continue;
-                                            }
-                                            let Some(item_ids) =
-                                                self.coherence.parent_to_assoc.get(&impl_def_id)
-                                            else {
-                                                continue;
-                                            };
-                                            for &item_def_id in item_ids {
-                                                let def = self.resolver.def(item_def_id);
-                                                if def.kind == DefKind::AssocType
-                                                    && def.name == Some(name)
-                                                    && let Some(scheme) =
-                                                        self.item_schemes.get(&item_def_id)
-                                                {
-                                                    return scheme.body.clone();
-                                                }
-                                            }
-                                        }
-                                    }
-                                    ty
-                                }
-                                _ => ty,
-                            });
+                            default_ty = self.normalize_assoc_projections(default_ty);
                             if !subst.is_empty() {
                                 default_ty = substitute_ty_vars(&default_ty, &subst);
                             }
@@ -287,6 +245,101 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
         }
+    }
+
+    pub(crate) fn compute_assoc_types(&self, parent_def_id: DefId) -> FxHashMap<Symbol, Ty> {
+        let mut assoc_types = FxHashMap::default();
+        if self.resolver.def(parent_def_id).kind == DefKind::Impl
+            && let Some(item_ids) = self.coherence.parent_to_assoc.get(&parent_def_id)
+        {
+            for &item_def_id in item_ids {
+                let def = self.resolver.def(item_def_id);
+                if def.kind == DefKind::AssocType
+                    && let Some(name) = def.name
+                    && let Some(scheme) = self.item_schemes.get(&item_def_id)
+                {
+                    assoc_types.insert(name, scheme.body.clone());
+                }
+            }
+        }
+        assoc_types
+    }
+
+    pub(crate) fn normalize_assoc_projections(&self, ty: Ty) -> Ty {
+        self.normalize_assoc_projections_inner(
+            ty,
+            &mut FxHashSet::default(),
+            &mut FxHashSet::default(),
+        )
+    }
+
+    fn normalize_assoc_projections_inner(
+        &self,
+        ty: Ty,
+        aliases_in_progress: &mut FxHashSet<DefId>,
+        projections_in_progress: &mut FxHashSet<(DefId, DefId, DefId)>,
+    ) -> Ty {
+        fold_ty(&ty, &mut |ty| match &ty {
+            Ty::Adt(def_id, generic_args)
+                if self.resolver.def(*def_id).kind == DefKind::TypeAlias =>
+            {
+                match expand_type_alias(
+                    *def_id,
+                    generic_args,
+                    &self.item_schemes,
+                    aliases_in_progress,
+                ) {
+                    AliasExpand::Expanded(resolved) => {
+                        let result = self.normalize_assoc_projections_inner(
+                            resolved,
+                            aliases_in_progress,
+                            projections_in_progress,
+                        );
+                        aliases_in_progress.remove(def_id);
+                        result
+                    }
+                    AliasExpand::Cyclic => Ty::Error,
+                    AliasExpand::NoScheme | AliasExpand::ArityMismatch { .. } => {
+                        aliases_in_progress.remove(def_id);
+                        ty
+                    }
+                }
+            }
+            Ty::Projection {
+                trait_def_id,
+                assoc_def_id,
+                self_ty,
+                ..
+            } => {
+                if let Some(name) = self.resolver.def(*assoc_def_id).name
+                    && let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
+                    && let Some(impl_def_ids) =
+                        self.coherence.impls.get(&(*trait_def_id, *self_def_id))
+                {
+                    let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
+                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&&impl_def_id| {
+                        self.coherence.impl_resolved_self_type.get(&impl_def_id)
+                            == Some(&target_self_ty)
+                    }) {
+                        let key = (*trait_def_id, *self_def_id, *assoc_def_id);
+                        if projections_in_progress.insert(key) {
+                            let assoc_types = self.compute_assoc_types(impl_def_id);
+                            let concrete = assoc_types.get(&name).cloned();
+                            projections_in_progress.remove(&key);
+                            if let Some(concrete) = concrete {
+                                return self.normalize_assoc_projections_inner(
+                                    concrete,
+                                    aliases_in_progress,
+                                    projections_in_progress,
+                                );
+                            }
+                        }
+                    }
+                }
+                ty
+            }
+            ty => ty.clone(),
+        })
     }
 }
 
@@ -330,47 +383,48 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         self.normalize_aliases(ty, hir_ty.span)
     }
 
-    pub fn compute_assoc_types(&self, parent_def_id: DefId) -> FxHashMap<Symbol, Ty> {
-        let mut assoc_types = FxHashMap::default();
-        if self.typeck.resolver.def(parent_def_id).kind == DefKind::Impl
-            && let Some(item_ids) = self.typeck.coherence.parent_to_assoc.get(&parent_def_id)
-        {
-            for &item_def_id in item_ids {
-                let def = self.typeck.resolver.def(item_def_id);
-                if def.kind == DefKind::AssocType
-                    && let Some(name) = def.name
-                    && let Some(scheme) = self.typeck.item_schemes.get(&item_def_id)
-                {
-                    assoc_types.insert(name, scheme.body.clone());
-                }
-            }
-        }
-        assoc_types
+    pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> Ty {
+        self.normalize_aliases_inner(ty, span, &mut FxHashSet::default())
     }
 
-    pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> Ty {
+    fn normalize_aliases_inner(
+        &mut self,
+        ty: Ty,
+        span: Span,
+        in_progress: &mut FxHashSet<DefId>,
+    ) -> Ty {
         fold_ty(&ty, &mut |ty| match ty {
             Ty::Adt(def_id, generic_args)
                 if self.typeck.resolver.def(def_id).kind == DefKind::TypeAlias =>
             {
-                if let Some(scheme) = self.typeck.item_schemes.get(&def_id) {
-                    let resolved = match resolve_scheme_with_args(scheme, &generic_args) {
-                        Some(resolved) => resolved,
-                        None => {
-                            let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
-                            emit_unexpected_generic_args(
-                                self.typeck.ctx,
-                                span,
-                                self.module_id,
-                                scheme.vars.len(),
-                                found,
-                            );
-                            return Ty::Error;
-                        }
-                    };
-                    self.normalize_aliases(resolved, span)
-                } else {
-                    Ty::Adt(def_id, generic_args)
+                match expand_type_alias(
+                    def_id,
+                    &generic_args,
+                    &self.typeck.item_schemes,
+                    in_progress,
+                ) {
+                    AliasExpand::Expanded(resolved) => {
+                        let result = self.normalize_aliases_inner(resolved, span, in_progress);
+                        in_progress.remove(&def_id);
+                        result
+                    }
+                    AliasExpand::Cyclic => Ty::Error,
+                    AliasExpand::NoScheme => {
+                        in_progress.remove(&def_id);
+                        Ty::Adt(def_id, generic_args)
+                    }
+                    AliasExpand::ArityMismatch { expected } => {
+                        in_progress.remove(&def_id);
+                        let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
+                        emit_unexpected_generic_args(
+                            self.typeck.ctx,
+                            span,
+                            self.module_id,
+                            expected,
+                            found,
+                        );
+                        Ty::Error
+                    }
                 }
             }
             Ty::Projection {
@@ -381,7 +435,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             } => {
                 if let Some(name) = self.typeck.resolver.def(assoc_def_id).name {
                     if let Some(concrete) = self.current_assoc_types.get(&name) {
-                        return self.normalize_aliases(concrete.clone(), span);
+                        return self.normalize_aliases_inner(concrete.clone(), span, in_progress);
                     }
                     if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
                         && let Some(impl_def_ids) = self
@@ -398,9 +452,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                                 .get(impl_def_id)
                                 == Some(&target_self_ty)
                         }) {
-                            let assoc_types = self.compute_assoc_types(*impl_def_id);
+                            let assoc_types = self.typeck.compute_assoc_types(*impl_def_id);
                             if let Some(concrete) = assoc_types.get(&name) {
-                                return self.normalize_aliases(concrete.clone(), span);
+                                return self.normalize_aliases_inner(
+                                    concrete.clone(),
+                                    span,
+                                    in_progress,
+                                );
                             }
                         }
                     }

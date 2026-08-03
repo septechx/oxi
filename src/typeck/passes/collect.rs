@@ -9,7 +9,7 @@ use crate::hir::{
     self, AssocItemKind, Def, DefId, DefKind, FnDecl, GenericParam, HirId, ItemKind, OwnerNode,
 };
 use crate::interner::Symbol;
-use crate::typeck::fold::{fold_ty, res_to_def_id};
+use crate::typeck::fold::{fold_ty, res_to_def_id, resolve_scheme_with_args};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::{GenericParamInfo, TyVisitable, TyVisitor, Typeck, diag};
@@ -259,14 +259,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 continue;
             }
 
-            let mut in_progress = FxHashSet::default();
+            let mut in_progress: Vec<(DefId, Option<ThinVec<Ty>>)> = Vec::new();
 
             if Self::visit_alias(
                 def_id,
                 def_id,
                 &self.item_schemes,
                 &self.resolver.defs,
-                &mut visited,
                 &mut in_progress,
             ) {
                 let module_id = self
@@ -362,15 +361,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         start: DefId,
         item_schemes: &FxHashMap<DefId, Scheme>,
         defs: &ThinVec<Def>,
-        visited: &mut FxHashSet<DefId>,
-        in_progress: &mut FxHashSet<DefId>,
+        in_progress: &mut Vec<(DefId, Option<ThinVec<Ty>>)>,
     ) -> bool {
         struct AliasVisitor<'a> {
             start: DefId,
             item_schemes: &'a FxHashMap<DefId, Scheme>,
             defs: &'a ThinVec<Def>,
-            visited: &'a mut FxHashSet<DefId>,
-            in_progress: &'a mut FxHashSet<DefId>,
+            in_progress: &'a mut Vec<(DefId, Option<ThinVec<Ty>>)>,
             found_cycle: bool,
         }
 
@@ -380,30 +377,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     return VisitAction::SkipChildren;
                 }
 
-                let Ty::Adt(def_id, _) = ty else {
+                let Ty::Adt(def_id, generic_args) = ty else {
                     return VisitAction::Continue;
                 };
                 if self.defs[def_id.0 as usize].kind != DefKind::TypeAlias {
                     return VisitAction::Continue;
                 }
-                if *def_id == self.start || self.in_progress.contains(def_id) {
+                if *def_id == self.start
+                    || self
+                        .in_progress
+                        .iter()
+                        .any(|(d, args)| d == def_id && args == generic_args)
+                {
                     self.found_cycle = true;
-                    return VisitAction::SkipChildren;
-                }
-                if !self.visited.insert(*def_id) {
                     return VisitAction::SkipChildren;
                 }
 
-                if Typeck::visit_alias(
-                    *def_id,
-                    self.start,
-                    self.item_schemes,
-                    self.defs,
-                    self.visited,
-                    self.in_progress,
-                ) {
-                    self.found_cycle = true;
+                let Some(scheme) = self.item_schemes.get(def_id) else {
+                    return VisitAction::SkipChildren;
+                };
+
+                self.in_progress.push((*def_id, generic_args.clone()));
+                if let Some(resolved) = resolve_scheme_with_args(scheme, generic_args) {
+                    resolved.visit(self);
                 }
+                self.in_progress.pop();
 
                 VisitAction::SkipChildren
             }
@@ -413,13 +411,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             return false;
         };
 
-        in_progress.insert(current);
+        in_progress.push((current, None));
 
         let mut visitor = AliasVisitor {
             start,
             item_schemes,
             defs,
-            visited,
             in_progress,
             found_cycle: false,
         };
@@ -428,7 +425,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         let found_cycle = visitor.found_cycle;
 
-        in_progress.remove(&current);
+        in_progress.pop();
 
         found_cycle
     }

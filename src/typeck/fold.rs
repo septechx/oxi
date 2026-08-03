@@ -5,7 +5,7 @@ use crate::resolve::Res;
 use crate::typeck::Ty;
 use crate::typeck::infctx::TyVarId;
 use crate::typeck::types::Scheme;
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 pub fn res_to_def_id(res: Res<HirId>) -> Option<DefId> {
     match res {
@@ -75,4 +75,31 @@ pub fn resolve_scheme_with_args(scheme: &Scheme, generic_args: &Option<ThinVec<T
         _ => return None,
     };
     Some(resolved)
+}
+
+pub enum AliasExpand {
+    Expanded(Ty),
+    Cyclic,
+    NoScheme,
+    ArityMismatch { expected: usize },
+}
+
+pub fn expand_type_alias(
+    def_id: DefId,
+    generic_args: &Option<ThinVec<Ty>>,
+    item_schemes: &FxHashMap<DefId, Scheme>,
+    in_progress: &mut FxHashSet<DefId>,
+) -> AliasExpand {
+    if !in_progress.insert(def_id) {
+        return AliasExpand::Cyclic;
+    }
+    match item_schemes.get(&def_id) {
+        Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
+            Some(resolved) => AliasExpand::Expanded(resolved),
+            None => AliasExpand::ArityMismatch {
+                expected: scheme.vars.len(),
+            },
+        },
+        None => AliasExpand::NoScheme,
+    }
 }

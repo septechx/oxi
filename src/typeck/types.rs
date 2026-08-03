@@ -7,7 +7,7 @@ use crate::errors::builders;
 use crate::hir::{self, DefId, DefKind, ModuleId, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
-use crate::typeck::fold::{fold_ty, substitute_ty_vars};
+use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 use crate::typeck::{Typeck, diag};
 
@@ -156,27 +156,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {
                                 if let Some(scheme) = self.item_schemes.get(&assoc_def_id) {
                                     if let Some(args) = &generic_args {
-                                        if args.len() != scheme.vars.len() {
-                                            builders::emit_at(
-                                                self.ctx,
-                                                path.span,
-                                                ModuleId(0),
-                                                diag::UnexpectedGenericArgs,
-                                                diag_params! {
-                                                    expected = scheme.vars.len(),
-                                                    s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                                    found = args.len(),
-                                                },
-                                            );
-                                            return Ty::Error;
+                                        if let Some(resolved) =
+                                            resolve_scheme_with_args(scheme, &generic_args)
+                                        {
+                                            return resolved;
                                         }
-                                        let mapping: FxHashMap<TyVarId, Ty> = scheme
-                                            .vars
-                                            .iter()
-                                            .copied()
-                                            .zip(args.iter().cloned())
-                                            .collect();
-                                        return substitute_ty_vars(&scheme.body, &mapping);
+                                        builders::emit_at(
+                                            self.ctx,
+                                            path.span,
+                                            ModuleId(0),
+                                            diag::UnexpectedGenericArgs,
+                                            diag_params! {
+                                                expected = scheme.vars.len(),
+                                                s = if scheme.vars.len() == 1 { "" } else { "s" },
+                                                found = args.len(),
+                                            },
+                                        );
+                                        return Ty::Error;
                                     }
                                     let scheme_body = scheme.body.clone();
                                     let scheme_vars = scheme.vars.clone();
@@ -195,6 +191,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                             })
                                             .collect();
                                         if args.len() == scheme_vars.len() {
+                                            let args: ThinVec<Ty> = args
+                                                .into_iter()
+                                                .map(|arg| self.normalize_assoc_projections(arg))
+                                                .collect();
                                             let mapping: FxHashMap<TyVarId, Ty> =
                                                 scheme_vars.into_iter().zip(args).collect();
                                             return substitute_ty_vars(&scheme_body, &mapping);
@@ -218,7 +218,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
                                 Some((trait_id, assoc_id)) => (trait_id, assoc_id, self_ty),
-                                None => return Ty::Error,
+                                None => {
+                                    builders::emit_at(
+                                        self.ctx,
+                                        segment.ident.span,
+                                        ModuleId(0),
+                                        diag::UnresolvedAssocType,
+                                        diag_params! {},
+                                    );
+                                    return Ty::Error;
+                                }
                             }
                         }
                         _ => return Ty::Error,

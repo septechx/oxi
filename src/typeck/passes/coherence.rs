@@ -5,14 +5,14 @@ use crate::errors::builders;
 use crate::hir::{DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
 use crate::interner::Symbol;
 use crate::resolve::{Res, ResolverOutputs};
-use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
+use crate::typeck::fold::{AliasExpand, expand_type_alias, fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
 use crate::typeck::{Scheme, Typeck, diag};
 
 use super::check::emit_unexpected_generic_args;
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_coherence(&mut self) {
@@ -302,12 +302,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     // Normalize projections recursively until stable
                     let normalize_projections = |ty: Ty| -> Ty {
                         let mut prev = ty;
+                        let mut seen: FxHashSet<DefId> = FxHashSet::default();
                         loop {
+                            let mut resolved_this_pass: FxHashSet<DefId> = FxHashSet::default();
                             let next = fold_ty(&prev, &mut |inner| match inner {
                                 Ty::Projection { assoc_def_id, .. } => {
+                                    if seen.contains(&assoc_def_id) {
+                                        return inner;
+                                    }
                                     if let Some(name) = self.resolver.def(assoc_def_id).name
                                         && let Some(&concrete) = assoc_types.get(&name)
                                     {
+                                        resolved_this_pass.insert(assoc_def_id);
                                         concrete.clone()
                                     } else {
                                         inner
@@ -318,6 +324,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             if next == prev {
                                 break next;
                             }
+                            seen.extend(resolved_this_pass);
                             prev = next;
                         }
                     };
@@ -371,16 +378,29 @@ fn normalize_type_aliases(
     resolver: &ResolverOutputs,
     item_schemes: &FxHashMap<DefId, Scheme>,
 ) -> Ty {
+    normalize_type_aliases_inner(ty, resolver, item_schemes, &mut FxHashSet::default())
+}
+
+fn normalize_type_aliases_inner(
+    ty: Ty,
+    resolver: &ResolverOutputs,
+    item_schemes: &FxHashMap<DefId, Scheme>,
+    in_progress: &mut FxHashSet<DefId>,
+) -> Ty {
     fold_ty(&ty, &mut |ty| match ty {
         Ty::Adt(def_id, generic_args) if resolver.def(def_id).kind == DefKind::TypeAlias => {
-            if let Some(scheme) = item_schemes.get(&def_id) {
-                let resolved = match resolve_scheme_with_args(scheme, &generic_args) {
-                    Some(resolved) => resolved,
-                    None => Ty::Adt(def_id, generic_args),
-                };
-                normalize_type_aliases(resolved, resolver, item_schemes)
-            } else {
-                Ty::Adt(def_id, generic_args)
+            match expand_type_alias(def_id, &generic_args, item_schemes, in_progress) {
+                AliasExpand::Expanded(resolved) => {
+                    let result =
+                        normalize_type_aliases_inner(resolved, resolver, item_schemes, in_progress);
+                    in_progress.remove(&def_id);
+                    result
+                }
+                AliasExpand::Cyclic => Ty::Error,
+                AliasExpand::NoScheme | AliasExpand::ArityMismatch { .. } => {
+                    in_progress.remove(&def_id);
+                    Ty::Adt(def_id, generic_args)
+                }
             }
         }
         t => t,
