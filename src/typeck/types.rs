@@ -2,14 +2,34 @@ use fxhash::FxHashMap;
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
-use crate::diag_params;
-use crate::errors::builders;
-use crate::hir::{self, DefId, DefKind, ModuleId, PrimTy, QPath, TyKind};
+use crate::hir::{self, DefId, DefKind, ModuleId, Path, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
+use crate::span::Span;
+use crate::typeck::Typeck;
 use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
-use crate::typeck::{Typeck, diag};
+
+#[derive(Debug, Clone)]
+pub enum TyFromHirError {
+    /// The qself path in a projection did not resolve to a trait
+    ExpectedPathToTrait {
+        span: Span,
+        module_id: ModuleId,
+        path: Path,
+    },
+    /// An associated type could not be resolved
+    UnresolvedAssocType { span: Span, module_id: ModuleId },
+    /// The wrong number of generic arguments were provided to a generic type
+    UnexpectedGenericArgs {
+        span: Span,
+        module_id: ModuleId,
+        expected: usize,
+        found: usize,
+    },
+}
+
+pub type TyFromHirResult<T> = Result<T, TyFromHirError>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
@@ -40,44 +60,53 @@ pub enum Ty {
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub fn ty_from_hir(&mut self, icx: &mut InferCtx, hir_ty: &hir::Ty, module_id: ModuleId) -> Ty {
+    pub fn ty_from_hir(
+        &mut self,
+        icx: &mut InferCtx,
+        hir_ty: &hir::Ty,
+        module_id: ModuleId,
+    ) -> TyFromHirResult<Ty> {
         match &hir_ty.kind {
-            TyKind::Error => Ty::Error,
-            TyKind::Never => Ty::Never,
-            TyKind::Infer => icx.alloc_ty_var(),
-            TyKind::PrimTy(prim) => Ty::Prim(*prim),
-            TyKind::Ptr(inner, m) => {
-                Ty::Ptr(self.ty_from_hir(icx, inner, module_id).into_box(), *m)
-            }
-            TyKind::Slice(inner) => Ty::Slice(self.ty_from_hir(icx, inner, module_id).into_box()),
-            TyKind::Array(inner, size) => {
-                Ty::Array(self.ty_from_hir(icx, inner, module_id).into_box(), *size)
-            }
-            TyKind::Fn { params, ret } => Ty::Fn {
+            TyKind::Error => Ok(Ty::Error),
+            TyKind::Never => Ok(Ty::Never),
+            TyKind::Infer => Ok(icx.alloc_ty_var()),
+            TyKind::PrimTy(prim) => Ok(Ty::Prim(*prim)),
+            TyKind::Ptr(inner, m) => Ok(Ty::Ptr(
+                self.ty_from_hir(icx, inner, module_id)?.into_box(),
+                *m,
+            )),
+            TyKind::Slice(inner) => Ok(Ty::Slice(
+                self.ty_from_hir(icx, inner, module_id)?.into_box(),
+            )),
+            TyKind::Array(inner, size) => Ok(Ty::Array(
+                self.ty_from_hir(icx, inner, module_id)?.into_box(),
+                *size,
+            )),
+            TyKind::Fn { params, ret } => Ok(Ty::Fn {
                 params: params
                     .iter()
                     .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
-                    .collect(),
-                ret: self.ty_from_hir(icx, ret, module_id).into_box(),
-            },
-            TyKind::Tuple(elements) => Ty::Tuple(
+                    .collect::<TyFromHirResult<ThinVec<_>>>()?,
+                ret: self.ty_from_hir(icx, ret, module_id)?.into_box(),
+            }),
+            TyKind::Tuple(elements) => Ok(Ty::Tuple(
                 elements
                     .iter()
                     .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
-                    .collect(),
-            ),
+                    .collect::<TyFromHirResult<ThinVec<_>>>()?,
+            )),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                        let generic_args = self.ty_hir_generic_args(icx, path, module_id);
-                        Ty::Adt(def_id, generic_args)
+                        let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                        Ok(Ty::Adt(def_id, generic_args))
                     }
-                    Res::PrimTy(prim) => Ty::Prim(prim),
+                    Res::PrimTy(prim) => Ok(Ty::Prim(prim)),
                     Res::GenericParam(hir_id) => {
                         let ty_var = icx.hir_id_to_ty_var.get(&hir_id).expect("hir id exists");
-                        Ty::Var(*ty_var)
+                        Ok(Ty::Var(*ty_var))
                     }
-                    Res::Local(_) | Res::Err => Ty::Error,
+                    Res::Local(_) | Res::Err => Ok(Ty::Error),
                 },
                 QPath::TypeRelative { qself, segment } => {
                     self.resolve_type_relative_projection(icx, qself, segment, module_id)
@@ -85,7 +114,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             },
             TyKind::GenericParam(hir_id, _) => {
                 let ty_var = icx.hir_id_to_ty_var.get(hir_id).expect("hir id exists");
-                Ty::Var(*ty_var)
+                Ok(Ty::Var(*ty_var))
             }
         }
     }
@@ -97,176 +126,153 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         qself: &QPath,
         segment: &hir::PathSegment,
         module_id: ModuleId,
-    ) -> Ty {
+    ) -> TyFromHirResult<Ty> {
         let assoc_name = segment.ident.value;
 
         let (trait_def_id, assoc_def_id, self_ty) = match qself {
             // <Struct as Trait>::AssocType: explicit trait ref
             QPath::Resolved(Some(self_ty), path) => {
                 let Res::Def(trait_def_id) = path.res else {
-                    builders::emit_at(
-                        self.ctx,
-                        path.span,
+                    return Err(TyFromHirError::ExpectedPathToTrait {
+                        span: path.span,
                         module_id,
-                        crate::hir::diag::ExpectedPathToTrait,
-                        diag_params! { path = path.display(self.ctx) },
-                    );
-                    return Ty::Error;
+                        path: path.clone(),
+                    });
                 };
                 if self.resolver.def(trait_def_id).kind != DefKind::Trait {
-                    builders::emit_at(
-                        self.ctx,
-                        path.span,
+                    return Err(TyFromHirError::ExpectedPathToTrait {
+                        span: path.span,
                         module_id,
-                        crate::hir::diag::ExpectedPathToTrait,
-                        diag_params! { path = path.display(self.ctx) },
-                    );
-                    return Ty::Error;
+                        path: path.clone(),
+                    });
                 }
                 let assoc_def_id = match self.find_assoc_type(trait_def_id, assoc_name) {
                     Some(id) => id,
                     None => {
-                        builders::emit_at(
-                            self.ctx,
-                            segment.ident.span,
+                        return Err(TyFromHirError::UnresolvedAssocType {
+                            span: segment.ident.span,
                             module_id,
-                            diag::UnresolvedAssocType,
-                            diag_params! {},
-                        );
-                        return Ty::Error;
+                        });
                     }
                 };
                 (
                     trait_def_id,
                     assoc_def_id,
-                    self.ty_from_hir(icx, self_ty, module_id),
+                    self.ty_from_hir(icx, self_ty, module_id)?,
                 )
             }
             // `Struct::AssocType`: struct in impl body context
             QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    let generic_args = self.ty_hir_generic_args(icx, path, module_id);
+                    let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
                     let self_ty = Ty::Adt(def_id, generic_args.clone());
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
                             Some(assoc_def_id) => (def_id, assoc_def_id, self_ty),
                             None => {
-                                builders::emit_at(
-                                    self.ctx,
-                                    segment.ident.span,
+                                return Err(TyFromHirError::UnresolvedAssocType {
+                                    span: segment.ident.span,
                                     module_id,
-                                    diag::UnresolvedAssocType,
-                                    diag_params! {},
-                                );
-                                return Ty::Error;
+                                });
                             }
                         },
                         DefKind::Struct => {
                             if let Some(assoc_def_id) = self.find_assoc_type(def_id, assoc_name) {
-                                if let Some(scheme) = self.item_schemes.get(&assoc_def_id) {
-                                    if let Some(args) = &generic_args {
-                                        if let Some(resolved) =
-                                            resolve_scheme_with_args(scheme, &generic_args)
-                                        {
-                                            return resolved;
-                                        }
-                                        builders::emit_at(
-                                            self.ctx,
-                                            path.span,
-                                            module_id,
-                                            diag::UnexpectedGenericArgs,
-                                            diag_params! {
-                                                expected = scheme.vars.len(),
-                                                s = if scheme.vars.len() == 1 { "" } else { "s" },
-                                                found = args.len(),
-                                            },
-                                        );
-                                        return Ty::Error;
-                                    }
-                                    let scheme_body = scheme.body.clone();
-                                    let scheme_vars = scheme.vars.clone();
-                                    if scheme_vars.is_empty() {
-                                        return scheme_body;
-                                    }
-                                    if let Some(info) =
-                                        self.coherence.generic_params.get(&def_id).cloned()
-                                        && info.defaults.iter().all(|d| d.is_some())
+                                let Some(scheme) = self.item_schemes.get(&assoc_def_id) else {
+                                    return Ok(Ty::Error);
+                                };
+                                if let Some(args) = &generic_args {
+                                    if let Some(resolved) =
+                                        resolve_scheme_with_args(scheme, &generic_args)
                                     {
-                                        let args: ThinVec<Ty> = info
-                                            .defaults
-                                            .iter()
-                                            .filter_map(|d| {
-                                                d.as_ref()
-                                                    .map(|d| self.ty_from_hir(icx, d, module_id))
-                                            })
-                                            .collect();
-                                        if args.len() == scheme_vars.len() {
-                                            let args: ThinVec<Ty> = args
-                                                .into_iter()
-                                                .map(|arg| self.normalize_assoc_projections(arg))
-                                                .collect();
-                                            let mapping: FxHashMap<TyVarId, Ty> =
-                                                scheme_vars.into_iter().zip(args).collect();
-                                            return substitute_ty_vars(&scheme_body, &mapping);
-                                        }
+                                        return Ok(resolved);
                                     }
-
-                                    builders::emit_at(
-                                        self.ctx,
-                                        path.span,
+                                    return Err(TyFromHirError::UnexpectedGenericArgs {
+                                        span: path.span,
                                         module_id,
-                                        diag::UnexpectedGenericArgs,
-                                        diag_params! {
-                                            expected = scheme_vars.len(),
-                                            s = if scheme_vars.len() == 1 { "" } else { "s" },
-                                            found = 0,
-                                        },
-                                    );
-                                    return Ty::Error;
+                                        expected: scheme.vars.len(),
+                                        found: args.len(),
+                                    });
                                 }
-                                return Ty::Error;
+                                let scheme_body = scheme.body.clone();
+                                let scheme_vars = scheme.vars.clone();
+                                if scheme_vars.is_empty() {
+                                    return Ok(scheme_body);
+                                }
+                                if let Some(info) =
+                                    self.coherence.generic_params.get(&def_id).cloned()
+                                    && info.defaults.iter().all(|d| d.is_some())
+                                {
+                                    let args: ThinVec<Ty> = info
+                                        .defaults
+                                        .iter()
+                                        .map(|d| {
+                                            self.ty_from_hir(
+                                                icx,
+                                                d.as_ref().expect("default exists"),
+                                                module_id,
+                                            )
+                                        })
+                                        .collect::<TyFromHirResult<ThinVec<_>>>()?;
+                                    if args.len() == scheme_vars.len() {
+                                        let args: ThinVec<Ty> = args
+                                            .into_iter()
+                                            .map(|arg| self.normalize_assoc_projections(arg))
+                                            .collect();
+                                        let mapping: FxHashMap<TyVarId, Ty> =
+                                            scheme_vars.into_iter().zip(args).collect();
+                                        return Ok(substitute_ty_vars(&scheme_body, &mapping));
+                                    }
+                                }
+
+                                return Err(TyFromHirError::UnexpectedGenericArgs {
+                                    span: path.span,
+                                    module_id,
+                                    expected: scheme_vars.len(),
+                                    found: 0,
+                                });
                             }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
                                 Some((trait_id, assoc_id)) => (trait_id, assoc_id, self_ty),
                                 None => {
-                                    builders::emit_at(
-                                        self.ctx,
-                                        segment.ident.span,
+                                    return Err(TyFromHirError::UnresolvedAssocType {
+                                        span: segment.ident.span,
                                         module_id,
-                                        diag::UnresolvedAssocType,
-                                        diag_params! {},
-                                    );
-                                    return Ty::Error;
+                                    });
                                 }
                             }
                         }
-                        _ => return Ty::Error,
+                        _ => return Ok(Ty::Error),
                     }
                 }
                 Res::GenericParam(hir_id) => {
                     let ty_var = icx.hir_id_to_ty_var.get(&hir_id);
                     match ty_var {
-                        Some(&var) => {
-                            return Ty::Var(var);
-                        }
-                        None => return Ty::Error,
+                        Some(&var) => return Ok(Ty::Var(var)),
+                        None => return Ok(Ty::Error),
                     }
                 }
-                _ => return Ty::Error,
+                _ => return Ok(Ty::Error),
             },
-            QPath::TypeRelative { .. } => return Ty::Error,
+            QPath::TypeRelative { .. } => return Ok(Ty::Error),
         };
 
-        Ty::Projection {
+        let generic_args = segment
+            .generic_args
+            .as_ref()
+            .map(|args| {
+                args.iter()
+                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
+                    .collect::<TyFromHirResult<ThinVec<_>>>()
+            })
+            .transpose()?;
+
+        Ok(Ty::Projection {
             trait_def_id,
             assoc_def_id,
             self_ty: Box::new(self_ty),
-            generic_args: segment.generic_args.as_ref().map(|args| {
-                args.iter()
-                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
-                    .collect()
-            }),
-        }
+            generic_args,
+        })
     }
 
     fn find_trait_assoc_type_for_struct(
@@ -296,7 +302,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         icx: &mut InferCtx,
         path: &hir::Path,
         module_id: ModuleId,
-    ) -> Option<ThinVec<Ty>> {
+    ) -> TyFromHirResult<Option<ThinVec<Ty>>> {
         // TODO: Handle generic args in spots other than the last segment.
         // Currently Adt's can only have generic args in the last segment, but
         // when support for associated types is added, this will need to be
@@ -309,8 +315,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .map(|args| {
                 args.iter()
                     .map(|ty| self.ty_from_hir(icx, ty, module_id))
-                    .collect()
+                    .collect::<TyFromHirResult<ThinVec<_>>>()
             })
+            .transpose()
     }
 }
 

@@ -53,6 +53,62 @@ where
     f(ty)
 }
 
+pub fn try_fold_ty<F, E>(ty: &Ty, f: &mut F) -> Result<Ty, E>
+where
+    F: FnMut(Ty) -> Result<Ty, E>,
+{
+    let ty = match ty {
+        Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
+        Ty::Adt(d, generics) => Ty::Adt(
+            *d,
+            generics
+                .as_ref()
+                .map(|args| {
+                    args.iter()
+                        .map(|ty| try_fold_ty(ty, f))
+                        .collect::<Result<ThinVec<_>, _>>()
+                })
+                .transpose()?,
+        ),
+        Ty::Ptr(inner, m) => Ty::Ptr(try_fold_ty(inner, f)?.into_box(), *m),
+        Ty::Slice(inner) => Ty::Slice(try_fold_ty(inner, f)?.into_box()),
+        Ty::Array(inner, n) => Ty::Array(try_fold_ty(inner, f)?.into_box(), *n),
+        Ty::Fn { params, ret } => Ty::Fn {
+            params: params
+                .iter()
+                .map(|ty| try_fold_ty(ty, f))
+                .collect::<Result<ThinVec<_>, _>>()?,
+            ret: try_fold_ty(ret, f)?.into_box(),
+        },
+        Ty::Tuple(elements) => Ty::Tuple(
+            elements
+                .iter()
+                .map(|ty| try_fold_ty(ty, f))
+                .collect::<Result<ThinVec<_>, _>>()?,
+        ),
+        Ty::Projection {
+            trait_def_id,
+            assoc_def_id,
+            self_ty,
+            generic_args,
+        } => Ty::Projection {
+            self_ty: try_fold_ty(self_ty, f)?.into_box(),
+            generic_args: generic_args
+                .as_ref()
+                .map(|args| {
+                    args.iter()
+                        .map(|ty| try_fold_ty(ty, f))
+                        .collect::<Result<ThinVec<_>, _>>()
+                })
+                .transpose()?,
+            trait_def_id: *trait_def_id,
+            assoc_def_id: *assoc_def_id,
+        },
+    };
+
+    f(ty)
+}
+
 pub fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {
     fold_ty(ty, &mut |ty| match ty {
         Ty::Var(v) => mapping.get(&v).cloned().unwrap_or(Ty::Var(v)),
@@ -85,6 +141,20 @@ pub fn expand_type_alias(
 ) -> Ty {
     if !in_progress.insert(def_id) {
         return Ty::Error;
+    }
+    let result = expanded(in_progress, def_id, generic_args);
+    in_progress.remove(&def_id);
+    result
+}
+
+pub fn try_expand_type_alias<E>(
+    def_id: DefId,
+    generic_args: &Option<ThinVec<Ty>>,
+    in_progress: &mut FxHashSet<DefId>,
+    expanded: impl FnOnce(&mut FxHashSet<DefId>, DefId, &Option<ThinVec<Ty>>) -> Result<Ty, E>,
+) -> Result<Ty, E> {
+    if !in_progress.insert(def_id) {
+        return Ok(Ty::Error);
     }
     let result = expanded(in_progress, def_id, generic_args);
     in_progress.remove(&def_id);

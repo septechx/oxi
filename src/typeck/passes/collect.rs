@@ -1,7 +1,7 @@
 use fxhash::{FxHashMap, FxHashSet};
 use thin_vec::ThinVec;
 
-use super::check::emit_unify_error;
+use super::check::{emit_ty_from_hir_error, emit_unify_error};
 use crate::ast::visit::VisitAction;
 use crate::diag_params;
 use crate::errors::builders;
@@ -48,7 +48,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Const { ty, .. } => {
-                        let ty = self.ty_from_hir(&mut icx, ty, module_id).reject_vars();
+                        let ty = self
+                            .ty_from_hir(&mut icx, ty, module_id)
+                            .unwrap_or_else(|err| {
+                                emit_ty_from_hir_error(&err, self.ctx);
+                                Ty::Error
+                            })
+                            .reject_vars();
                         self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Struct {
@@ -85,7 +91,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = self.ty_from_hir(&mut icx, type_, module_id);
+                        let body =
+                            self.ty_from_hir(&mut icx, type_, module_id)
+                                .unwrap_or_else(|err| {
+                                    emit_ty_from_hir_error(&err, self.ctx);
+                                    Ty::Error
+                                });
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Trait {
@@ -176,7 +187,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             DefKind::Trait => {}
                             DefKind::Impl | DefKind::Struct => {
                                 let type_ = type_.as_ref().expect("assoc type is concrete");
-                                let body = self.ty_from_hir(&mut icx, type_, module_id);
+                                let body = self
+                                    .ty_from_hir(&mut icx, type_, module_id)
+                                    .unwrap_or_else(|err| {
+                                        emit_ty_from_hir_error(&err, self.ctx);
+                                        Ty::Error
+                                    });
                                 // impls/structs do not yet have generic params, but act as if
                                 // they did so we can reuse logic
                                 let scheme = self.assoc_item_scheme(
@@ -692,9 +708,21 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let params: ThinVec<Ty> = decl
             .params
             .iter()
-            .map(|param| self.ty_from_hir(icx, &param.ty, module_id))
+            .map(|param| {
+                self.ty_from_hir(icx, &param.ty, module_id)
+                    .unwrap_or_else(|err| {
+                        emit_ty_from_hir_error(&err, self.ctx);
+                        Ty::Error
+                    })
+            })
             .collect();
-        let ret = self.ty_from_hir(icx, &decl.ret, module_id).into_box();
+        let ret = self
+            .ty_from_hir(icx, &decl.ret, module_id)
+            .unwrap_or_else(|err| {
+                emit_ty_from_hir_error(&err, self.ctx);
+                Ty::Error
+            })
+            .into_box();
         Ty::Fn { params, ret }
     }
 

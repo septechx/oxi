@@ -212,8 +212,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 }
             }
 
-            let instantiated =
-                self.instantiate_fn_scheme(*def_id, &scheme, explicit_generic_args, callee_span);
+            let Ok(instantiated) = self.instantiate_fn_scheme(
+                *def_id,
+                &scheme,
+                explicit_generic_args,
+                callee_span,
+                true,
+            ) else {
+                self.icx.rollback(snap);
+                continue;
+            };
             let Ty::Fn {
                 params: param_tys,
                 ret,
@@ -294,8 +302,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
 
         let scheme = self.fold_recv_into_scheme(def_id, scheme, &recv_ty);
-        let instantiated =
-            self.instantiate_fn_scheme(*def_id, &scheme, explicit_generic_args, callee_span);
+        let instantiated = match self.instantiate_fn_scheme(
+            *def_id,
+            &scheme,
+            explicit_generic_args,
+            callee_span,
+            false,
+        ) {
+            Ok(ty) => ty,
+            Err(err) => {
+                self.report_ty_from_hir_error(err);
+                return Ty::Error;
+            }
+        };
         let Ty::Fn {
             params: param_tys, ..
         } = instantiated

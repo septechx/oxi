@@ -13,7 +13,7 @@ use crate::typeck::types::Ty;
 use crate::typeck::unify::unify;
 use crate::typeck::{Scheme, Typeck, diag};
 
-use super::check::emit_unexpected_generic_args;
+use super::check::{emit_ty_from_hir_error, emit_unexpected_generic_args};
 use fxhash::{FxHashMap, FxHashSet};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -74,7 +74,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 1. Extract and validate trait generic args from the path
             let trait_scheme = self.item_schemes.get(&trait_def_id).cloned();
-            let trait_generic_args = self.ty_hir_generic_args(&mut icx, trait_ty, impl_module);
+            let trait_generic_args = match self.ty_hir_generic_args(&mut icx, trait_ty, impl_module)
+            {
+                Ok(args) => args,
+                Err(err) => {
+                    emit_ty_from_hir_error(&err, self.ctx);
+                    continue;
+                }
+            };
 
             if let Some(scheme) = &trait_scheme
                 && !scheme.vars.is_empty()
@@ -97,11 +104,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
-                            let mut ty = self.ty_from_hir(
-                                &mut icx,
-                                default.as_ref().expect("default exists"),
-                                impl_module,
-                            );
+                            let mut ty = self
+                                .ty_from_hir(
+                                    &mut icx,
+                                    default.as_ref().expect("default exists"),
+                                    impl_module,
+                                )
+                                .unwrap_or_else(|err| {
+                                    emit_ty_from_hir_error(&err, self.ctx);
+                                    Ty::Error
+                                });
                             ty = normalize_type_aliases(ty, self.resolver, &self.item_schemes);
                             if !subst.is_empty() {
                                 ty = substitute_ty_vars(&ty, &subst);
@@ -141,11 +153,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     info.defaults[full_args.len()..].iter().enumerate()
                                 {
                                     let idx = full_args.len() + i;
-                                    let mut ty = self.ty_from_hir(
-                                        &mut icx,
-                                        default.as_ref().expect("default exists"),
-                                        impl_module,
-                                    );
+                                    let mut ty = self
+                                        .ty_from_hir(
+                                            &mut icx,
+                                            default.as_ref().expect("default exists"),
+                                            impl_module,
+                                        )
+                                        .unwrap_or_else(|err| {
+                                            emit_ty_from_hir_error(&err, self.ctx);
+                                            Ty::Error
+                                        });
                                     ty = normalize_type_aliases(
                                         ty,
                                         self.resolver,
@@ -189,7 +206,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
 
             // 2. Check for duplicate impls using resolved generic args
-            let self_type_generic_args = self.ty_hir_generic_args(&mut icx, self_ty, impl_module);
+            let self_type_generic_args =
+                match self.ty_hir_generic_args(&mut icx, self_ty, impl_module) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        emit_ty_from_hir_error(&err, self.ctx);
+                        continue;
+                    }
+                };
             let self_type = Ty::Adt(struct_def_id, self_type_generic_args);
             self.coherence
                 .impl_resolved_generic_args

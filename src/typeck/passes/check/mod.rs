@@ -18,9 +18,10 @@ use crate::span::Span;
 use crate::typeck::env::ScopeEnv;
 use crate::typeck::fold::{
     expand_type_alias, fold_ty, resolve_scheme_with_args, substitute_ty_vars,
+    try_expand_type_alias, try_fold_ty,
 };
 use crate::typeck::infctx::{InferCtx, TyVarSource};
-use crate::typeck::types::{Scheme, Ty};
+use crate::typeck::types::{Scheme, Ty, TyFromHirError, TyFromHirResult};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
 use crate::typeck::{Adjustment, MemberRes, TyVarId, Typeck, diag};
 use fxhash::{FxHashMap, FxHashSet};
@@ -226,11 +227,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .get(def_id)
                                 .copied()
                                 .unwrap_or_default();
-                            let mut default_ty = self.ty_from_hir(
-                                &mut icx,
-                                default.as_ref().expect("default exists"),
-                                module_id,
-                            );
+                            let mut default_ty = self
+                                .ty_from_hir(
+                                    &mut icx,
+                                    default.as_ref().expect("default exists"),
+                                    module_id,
+                                )
+                                .unwrap_or_else(|err| {
+                                    emit_ty_from_hir_error(&err, self.ctx);
+                                    Ty::Error
+                                });
                             default_ty = self.normalize_assoc_projections(default_ty);
                             if !subst.is_empty() {
                                 default_ty = substitute_ty_vars(&default_ty, &subst);
@@ -398,12 +404,26 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
     }
 
-    fn ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> Ty {
-        let ty = self.typeck.ty_from_hir(self.icx, hir_ty, self.module_id);
+    fn try_ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> TyFromHirResult<Ty> {
+        let ty = self.typeck.ty_from_hir(self.icx, hir_ty, self.module_id)?;
         self.normalize_aliases(ty, hir_ty.span)
     }
 
-    pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> Ty {
+    fn ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> Ty {
+        match self.try_ty_from_hir_resolved(hir_ty) {
+            Ok(ty) => ty,
+            Err(err) => {
+                self.report_ty_from_hir_error(err);
+                Ty::Error
+            }
+        }
+    }
+
+    fn report_ty_from_hir_error(&mut self, err: TyFromHirError) {
+        emit_ty_from_hir_error(&err, self.typeck.ctx);
+    }
+
+    pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> TyFromHirResult<Ty> {
         self.normalize_aliases_inner(ty, span, &mut FxHashSet::default())
     }
 
@@ -412,12 +432,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         ty: Ty,
         span: Span,
         in_progress: &mut FxHashSet<DefId>,
-    ) -> Ty {
-        fold_ty(&ty, &mut |ty| match ty {
+    ) -> TyFromHirResult<Ty> {
+        try_fold_ty(&ty, &mut |ty| match ty {
             Ty::Adt(def_id, generic_args)
                 if self.typeck.resolver.def(def_id).kind == DefKind::TypeAlias =>
             {
-                expand_type_alias(
+                try_expand_type_alias(
                     def_id,
                     &generic_args,
                     in_progress,
@@ -430,17 +450,15 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                             None => {
                                 let expected = scheme.vars.len();
                                 let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
-                                emit_unexpected_generic_args(
-                                    self.typeck.ctx,
+                                Err(TyFromHirError::UnexpectedGenericArgs {
                                     span,
-                                    self.module_id,
+                                    module_id: self.module_id,
                                     expected,
                                     found,
-                                );
-                                Ty::Error
+                                })
                             }
                         },
-                        None => Ty::Adt(def_id, generic_args.clone()),
+                        None => Ok(Ty::Adt(def_id, generic_args.clone())),
                     },
                 )
             }
@@ -480,16 +498,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         }
                     }
                 }
-                builders::emit_at(
-                    self.typeck.ctx,
+                Err(TyFromHirError::UnresolvedAssocType {
                     span,
-                    self.module_id,
-                    diag::UnresolvedAssocType,
-                    diag_params! {},
-                );
-                Ty::Error
+                    module_id: self.module_id,
+                })
             }
-            ty => ty,
+            ty => Ok(ty),
         })
     }
 
@@ -701,12 +715,28 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     if matches!(scheme.body, Ty::Adt(_, _)) {
                         match explicit_args {
                             Some(args) => self
-                                .instantiate_with_explicit_args(*def_id, &scheme, args, path.span),
+                                .instantiate_with_explicit_args(
+                                    *def_id, &scheme, args, path.span, false,
+                                )
+                                .unwrap_or_else(|err| {
+                                    self.report_ty_from_hir_error(err);
+                                    Ty::Error
+                                }),
                             None if scheme.vars.is_empty() => self.icx.instantiate(&scheme),
                             None => Ty::Adt(*def_id, None),
                         }
                     } else {
-                        self.instantiate_fn_scheme(*def_id, &scheme, explicit_args, path.span)
+                        self.instantiate_fn_scheme(
+                            *def_id,
+                            &scheme,
+                            explicit_args,
+                            path.span,
+                            false,
+                        )
+                        .unwrap_or_else(|err| {
+                            self.report_ty_from_hir_error(err);
+                            Ty::Error
+                        })
                     }
                 }
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
@@ -750,18 +780,17 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         scheme: &Scheme,
         explicit_args: &ThinVec<hir::Ty>,
         span: Span,
-    ) -> Ty {
+        suppress_errors: bool,
+    ) -> TyFromHirResult<Ty> {
         let provided = explicit_args.len();
         let mut args = explicit_args.clone();
         if !self.try_complete_generic_args(def_id, &mut args, scheme.vars.len()) {
-            emit_unexpected_generic_args(
-                self.typeck.ctx,
+            return Err(TyFromHirError::UnexpectedGenericArgs {
                 span,
-                self.module_id,
-                scheme.vars.len(),
-                provided,
-            );
-            return Ty::Error;
+                module_id: self.module_id,
+                expected: scheme.vars.len(),
+                found: provided,
+            });
         }
         let mut mapping = FxHashMap::default();
         for &v in &scheme.vars {
@@ -784,12 +813,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             }
         }
         for (hir_arg_ty, &v) in args.iter().zip(method_vars) {
-            let arg_ty = self.ty_from_hir_resolved(hir_arg_ty);
+            let arg_ty = match self.try_ty_from_hir_resolved(hir_arg_ty) {
+                Ok(ty) => ty,
+                Err(err) if suppress_errors => return Err(err),
+                Err(err) => {
+                    self.report_ty_from_hir_error(err);
+                    Ty::Error
+                }
+            };
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
             unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id).or_push_err(self.icx);
         }
-        self.icx.instantiate_with(&scheme.body, &mapping)
+        Ok(self.icx.instantiate_with(&scheme.body, &mapping))
     }
 
     fn instantiate_fn_scheme(
@@ -798,10 +834,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         scheme: &Scheme,
         explicit_args: Option<&ThinVec<hir::Ty>>,
         span: Span,
-    ) -> Ty {
+        suppress_errors: bool,
+    ) -> TyFromHirResult<Ty> {
         match explicit_args {
-            Some(args) => self.instantiate_with_explicit_args(def_id, scheme, args, span),
-            None => self.icx.instantiate(scheme),
+            Some(args) => {
+                self.instantiate_with_explicit_args(def_id, scheme, args, span, suppress_errors)
+            }
+            None => Ok(self.icx.instantiate(scheme)),
         }
     }
 
@@ -816,12 +855,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                                 .last()
                                 .and_then(|seg| seg.generic_args.as_ref())
                             {
-                                self.instantiate_with_explicit_args(
+                                match self.instantiate_with_explicit_args(
                                     *def_id,
                                     &scheme,
                                     explicit_args,
                                     path.span,
-                                )
+                                    false,
+                                ) {
+                                    Ok(ty) => ty,
+                                    Err(err) => {
+                                        self.report_ty_from_hir_error(err);
+                                        return None;
+                                    }
+                                }
                             } else {
                                 if matches!(scheme.body, Ty::Adt(_, _)) {
                                     Ty::Adt(*def_id, None)
@@ -1489,6 +1535,41 @@ pub(super) fn emit_unexpected_generic_args(
             found = found,
         },
     );
+}
+
+pub(super) fn emit_ty_from_hir_error(err: &TyFromHirError, ctx: &mut Ctx) {
+    match err {
+        TyFromHirError::ExpectedPathToTrait {
+            span,
+            module_id,
+            path,
+        } => {
+            builders::emit_at(
+                ctx,
+                *span,
+                *module_id,
+                hir::diag::ExpectedPathToTrait,
+                diag_params! { path = path.display(ctx) },
+            );
+        }
+        TyFromHirError::UnresolvedAssocType { span, module_id } => {
+            builders::emit_at(
+                ctx,
+                *span,
+                *module_id,
+                diag::UnresolvedAssocType,
+                diag_params! {},
+            );
+        }
+        TyFromHirError::UnexpectedGenericArgs {
+            span,
+            module_id,
+            expected,
+            found,
+        } => {
+            emit_unexpected_generic_args(ctx, *span, *module_id, *expected, *found);
+        }
+    }
 }
 
 pub(super) fn emit_unify_error(
