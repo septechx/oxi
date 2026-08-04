@@ -329,37 +329,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let trait_sig_sub =
                         substitute_self(&trait_sig.body, trait_def_id, struct_def_id);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
-                    // Normalize projections recursively until stable
-                    let normalize_projections = |ty: Ty| -> Ty {
-                        let mut prev = ty;
-                        let mut seen: FxHashSet<DefId> = FxHashSet::default();
-                        loop {
-                            let mut resolved_this_pass: FxHashSet<DefId> = FxHashSet::default();
-                            let next = fold_ty(&prev, &mut |inner| match inner {
-                                Ty::Projection { assoc_def_id, .. } => {
-                                    if seen.contains(&assoc_def_id) {
-                                        return inner;
-                                    }
-                                    if let Some(name) = self.resolver.def(assoc_def_id).name
-                                        && let Some(&concrete) = assoc_types.get(&name)
-                                    {
-                                        resolved_this_pass.insert(assoc_def_id);
-                                        concrete.clone()
-                                    } else {
-                                        inner
-                                    }
-                                }
-                                t => t,
-                            });
-                            if next == prev {
-                                break next;
-                            }
-                            seen.extend(resolved_this_pass);
-                            prev = next;
-                        }
-                    };
-                    let trait_sig_sub = normalize_projections(trait_sig_sub);
-                    let impl_sig_sub = normalize_projections(impl_sig.body.clone());
+                    let trait_sig_sub = self.normalize_projections(&assoc_types, trait_sig_sub);
+                    let trait_sig_sub =
+                        instantiate_scheme_into_icx(&mut icx, trait_sig, &trait_sig_sub);
+                    let impl_sig_sub =
+                        self.normalize_projections(&assoc_types, impl_sig.body.clone());
+                    let impl_sig_sub =
+                        instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig_sub);
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if unify(
@@ -401,6 +377,35 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         };
         (self.resolver.def(def_id).kind == kind).then_some(def_id)
     }
+
+    fn normalize_projections(&self, assoc_types: &FxHashMap<Symbol, &Ty>, ty: Ty) -> Ty {
+        let mut prev = ty;
+        let mut seen: FxHashSet<DefId> = FxHashSet::default();
+        loop {
+            let mut resolved_this_pass: FxHashSet<DefId> = FxHashSet::default();
+            let next = fold_ty(&prev, &mut |inner| match inner {
+                Ty::Projection { assoc_def_id, .. } => {
+                    if seen.contains(&assoc_def_id) {
+                        return inner;
+                    }
+                    if let Some(name) = self.resolver.def(assoc_def_id).name
+                        && let Some(&concrete) = assoc_types.get(&name)
+                    {
+                        resolved_this_pass.insert(assoc_def_id);
+                        concrete.clone()
+                    } else {
+                        inner
+                    }
+                }
+                t => t,
+            });
+            if next == prev {
+                break next;
+            }
+            seen.extend(resolved_this_pass);
+            prev = next;
+        }
+    }
 }
 
 fn normalize_type_aliases(
@@ -439,6 +444,18 @@ fn normalize_type_aliases_inner(
         }
         t => t,
     })
+}
+
+fn instantiate_scheme_into_icx(icx: &mut InferCtx, scheme: &Scheme, body: &Ty) -> Ty {
+    let mut mapping: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+    for &v in &scheme.vars {
+        mapping.insert(v, Ty::Var(icx.next_ty_var()));
+    }
+    if mapping.is_empty() {
+        body.clone()
+    } else {
+        substitute_ty_vars(body, &mapping)
+    }
 }
 
 fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {
