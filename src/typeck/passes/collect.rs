@@ -6,7 +6,8 @@ use crate::ast::visit::VisitAction;
 use crate::diag_params;
 use crate::errors::builders;
 use crate::hir::{
-    self, AssocItemKind, Def, DefId, DefKind, FnDecl, GenericParam, HirId, ItemKind, OwnerNode,
+    self, AssocItemKind, Def, DefId, DefKind, FnDecl, GenericParam, HirId, ItemKind, ModuleId,
+    OwnerNode,
 };
 use crate::interner::Symbol;
 use crate::typeck::fold::{fold_ty, res_to_def_id, resolve_scheme_with_args};
@@ -23,6 +24,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let owners = std::mem::take(&mut self.krate.owners);
         for (i, owner) in owners.iter().enumerate() {
             let def_id = DefId(i as u32);
+            let module_id = self
+                .resolver
+                .def_to_module
+                .get(&def_id)
+                .copied()
+                .unwrap_or_default();
             let Some(info) = owner.as_owner() else {
                 continue;
             };
@@ -37,11 +44,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = self.fn_ty(&mut icx, &fun.decl);
+                        let body = self.fn_ty(&mut icx, &fun.decl, module_id);
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Const { ty, .. } => {
-                        let ty = self.ty_from_hir(&mut icx, ty).reject_vars();
+                        let ty = self.ty_from_hir(&mut icx, ty, module_id).reject_vars();
                         self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Struct {
@@ -78,7 +85,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = self.ty_from_hir(&mut icx, type_);
+                        let body = self.ty_from_hir(&mut icx, type_, module_id);
                         self.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Trait {
@@ -147,7 +154,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .copied()
                             .expect("assoc item has parent");
 
-                        let body = self.fn_ty(&mut icx, &fun.decl);
+                        let body = self.fn_ty(&mut icx, &fun.decl, module_id);
                         let scheme =
                             self.assoc_item_scheme(&mut icx, parent_def_id, scheme_vars, body);
                         self.item_schemes.insert(def_id, scheme);
@@ -168,10 +175,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         match self.resolver.def(parent_def_id).kind {
                             DefKind::Trait => {}
                             DefKind::Impl | DefKind::Struct => {
-                                let Some(type_) = type_ else {
-                                    unreachable!("impl/struct assoc type must have a type");
-                                };
-                                let body = self.ty_from_hir(&mut icx, type_);
+                                let type_ = type_.as_ref().expect("assoc type is concrete");
+                                let body = self.ty_from_hir(&mut icx, type_, module_id);
                                 // impls/structs do not yet have generic params, but act as if
                                 // they did so we can reuse logic
                                 let scheme = self.assoc_item_scheme(
@@ -363,6 +368,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         defs: &ThinVec<Def>,
         in_progress: &mut Vec<(DefId, Option<ThinVec<Ty>>)>,
     ) -> bool {
+        const MAX_ALIAS_EXPANSION_DEPTH: usize = 128;
+
         struct AliasVisitor<'a> {
             start: DefId,
             item_schemes: &'a FxHashMap<DefId, Scheme>,
@@ -388,6 +395,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         .in_progress
                         .iter()
                         .any(|(d, args)| d == def_id && args == generic_args)
+                    || self.in_progress.len() >= MAX_ALIAS_EXPANSION_DEPTH
                 {
                     self.found_cycle = true;
                     return VisitAction::SkipChildren;
@@ -680,13 +688,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .unwrap_or_default()
     }
 
-    fn fn_ty(&mut self, icx: &mut InferCtx, decl: &FnDecl) -> Ty {
+    fn fn_ty(&mut self, icx: &mut InferCtx, decl: &FnDecl, module_id: ModuleId) -> Ty {
         let params: ThinVec<Ty> = decl
             .params
             .iter()
-            .map(|param| self.ty_from_hir(icx, &param.ty))
+            .map(|param| self.ty_from_hir(icx, &param.ty, module_id))
             .collect();
-        let ret = self.ty_from_hir(icx, &decl.ret).into_box();
+        let ret = self.ty_from_hir(icx, &decl.ret, module_id).into_box();
         Ty::Fn { params, ret }
     }
 

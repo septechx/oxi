@@ -40,32 +40,36 @@ pub enum Ty {
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub fn ty_from_hir(&mut self, icx: &mut InferCtx, hir_ty: &hir::Ty) -> Ty {
+    pub fn ty_from_hir(&mut self, icx: &mut InferCtx, hir_ty: &hir::Ty, module_id: ModuleId) -> Ty {
         match &hir_ty.kind {
             TyKind::Error => Ty::Error,
             TyKind::Never => Ty::Never,
             TyKind::Infer => icx.alloc_ty_var(),
             TyKind::PrimTy(prim) => Ty::Prim(*prim),
-            TyKind::Ptr(inner, m) => Ty::Ptr(self.ty_from_hir(icx, inner).into_box(), *m),
-            TyKind::Slice(inner) => Ty::Slice(self.ty_from_hir(icx, inner).into_box()),
-            TyKind::Array(inner, size) => Ty::Array(self.ty_from_hir(icx, inner).into_box(), *size),
+            TyKind::Ptr(inner, m) => {
+                Ty::Ptr(self.ty_from_hir(icx, inner, module_id).into_box(), *m)
+            }
+            TyKind::Slice(inner) => Ty::Slice(self.ty_from_hir(icx, inner, module_id).into_box()),
+            TyKind::Array(inner, size) => {
+                Ty::Array(self.ty_from_hir(icx, inner, module_id).into_box(), *size)
+            }
             TyKind::Fn { params, ret } => Ty::Fn {
                 params: params
                     .iter()
-                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty))
+                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
                     .collect(),
-                ret: self.ty_from_hir(icx, ret).into_box(),
+                ret: self.ty_from_hir(icx, ret, module_id).into_box(),
             },
             TyKind::Tuple(elements) => Ty::Tuple(
                 elements
                     .iter()
-                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty))
+                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
                     .collect(),
             ),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                        let generic_args = self.ty_hir_generic_args(icx, path);
+                        let generic_args = self.ty_hir_generic_args(icx, path, module_id);
                         Ty::Adt(def_id, generic_args)
                     }
                     Res::PrimTy(prim) => Ty::Prim(prim),
@@ -76,7 +80,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     Res::Local(_) | Res::Err => Ty::Error,
                 },
                 QPath::TypeRelative { qself, segment } => {
-                    self.resolve_type_relative_projection(icx, qself, segment)
+                    self.resolve_type_relative_projection(icx, qself, segment, module_id)
                 }
             },
             TyKind::GenericParam(hir_id, _) => {
@@ -92,6 +96,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         icx: &mut InferCtx,
         qself: &QPath,
         segment: &hir::PathSegment,
+        module_id: ModuleId,
     ) -> Ty {
         let assoc_name = segment.ident.value;
 
@@ -102,7 +107,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     builders::emit_at(
                         self.ctx,
                         path.span,
-                        ModuleId(0),
+                        module_id,
                         crate::hir::diag::ExpectedPathToTrait,
                         diag_params! { path = path.display(self.ctx) },
                     );
@@ -112,7 +117,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     builders::emit_at(
                         self.ctx,
                         path.span,
-                        ModuleId(0),
+                        module_id,
                         crate::hir::diag::ExpectedPathToTrait,
                         diag_params! { path = path.display(self.ctx) },
                     );
@@ -124,19 +129,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         builders::emit_at(
                             self.ctx,
                             segment.ident.span,
-                            ModuleId(0),
+                            module_id,
                             diag::UnresolvedAssocType,
                             diag_params! {},
                         );
                         return Ty::Error;
                     }
                 };
-                (trait_def_id, assoc_def_id, self.ty_from_hir(icx, self_ty))
+                (
+                    trait_def_id,
+                    assoc_def_id,
+                    self.ty_from_hir(icx, self_ty, module_id),
+                )
             }
             // `Struct::AssocType`: struct in impl body context
             QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    let generic_args = self.ty_hir_generic_args(icx, path);
+                    let generic_args = self.ty_hir_generic_args(icx, path, module_id);
                     let self_ty = Ty::Adt(def_id, generic_args.clone());
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
@@ -145,7 +154,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 builders::emit_at(
                                     self.ctx,
                                     segment.ident.span,
-                                    ModuleId(0),
+                                    module_id,
                                     diag::UnresolvedAssocType,
                                     diag_params! {},
                                 );
@@ -164,7 +173,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                         builders::emit_at(
                                             self.ctx,
                                             path.span,
-                                            ModuleId(0),
+                                            module_id,
                                             diag::UnexpectedGenericArgs,
                                             diag_params! {
                                                 expected = scheme.vars.len(),
@@ -187,7 +196,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                             .defaults
                                             .iter()
                                             .filter_map(|d| {
-                                                d.as_ref().map(|d| self.ty_from_hir(icx, d))
+                                                d.as_ref()
+                                                    .map(|d| self.ty_from_hir(icx, d, module_id))
                                             })
                                             .collect();
                                         if args.len() == scheme_vars.len() {
@@ -204,7 +214,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     builders::emit_at(
                                         self.ctx,
                                         path.span,
-                                        ModuleId(0),
+                                        module_id,
                                         diag::UnexpectedGenericArgs,
                                         diag_params! {
                                             expected = scheme_vars.len(),
@@ -222,7 +232,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     builders::emit_at(
                                         self.ctx,
                                         segment.ident.span,
-                                        ModuleId(0),
+                                        module_id,
                                         diag::UnresolvedAssocType,
                                         diag_params! {},
                                     );
@@ -251,10 +261,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             trait_def_id,
             assoc_def_id,
             self_ty: Box::new(self_ty),
-            generic_args: segment
-                .generic_args
-                .as_ref()
-                .map(|args| args.iter().map(|ty| self.ty_from_hir(icx, ty)).collect()),
+            generic_args: segment.generic_args.as_ref().map(|args| {
+                args.iter()
+                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
+                    .collect()
+            }),
         }
     }
 
@@ -284,6 +295,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         &mut self,
         icx: &mut InferCtx,
         path: &hir::Path,
+        module_id: ModuleId,
     ) -> Option<ThinVec<Ty>> {
         // TODO: Handle generic args in spots other than the last segment.
         // Currently Adt's can only have generic args in the last segment, but
@@ -294,7 +306,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .expect("path has segments")
             .generic_args
             .as_ref()
-            .map(|args| args.iter().map(|ty| self.ty_from_hir(icx, ty)).collect())
+            .map(|args| {
+                args.iter()
+                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
+                    .collect()
+            })
     }
 }
 

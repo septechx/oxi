@@ -77,29 +77,16 @@ pub fn resolve_scheme_with_args(scheme: &Scheme, generic_args: &Option<ThinVec<T
     Some(resolved)
 }
 
-pub enum AliasExpand {
-    Expanded(Ty),
-    Cyclic,
-    NoScheme,
-    ArityMismatch { expected: usize },
-}
-
 pub fn expand_type_alias(
     def_id: DefId,
     generic_args: &Option<ThinVec<Ty>>,
-    item_schemes: &FxHashMap<DefId, Scheme>,
     in_progress: &mut FxHashSet<DefId>,
-) -> AliasExpand {
+    expanded: impl FnOnce(&mut FxHashSet<DefId>, DefId, &Option<ThinVec<Ty>>) -> Ty,
+) -> Ty {
     if !in_progress.insert(def_id) {
-        return AliasExpand::Cyclic;
+        return Ty::Error;
     }
-    match item_schemes.get(&def_id) {
-        Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
-            Some(resolved) => AliasExpand::Expanded(resolved),
-            None => AliasExpand::ArityMismatch {
-                expected: scheme.vars.len(),
-            },
-        },
-        None => AliasExpand::NoScheme,
-    }
+    let result = expanded(in_progress, def_id, generic_args);
+    in_progress.remove(&def_id);
+    result
 }

@@ -1,4 +1,5 @@
 // @expect-error recursive_type
 
 type Pair<T> = (T, T);
-type Foo = Pair::<Foo>;
+type Bar = Pair::<Baz>;
+type Baz = Pair::<Bar>;
