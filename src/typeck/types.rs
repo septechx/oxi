@@ -1,4 +1,4 @@
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
@@ -30,6 +30,12 @@ pub enum TyFromHirError {
 }
 
 pub type TyFromHirResult<T> = Result<T, TyFromHirError>;
+
+enum TraitAssocTypeLookup {
+    Found(DefId, DefId),
+    Ambiguous,
+    NotFound,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
@@ -97,9 +103,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             )),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(_, path) => match path.res {
-                    Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
+                    Res::Def(def_id) => {
                         let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
                         Ok(Ty::Adt(def_id, generic_args))
+                    }
+                    Res::SelfTyAlias { alias_to } => {
+                        self.resolve_self_ty(alias_to, icx, path, module_id)
                     }
                     Res::PrimTy(prim) => Ok(Ty::Prim(prim)),
                     Res::GenericParam(hir_id) => {
@@ -119,6 +128,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
+    fn resolve_self_ty(
+        &mut self,
+        alias_to: DefId,
+        icx: &mut InferCtx,
+        path: &hir::Path,
+        module_id: ModuleId,
+    ) -> TyFromHirResult<Ty> {
+        if let Some(Ty::Adt(id, args)) = &self.current_self_ty
+            && *id == alias_to
+        {
+            Ok(Ty::Adt(alias_to, args.clone()))
+        } else {
+            let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+            Ok(Ty::Adt(alias_to, generic_args))
+        }
+    }
+
     /// Resolve `QPath::TypeRelative` to a `Ty::Projection`
     fn resolve_type_relative_projection(
         &mut self,
@@ -129,7 +155,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     ) -> TyFromHirResult<Ty> {
         let assoc_name = segment.ident.value;
 
-        let (trait_def_id, assoc_def_id, self_ty) = match qself {
+        let (trait_def_id, assoc_def_id, self_ty, trait_path_args) = match qself {
             // <Struct as Trait>::AssocType: explicit trait ref
             QPath::Resolved(Some(self_ty), path) => {
                 let Res::Def(trait_def_id) = path.res else {
@@ -155,20 +181,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         });
                     }
                 };
+                let trait_path_args = self.ty_hir_generic_args(icx, path, module_id)?;
                 (
                     trait_def_id,
                     assoc_def_id,
                     self.ty_from_hir(icx, self_ty, module_id)?,
+                    trait_path_args,
                 )
             }
             // `Struct::AssocType`: struct in impl body context
             QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
-                    let self_ty = Ty::Adt(def_id, generic_args.clone());
+                    let is_self_alias = matches!(path.res, Res::SelfTyAlias { .. });
+                    let (self_ty, generic_args) =
+                        self.shorthand_self_ty(def_id, is_self_alias, icx, path, module_id)?;
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
-                            Some(assoc_def_id) => (def_id, assoc_def_id, self_ty),
+                            Some(assoc_def_id) => (def_id, assoc_def_id, self_ty, None),
                             None => {
                                 return Err(TyFromHirError::UnresolvedAssocType {
                                     span: segment.ident.span,
@@ -233,8 +262,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 });
                             }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
-                                Some((trait_id, assoc_id)) => (trait_id, assoc_id, self_ty),
-                                None => {
+                                TraitAssocTypeLookup::Found(trait_id, assoc_id) => {
+                                    (trait_id, assoc_id, self_ty, None)
+                                }
+                                TraitAssocTypeLookup::Ambiguous
+                                | TraitAssocTypeLookup::NotFound => {
                                     return Err(TyFromHirError::UnresolvedAssocType {
                                         span: segment.ident.span,
                                         module_id,
@@ -246,18 +278,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                 }
                 Res::GenericParam(hir_id) => {
-                    let ty_var = icx.hir_id_to_ty_var.get(&hir_id);
-                    match ty_var {
-                        Some(&var) => return Ok(Ty::Var(var)),
-                        None => return Ok(Ty::Error),
+                    if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                        return Ok(Ty::Error);
                     }
+                    return Err(TyFromHirError::UnresolvedAssocType {
+                        span: segment.ident.span,
+                        module_id,
+                    });
                 }
                 _ => return Ok(Ty::Error),
             },
             QPath::TypeRelative { .. } => return Ok(Ty::Error),
         };
 
-        let generic_args = segment
+        let segment_args = segment
             .generic_args
             .as_ref()
             .map(|args| {
@@ -271,23 +305,59 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             trait_def_id,
             assoc_def_id,
             self_ty: Box::new(self_ty),
-            generic_args,
+            generic_args: segment_args.or(trait_path_args),
         })
+    }
+
+    fn shorthand_self_ty(
+        &mut self,
+        def_id: DefId,
+        is_self_alias: bool,
+        icx: &mut InferCtx,
+        path: &hir::Path,
+        module_id: ModuleId,
+    ) -> TyFromHirResult<(Ty, Option<ThinVec<Ty>>)> {
+        if is_self_alias
+            && let Some(Ty::Adt(id, args)) = &self.current_self_ty
+            && *id == def_id
+        {
+            Ok((Ty::Adt(def_id, args.clone()), args.clone()))
+        } else {
+            let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+            Ok((Ty::Adt(def_id, generic_args.clone()), generic_args))
+        }
     }
 
     fn find_trait_assoc_type_for_struct(
         &self,
         struct_def_id: DefId,
         assoc_name: Symbol,
-    ) -> Option<(DefId, DefId)> {
-        for &trait_id in self.coherence.struct_to_traits.get(&struct_def_id)? {
+    ) -> TraitAssocTypeLookup {
+        let mut found: Option<(DefId, DefId)> = None;
+        let mut seen_traits: FxHashSet<DefId> = FxHashSet::default();
+        for &trait_id in self
+            .coherence
+            .struct_to_traits
+            .get(&struct_def_id)
+            .into_iter()
+            .flatten()
+        {
+            if !seen_traits.insert(trait_id) {
+                continue;
+            }
             if let Some(&assoc_def_id) =
                 self.coherence.assoc_type_index.get(&(trait_id, assoc_name))
             {
-                return Some((trait_id, assoc_def_id));
+                if found.is_some() {
+                    return TraitAssocTypeLookup::Ambiguous;
+                }
+                found = Some((trait_id, assoc_def_id));
             }
         }
-        None
+        match found {
+            Some(found) => TraitAssocTypeLookup::Found(found.0, found.1),
+            None => TraitAssocTypeLookup::NotFound,
+        }
     }
 
     fn find_assoc_type(&self, parent: DefId, name: Symbol) -> Option<DefId> {

@@ -10,6 +10,7 @@ use crate::hir::{
     OwnerNode,
 };
 use crate::interner::Symbol;
+use crate::span::Span;
 use crate::typeck::fold::{fold_ty, res_to_def_id, resolve_scheme_with_args};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::{Scheme, Ty};
@@ -33,6 +34,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let Some(info) = owner.as_owner() else {
                 continue;
             };
+
+            self.current_self_ty = None;
 
             match &info.nodes.node() {
                 OwnerNode::Item(item) => match &item.kind {
@@ -144,11 +147,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .entry((trait_def_id, struct_def_id))
                                 .or_default()
                                 .push(def_id);
+                            self.coherence.impl_to_trait.insert(def_id, trait_def_id);
                             self.coherence
                                 .struct_to_traits
                                 .entry(struct_def_id)
                                 .or_default()
                                 .push(trait_def_id);
+                        }
+                        if let Some(struct_def_id) = self.resolve_struct(self_ty.res) {
+                            let self_generic_args = self
+                                .ty_hir_generic_args(&mut icx, self_ty, module_id)
+                                .unwrap_or(None);
+                            self.impl_self_types
+                                .insert(def_id, Ty::Adt(struct_def_id, self_generic_args));
                         }
 
                         self.register_assoc_items(def_id, items);
@@ -164,6 +175,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
+                        self.current_self_ty = self.impl_self_types.get(&parent_def_id).cloned();
 
                         let body = self.fn_ty(&mut icx, &fun.decl, module_id);
                         let scheme =
@@ -182,6 +194,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
+                        self.current_self_ty = self.impl_self_types.get(&parent_def_id).cloned();
 
                         match self.resolver.def(parent_def_id).kind {
                             DefKind::Trait => {}
@@ -339,17 +352,17 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let def_id = DefId(i as u32);
                 let parent_def_id = self.coherence.assoc_to_parent.get(&def_id).copied()?;
                 let kind = self.resolver.def(parent_def_id).kind;
-                (kind == DefKind::Struct || kind == DefKind::Impl).then_some((def_id, assoc.span))
+                matches!(kind, DefKind::Struct | DefKind::Impl).then_some(def_id)
             });
 
-        for (def_id, span) in struct_assoc_types {
+        for def_id in struct_assoc_types {
             if !visited.insert(def_id) {
                 continue;
             }
 
             let mut in_progress = FxHashSet::default();
 
-            if Self::visit_hir_assoc_type_alias(
+            if let Some(cycle_span) = Self::visit_hir_assoc_type_alias(
                 def_id,
                 def_id,
                 self.krate,
@@ -368,7 +381,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
                 builders::emit_at(
                     self.ctx,
-                    span,
+                    cycle_span,
                     module_id,
                     diag::RecursiveType,
                     diag_params! {},
@@ -464,18 +477,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         defs: &ThinVec<Def>,
         visited: &mut FxHashSet<DefId>,
         in_progress: &mut FxHashSet<DefId>,
-    ) -> bool {
-        let Some(info) = krate.owners[current.0 as usize].as_owner() else {
-            return false;
-        };
+    ) -> Option<Span> {
+        let info = krate.owner(current).expect("owner exists").as_owner()?;
         let OwnerNode::AssocItem(assoc) = info.nodes.node() else {
-            return false;
+            return None;
         };
         let AssocItemKind::Type {
             type_: Some(type_), ..
         } = &assoc.kind
         else {
-            return false;
+            return None;
         };
 
         in_progress.insert(current);
@@ -503,7 +514,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         defs: &ThinVec<Def>,
         visited: &mut FxHashSet<DefId>,
         in_progress: &mut FxHashSet<DefId>,
-    ) -> bool {
+    ) -> Option<Span> {
         match &ty.kind {
             hir::TyKind::Path(qpath) => Self::walk_hir_qpath_for_cycles(
                 qpath,
@@ -537,7 +548,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             ),
             hir::TyKind::Fn { params, ret } => {
                 for param in params {
-                    if Self::walk_hir_ty_for_cycles(
+                    if let Some(cycle_span) = Self::walk_hir_ty_for_cycles(
                         param,
                         start,
                         krate,
@@ -547,7 +558,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         visited,
                         in_progress,
                     ) {
-                        return true;
+                        return Some(cycle_span);
                     }
                 }
                 Self::walk_hir_ty_for_cycles(
@@ -563,7 +574,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             hir::TyKind::Tuple(elements) => {
                 for element in elements {
-                    if Self::walk_hir_ty_for_cycles(
+                    if let Some(cycle_span) = Self::walk_hir_ty_for_cycles(
                         element,
                         start,
                         krate,
@@ -573,16 +584,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         visited,
                         in_progress,
                     ) {
-                        return true;
+                        return Some(cycle_span);
                     }
                 }
-                false
+                None
             }
             hir::TyKind::Error
             | hir::TyKind::PrimTy(_)
             | hir::TyKind::GenericParam(_, _)
             | hir::TyKind::Infer
-            | hir::TyKind::Never => false,
+            | hir::TyKind::Never => None,
         }
     }
 
@@ -596,17 +607,17 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         defs: &ThinVec<Def>,
         visited: &mut FxHashSet<DefId>,
         in_progress: &mut FxHashSet<DefId>,
-    ) -> bool {
+    ) -> Option<Span> {
         match qpath {
             hir::QPath::TypeRelative { qself, segment } => {
                 if let Some(struct_def_id) = Self::resolve_qself_to_struct(qself, defs) {
                     let name = segment.ident.value;
                     if let Some(&assoc_def_id) = assoc_type_index.get(&(struct_def_id, name)) {
                         if assoc_def_id == start || in_progress.contains(&assoc_def_id) {
-                            return true;
+                            return Some(segment.ident.span);
                         }
                         if !visited.insert(assoc_def_id) {
-                            return false;
+                            return None;
                         }
                         return Self::visit_hir_assoc_type_alias(
                             assoc_def_id,
@@ -635,7 +646,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 for segment in &path.segments {
                     if let Some(generic_args) = &segment.generic_args {
                         for arg_ty in generic_args {
-                            if Self::walk_hir_ty_for_cycles(
+                            if let Some(cycle_span) = Self::walk_hir_ty_for_cycles(
                                 arg_ty,
                                 start,
                                 krate,
@@ -645,12 +656,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 visited,
                                 in_progress,
                             ) {
-                                return true;
+                                return Some(cycle_span);
                             }
                         }
                     }
                 }
-                false
+                None
             }
         }
     }

@@ -118,7 +118,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             if !subst.is_empty() {
                                 ty = substitute_ty_vars(&ty, &subst);
                             }
-                            ty = substitute_self(&ty, trait_def_id, struct_def_id);
+                            ty = substitute_self(&ty, trait_def_id, &Ty::Adt(struct_def_id, None));
                             if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, ty.clone());
                             }
@@ -171,7 +171,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     if !subst.is_empty() {
                                         ty = substitute_ty_vars(&ty, &subst);
                                     }
-                                    ty = substitute_self(&ty, trait_def_id, struct_def_id);
+                                    ty = substitute_self(
+                                        &ty,
+                                        trait_def_id,
+                                        &Ty::Adt(struct_def_id, None),
+                                    );
                                     if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
                                     {
                                         subst.insert(var, ty.clone());
@@ -273,6 +277,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 .is_some_and(|existing| existing.contains(&def_id))
             {
                 self.coherence.impls.entry(key).or_default().push(def_id);
+                self.coherence.impl_to_trait.insert(def_id, trait_def_id);
             }
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
@@ -298,19 +303,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
 
             // Build assoc type substitution
-            let mut assoc_types: FxHashMap<Symbol, &Ty> = FxHashMap::default();
-            for &impl_item_def_id in items {
-                let impl_def = &self.resolver.defs[impl_item_def_id.0 as usize];
-                if impl_def.kind == DefKind::AssocType {
-                    let name = impl_def.name.expect("assoc type has name");
-                    let scheme = self
-                        .item_schemes
-                        .get(&impl_item_def_id)
-                        .expect("assoc type has scheme");
-                    assoc_types.insert(name, &scheme.body);
-                }
-            }
-
             for (name, trait_method) in trait_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
                     let method = self.ctx.interner.lookup(*name).to_string();
@@ -326,14 +318,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let trait_sig = self.item_schemes.get(trait_method);
                 let impl_sig = self.item_schemes.get(impl_method);
                 if let (Some(trait_sig), Some(impl_sig)) = (trait_sig, impl_sig) {
-                    let trait_sig_sub =
-                        substitute_self(&trait_sig.body, trait_def_id, struct_def_id);
+                    let trait_sig_sub = substitute_self(&trait_sig.body, trait_def_id, &self_type);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
-                    let trait_sig_sub = self.normalize_projections(&assoc_types, trait_sig_sub);
+                    let trait_sig_sub = self.normalize_projections(trait_sig_sub);
                     let trait_sig_sub =
                         instantiate_scheme_into_icx(&mut icx, trait_sig, &trait_sig_sub);
-                    let impl_sig_sub =
-                        self.normalize_projections(&assoc_types, impl_sig.body.clone());
+                    let impl_sig_sub = self.normalize_projections(impl_sig.body.clone());
                     let impl_sig_sub =
                         instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig_sub);
 
@@ -378,21 +368,26 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         (self.resolver.def(def_id).kind == kind).then_some(def_id)
     }
 
-    fn normalize_projections(&self, assoc_types: &FxHashMap<Symbol, &Ty>, ty: Ty) -> Ty {
+    fn normalize_projections(&self, ty: Ty) -> Ty {
         let mut prev = ty;
         let mut seen: FxHashSet<DefId> = FxHashSet::default();
         loop {
             let mut resolved_this_pass: FxHashSet<DefId> = FxHashSet::default();
             let next = fold_ty(&prev, &mut |inner| match inner {
-                Ty::Projection { assoc_def_id, .. } => {
+                Ty::Projection {
+                    trait_def_id,
+                    assoc_def_id,
+                    ref self_ty,
+                    ..
+                } => {
                     if seen.contains(&assoc_def_id) {
                         return inner;
                     }
-                    if let Some(name) = self.resolver.def(assoc_def_id).name
-                        && let Some(&concrete) = assoc_types.get(&name)
+                    if let Some(concrete) =
+                        self.assoc_type_body(trait_def_id, assoc_def_id, self_ty)
                     {
                         resolved_this_pass.insert(assoc_def_id);
-                        concrete.clone()
+                        concrete
                     } else {
                         inner
                     }
@@ -405,6 +400,39 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             seen.extend(resolved_this_pass);
             prev = next;
         }
+    }
+
+    fn assoc_type_body(
+        &self,
+        trait_def_id: DefId,
+        assoc_def_id: DefId,
+        self_ty: &Ty,
+    ) -> Option<Ty> {
+        let Ty::Adt(struct_def_id, self_generic_args) = self_ty else {
+            return None;
+        };
+        let impl_def_ids = self.coherence.impls.get(&(trait_def_id, *struct_def_id))?;
+        let target = Ty::Adt(*struct_def_id, self_generic_args.clone());
+        let impl_def_id = impl_def_ids
+            .iter()
+            .find(|&impl_def_id| {
+                self.coherence.impl_resolved_self_type.get(impl_def_id) == Some(&target)
+            })
+            .copied()?;
+        let name = self.resolver.def(assoc_def_id).name?;
+        self.coherence
+            .parent_to_assoc
+            .get(&impl_def_id)?
+            .iter()
+            .find(|&&item_def_id| {
+                self.resolver.def(item_def_id).kind == DefKind::AssocType
+                    && self.resolver.def(item_def_id).name == Some(name)
+            })
+            .and_then(|&item_def_id| {
+                self.item_schemes
+                    .get(&item_def_id)
+                    .map(|scheme| scheme.body.clone())
+            })
     }
 }
 
@@ -458,9 +486,9 @@ fn instantiate_scheme_into_icx(icx: &mut InferCtx, scheme: &Scheme, body: &Ty) -
     }
 }
 
-fn substitute_self(ty: &Ty, from: DefId, to: DefId) -> Ty {
+fn substitute_self(ty: &Ty, from: DefId, to: &Ty) -> Ty {
     fold_ty(ty, &mut |ty| match ty {
-        Ty::Adt(d, generics) if d == from => Ty::Adt(to, generics),
+        Ty::Adt(d, _) if d == from => to.clone(),
         ty => ty,
     })
 }

@@ -23,7 +23,7 @@ use crate::typeck::fold::{
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty, TyFromHirError, TyFromHirResult};
 use crate::typeck::unify::{OrPushErr, UnifyError, unify};
-use crate::typeck::{Adjustment, MemberRes, TyVarId, Typeck, diag};
+use crate::typeck::{Adjustment, AssocTypesMap, MemberRes, TyVarId, Typeck, diag};
 use fxhash::{FxHashMap, FxHashSet};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
@@ -89,6 +89,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         for (def_id, owner, module_id) in owners.iter() {
             checker.module_id = *module_id;
+            checker.typeck.current_self_ty = None;
 
             let Some(info) = owner.as_owner() else {
                 continue;
@@ -126,6 +127,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .expect("assoc item has parent");
                         checker.current_assoc_types =
                             checker.typeck.compute_assoc_types(parent_def_id);
+                        checker.typeck.current_self_ty =
+                            checker.typeck.impl_self_types.get(&parent_def_id).cloned();
                         checker.register_if_generic_def(parent_def_id);
                         checker.register_if_generic(&fun.generic_params);
                         if let Some(body_id) = fun.body_id
@@ -144,6 +147,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .expect("assoc item has parent");
                         checker.current_assoc_types =
                             checker.typeck.compute_assoc_types(parent_def_id);
+                        checker.typeck.current_self_ty =
+                            checker.typeck.impl_self_types.get(&parent_def_id).cloned();
                     }
                 },
                 OwnerNode::Crate => {}
@@ -265,19 +270,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn impl_trait_def_id(&self, impl_def_id: DefId) -> Option<DefId> {
-        self.coherence
-            .impls
-            .iter()
-            .find_map(|(&(trait_def_id, _), impl_def_ids)| {
-                impl_def_ids.contains(&impl_def_id).then_some(trait_def_id)
-            })
+        self.coherence.impl_to_trait.get(&impl_def_id).copied()
     }
 
-    pub(crate) fn compute_assoc_types(
-        &self,
-        parent_def_id: DefId,
-    ) -> FxHashMap<(DefId, Symbol), Ty> {
-        let mut assoc_types = FxHashMap::default();
+    pub(crate) fn compute_assoc_types(&mut self, parent_def_id: DefId) -> AssocTypesMap {
+        if let Some(cached) = self.assoc_types_cache.get(&parent_def_id) {
+            return cached.clone();
+        }
+        let mut assoc_types: AssocTypesMap = FxHashMap::default();
         if self.resolver.def(parent_def_id).kind == DefKind::Impl
             && let Some(item_ids) = self.coherence.parent_to_assoc.get(&parent_def_id)
             && let Some(trait_def_id) = self.impl_trait_def_id(parent_def_id)
@@ -292,10 +292,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
         }
+        self.assoc_types_cache
+            .insert(parent_def_id, assoc_types.clone());
         assoc_types
     }
 
-    pub(crate) fn normalize_assoc_projections(&self, ty: Ty) -> Ty {
+    pub(crate) fn normalize_assoc_projections(&mut self, ty: Ty) -> Ty {
         self.normalize_assoc_projections_inner(
             ty,
             &mut FxHashSet::default(),
@@ -304,7 +306,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn normalize_assoc_projections_inner(
-        &self,
+        &mut self,
         ty: Ty,
         aliases_in_progress: &mut FxHashSet<DefId>,
         projections_in_progress: &mut FxHashSet<(DefId, DefId, DefId)>,
@@ -343,22 +345,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         self.coherence.impls.get(&(*trait_def_id, *self_def_id))
                 {
                     let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
-                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&&impl_def_id| {
-                        self.coherence.impl_resolved_self_type.get(&impl_def_id)
+                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
+                        self.coherence.impl_resolved_self_type.get(impl_def_id)
                             == Some(&target_self_ty)
                     }) {
                         let key = (*trait_def_id, *self_def_id, *assoc_def_id);
                         if projections_in_progress.insert(key) {
                             let assoc_types = self.compute_assoc_types(impl_def_id);
                             let concrete = assoc_types.get(&(*trait_def_id, name)).cloned();
-                            projections_in_progress.remove(&key);
                             if let Some(concrete) = concrete {
-                                return self.normalize_assoc_projections_inner(
+                                let normalized = self.normalize_assoc_projections_inner(
                                     concrete,
                                     aliases_in_progress,
                                     projections_in_progress,
                                 );
+                                projections_in_progress.remove(&key);
+                                return normalized;
                             }
+                            projections_in_progress.remove(&key);
                         }
                     }
                 }
@@ -424,7 +428,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     }
 
     pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> TyFromHirResult<Ty> {
-        self.normalize_aliases_inner(ty, span, &mut FxHashSet::default())
+        self.normalize_aliases_inner(
+            ty,
+            span,
+            &mut FxHashSet::default(),
+            &mut FxHashSet::default(),
+        )
     }
 
     fn normalize_aliases_inner(
@@ -432,6 +441,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         ty: Ty,
         span: Span,
         in_progress: &mut FxHashSet<DefId>,
+        projections_in_progress: &mut FxHashSet<(DefId, Option<DefId>, DefId)>,
     ) -> TyFromHirResult<Ty> {
         try_fold_ty(&ty, &mut |ty| match ty {
             Ty::Adt(def_id, generic_args)
@@ -444,9 +454,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     |in_progress, def_id, generic_args| match self.typeck.item_schemes.get(&def_id)
                     {
                         Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
-                            Some(resolved) => {
-                                self.normalize_aliases_inner(resolved, span, in_progress)
-                            }
+                            Some(resolved) => self.normalize_aliases_inner(
+                                resolved,
+                                span,
+                                in_progress,
+                                projections_in_progress,
+                            ),
                             None => {
                                 let expected = scheme.vars.len();
                                 let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
@@ -468,11 +481,32 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 self_ty,
                 ..
             } => {
-                if let Some(name) = self.typeck.resolver.def(assoc_def_id).name {
+                let Some(name) = self.typeck.resolver.def(assoc_def_id).name else {
+                    return Err(TyFromHirError::UnresolvedAssocType {
+                        span,
+                        module_id: self.module_id,
+                    });
+                };
+                let self_def_id = match self_ty.as_ref() {
+                    Ty::Adt(id, _) => Some(*id),
+                    _ => None,
+                };
+                let key = (trait_def_id, self_def_id, assoc_def_id);
+                if !projections_in_progress.insert(key) {
+                    return Err(TyFromHirError::UnresolvedAssocType {
+                        span,
+                        module_id: self.module_id,
+                    });
+                }
+                let resolved =
                     if let Some(concrete) = self.current_assoc_types.get(&(trait_def_id, name)) {
-                        return self.normalize_aliases_inner(concrete.clone(), span, in_progress);
-                    }
-                    if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
+                        self.normalize_aliases_inner(
+                            concrete.clone(),
+                            span,
+                            in_progress,
+                            projections_in_progress,
+                        )
+                    } else if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
                         && let Some(impl_def_ids) = self
                             .typeck
                             .coherence
@@ -480,28 +514,41 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                             .get(&(trait_def_id, *self_def_id))
                     {
                         let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
-                        if let Some(impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
+                        if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
                             self.typeck
                                 .coherence
                                 .impl_resolved_self_type
                                 .get(impl_def_id)
                                 == Some(&target_self_ty)
                         }) {
-                            let assoc_types = self.typeck.compute_assoc_types(*impl_def_id);
+                            let assoc_types = self.typeck.compute_assoc_types(impl_def_id);
                             if let Some(concrete) = assoc_types.get(&(trait_def_id, name)) {
-                                return self.normalize_aliases_inner(
+                                self.normalize_aliases_inner(
                                     concrete.clone(),
                                     span,
                                     in_progress,
-                                );
+                                    projections_in_progress,
+                                )
+                            } else {
+                                Err(TyFromHirError::UnresolvedAssocType {
+                                    span,
+                                    module_id: self.module_id,
+                                })
                             }
+                        } else {
+                            Err(TyFromHirError::UnresolvedAssocType {
+                                span,
+                                module_id: self.module_id,
+                            })
                         }
-                    }
-                }
-                Err(TyFromHirError::UnresolvedAssocType {
-                    span,
-                    module_id: self.module_id,
-                })
+                    } else {
+                        Err(TyFromHirError::UnresolvedAssocType {
+                            span,
+                            module_id: self.module_id,
+                        })
+                    };
+                projections_in_progress.remove(&key);
+                resolved
             }
             ty => Ok(ty),
         })
@@ -703,42 +750,11 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     fn check_path(&mut self, qpath: &QPath) -> Ty {
         match qpath {
             QPath::Resolved(_, path) => match &path.res {
-                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    let scheme = match self.typeck.item_schemes.get(def_id) {
-                        Some(scheme) => scheme.clone(),
-                        None => return Ty::Error,
-                    };
-                    let explicit_args = path
-                        .segments
-                        .last()
-                        .and_then(|seg| seg.generic_args.as_ref());
-                    if matches!(scheme.body, Ty::Adt(_, _)) {
-                        match explicit_args {
-                            Some(args) => self
-                                .instantiate_with_explicit_args(
-                                    *def_id, &scheme, args, path.span, false,
-                                )
-                                .unwrap_or_else(|err| {
-                                    self.report_ty_from_hir_error(err);
-                                    Ty::Error
-                                }),
-                            None if scheme.vars.is_empty() => self.icx.instantiate(&scheme),
-                            None => Ty::Adt(*def_id, None),
-                        }
-                    } else {
-                        self.instantiate_fn_scheme(
-                            *def_id,
-                            &scheme,
-                            explicit_args,
-                            path.span,
-                            false,
-                        )
-                        .unwrap_or_else(|err| {
-                            self.report_ty_from_hir_error(err);
-                            Ty::Error
-                        })
-                    }
-                }
+                Res::Def(def_id) => self.check_resolved_path(*def_id, path),
+                Res::SelfTyAlias { alias_to } => match &self.typeck.current_self_ty {
+                    Some(Ty::Adt(id, _)) => self.check_resolved_path(*id, path),
+                    _ => self.check_resolved_path(*alias_to, path),
+                },
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
                     None => Ty::Error,
@@ -747,6 +763,35 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 Res::Err => Ty::Error,
             },
             QPath::TypeRelative { .. } => Ty::Error,
+        }
+    }
+
+    fn check_resolved_path(&mut self, def_id: DefId, path: &hir::Path) -> Ty {
+        let scheme = match self.typeck.item_schemes.get(&def_id) {
+            Some(scheme) => scheme.clone(),
+            None => return Ty::Error,
+        };
+        let explicit_args = path
+            .segments
+            .last()
+            .and_then(|seg| seg.generic_args.as_ref());
+        if matches!(scheme.body, Ty::Adt(_, _)) {
+            match explicit_args {
+                Some(args) => self
+                    .instantiate_with_explicit_args(def_id, &scheme, args, path.span, false)
+                    .unwrap_or_else(|err| {
+                        self.report_ty_from_hir_error(err);
+                        Ty::Error
+                    }),
+                None if scheme.vars.is_empty() => self.icx.instantiate(&scheme),
+                None => Ty::Adt(def_id, None),
+            }
+        } else {
+            self.instantiate_fn_scheme(def_id, &scheme, explicit_args, path.span, false)
+                .unwrap_or_else(|err| {
+                    self.report_ty_from_hir_error(err);
+                    Ty::Error
+                })
         }
     }
 
@@ -847,38 +892,40 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     fn qpath_recv_ty(&mut self, qpath: &QPath) -> Option<Ty> {
         let base = match qpath {
             QPath::Resolved(_, path) => match &path.res {
-                Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
-                    match self.typeck.item_schemes.get(def_id).cloned() {
-                        Some(scheme) => {
-                            if let Some(explicit_args) = path
-                                .segments
-                                .last()
-                                .and_then(|seg| seg.generic_args.as_ref())
-                            {
-                                match self.instantiate_with_explicit_args(
-                                    *def_id,
-                                    &scheme,
-                                    explicit_args,
-                                    path.span,
-                                    false,
-                                ) {
-                                    Ok(ty) => ty,
-                                    Err(err) => {
-                                        self.report_ty_from_hir_error(err);
-                                        return None;
-                                    }
-                                }
-                            } else {
-                                if matches!(scheme.body, Ty::Adt(_, _)) {
-                                    Ty::Adt(*def_id, None)
-                                } else {
-                                    self.icx.instantiate(&scheme)
+                Res::Def(def_id) => match self.typeck.item_schemes.get(def_id).cloned() {
+                    Some(scheme) => {
+                        if let Some(explicit_args) = path
+                            .segments
+                            .last()
+                            .and_then(|seg| seg.generic_args.as_ref())
+                        {
+                            match self.instantiate_with_explicit_args(
+                                *def_id,
+                                &scheme,
+                                explicit_args,
+                                path.span,
+                                false,
+                            ) {
+                                Ok(ty) => ty,
+                                Err(err) => {
+                                    self.report_ty_from_hir_error(err);
+                                    return None;
                                 }
                             }
+                        } else {
+                            if matches!(scheme.body, Ty::Adt(_, _)) {
+                                Ty::Adt(*def_id, None)
+                            } else {
+                                self.icx.instantiate(&scheme)
+                            }
                         }
-                        None => Ty::Error,
                     }
-                }
+                    None => Ty::Error,
+                },
+                Res::SelfTyAlias { alias_to } => match &self.typeck.current_self_ty {
+                    Some(ty) => ty.clone(),
+                    None => Ty::Adt(*alias_to, None),
+                },
                 _ => return None,
             },
             QPath::TypeRelative { qself, .. } => return self.qpath_recv_ty(qself),

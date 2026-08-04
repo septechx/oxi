@@ -60,6 +60,11 @@ struct Typeck<'ctx, 'hir, 'res> {
     adjustments: FxHashMap<HirId, Vec<Adjustment>>,
     /// maps (generic param hir id) -> (type variable id)
     hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
+    /// maps (impl def id) -> (resolved self type)
+    impl_self_types: FxHashMap<DefId, Ty>,
+    current_self_ty: Option<Ty>,
+    /// maps (impl def id) -> (trait def id, assoc type name) -> resolved type
+    assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -76,6 +81,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             item_schemes: FxHashMap::default(),
             adjustments: FxHashMap::default(),
             hir_id_to_ty_var: FxHashMap::default(),
+            impl_self_types: FxHashMap::default(),
+            current_self_ty: None,
+            assoc_types_cache: FxHashMap::default(),
         }
     }
 
@@ -145,10 +153,15 @@ pub enum MethodKind {
     Trait { trait_: DefId, impl_def: DefId },
 }
 
+/// maps (trait def id, assoc type name) -> resolved type
+pub type AssocTypesMap = FxHashMap<(DefId, Symbol), Ty>;
+
 #[derive(Debug, Default)]
 pub struct CoherenceTable {
     /// maps (trait def id, struct def id) -> [impl def id]
     pub impls: FxHashMap<(DefId, DefId), Vec<DefId>>,
+    /// maps (impl def id) -> (trait def id)
+    pub impl_to_trait: FxHashMap<DefId, DefId>,
     /// maps (trait def id) -> (maps (method name) -> (method def id))
     pub trait_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (method def id) -> (owning trait def id)
