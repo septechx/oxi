@@ -21,21 +21,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut icx = InferCtx::default();
         icx.push_level();
 
-        // Take ownership of the crate's owners to avoid borrowing issues
-        let owners = std::mem::take(&mut self.krate.owners);
-        for (i, owner) in owners.iter().enumerate() {
-            let def_id = DefId(i as u32);
-            let module_id = self
-                .resolver
-                .def_to_module
-                .get(&def_id)
-                .copied()
-                .unwrap_or_default();
+        self.iter_owners(&mut |this, def_id, module_id, owner| {
             let Some(info) = owner.as_owner() else {
-                continue;
+                return;
             };
 
-            self.current_self_ty = None;
+            this.current_self_ty = None;
 
             match &info.nodes.node() {
                 OwnerNode::Item(item) => match &item.kind {
@@ -43,22 +34,22 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, &fun.generic_params);
                         if !hir_ids.is_empty() {
-                            self.coherence
+                            this.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = self.fn_ty(&mut icx, &fun.decl, module_id);
-                        self.item_schemes.insert(def_id, Scheme { vars, body });
+                        let body = this.fn_ty(&mut icx, &fun.decl, module_id);
+                        this.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Const { ty, .. } => {
-                        let ty = self
+                        let ty = this
                             .ty_from_hir(&mut icx, ty, module_id)
                             .unwrap_or_else(|err| {
-                                emit_ty_from_hir_error(&err, self.ctx);
+                                emit_ty_from_hir_error(&err, this.ctx);
                                 Ty::Error
                             })
                             .reject_vars();
-                        self.item_schemes.insert(def_id, Scheme::monomorphic(ty));
+                        this.item_schemes.insert(def_id, Scheme::monomorphic(ty));
                     }
                     ItemKind::Struct {
                         fields,
@@ -68,19 +59,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     } => {
                         let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, generic_params);
-                        self.coherence
+                        this.coherence
                             .generic_params
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
-                        self.item_schemes.insert(def_id, scheme);
+                        this.item_schemes.insert(def_id, scheme);
 
-                        let entry = self.coherence.struct_fields.entry(def_id).or_default();
+                        let entry = this.coherence.struct_fields.entry(def_id).or_default();
                         for (index, field) in fields.iter().enumerate() {
                             entry.insert(field.name, (field.ty.clone(), index));
                         }
 
-                        self.register_assoc_items(def_id, items);
+                        this.register_assoc_items(def_id, items);
                     }
                     ItemKind::TypeAlias {
                         type_,
@@ -90,17 +81,17 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, generic_params);
                         if !hir_ids.is_empty() {
-                            self.coherence
+                            this.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
                         let body =
-                            self.ty_from_hir(&mut icx, type_, module_id)
+                            this.ty_from_hir(&mut icx, type_, module_id)
                                 .unwrap_or_else(|err| {
-                                    emit_ty_from_hir_error(&err, self.ctx);
+                                    emit_ty_from_hir_error(&err, this.ctx);
                                     Ty::Error
                                 });
-                        self.item_schemes.insert(def_id, Scheme { vars, body });
+                        this.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Trait {
                         items,
@@ -109,29 +100,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     } => {
                         let (vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, generic_params);
-                        self.coherence
+                        this.coherence
                             .generic_params
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
-                        self.item_schemes.insert(def_id, scheme);
+                        this.item_schemes.insert(def_id, scheme);
 
                         let methods: Vec<(Symbol, DefId)> = items
                             .iter()
                             .filter_map(|&item| {
-                                let def = &self.resolver.defs[item.0 as usize];
+                                let def = &this.resolver.defs[item.0 as usize];
                                 (def.kind == DefKind::AssocFn).then_some((def.name?, item))
                             })
                             .collect();
-                        self.coherence.register_trait(def_id, methods);
-                        self.register_assoc_items(def_id, items);
+                        this.coherence.register_trait(def_id, methods);
+                        this.register_assoc_items(def_id, items);
                     }
                     ItemKind::Impl {
                         self_ty,
                         trait_ty,
                         items,
                     } => {
-                        self.coherence.generic_params.insert(
+                        this.coherence.generic_params.insert(
                             def_id,
                             GenericParamInfo {
                                 hir_ids: Vec::new(),
@@ -139,82 +130,82 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             },
                         );
 
-                        if let Some(struct_def_id) = self.resolve_struct(self_ty.res)
-                            && let Some(trait_def_id) = self.resolve_trait(trait_ty.res)
+                        if let Some(struct_def_id) = this.resolve_struct(self_ty.res)
+                            && let Some(trait_def_id) = this.resolve_trait(trait_ty.res)
                         {
-                            self.coherence
+                            this.coherence
                                 .impls
                                 .entry((trait_def_id, struct_def_id))
                                 .or_default()
                                 .push(def_id);
-                            self.coherence.impl_to_trait.insert(def_id, trait_def_id);
-                            self.coherence
+                            this.coherence.impl_to_trait.insert(def_id, trait_def_id);
+                            this.coherence
                                 .struct_to_traits
                                 .entry(struct_def_id)
                                 .or_default()
                                 .push(trait_def_id);
                         }
-                        if let Some(struct_def_id) = self.resolve_struct(self_ty.res) {
-                            let self_generic_args = self
+                        if let Some(struct_def_id) = this.resolve_struct(self_ty.res) {
+                            let self_generic_args = this
                                 .ty_hir_generic_args(&mut icx, self_ty, module_id)
                                 .unwrap_or(None);
-                            self.impl_self_types
+                            this.impl_self_types
                                 .insert(def_id, Ty::Adt(struct_def_id, self_generic_args));
                         }
 
-                        self.register_assoc_items(def_id, items);
+                        this.register_assoc_items(def_id, items);
                     }
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
                     AssocItemKind::Fn(fun) => {
                         let (scheme_vars, hir_ids, defaults) =
                             Self::collect_generic_params(&mut icx, &fun.generic_params);
-                        let parent_def_id = self
+                        let parent_def_id = this
                             .coherence
                             .assoc_to_parent
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        self.current_self_ty = self.impl_self_types.get(&parent_def_id).cloned();
+                        this.current_self_ty = this.impl_self_types.get(&parent_def_id).cloned();
 
-                        let body = self.fn_ty(&mut icx, &fun.decl, module_id);
+                        let body = this.fn_ty(&mut icx, &fun.decl, module_id);
                         let scheme =
-                            self.assoc_item_scheme(&mut icx, parent_def_id, scheme_vars, body);
-                        self.item_schemes.insert(def_id, scheme);
+                            this.assoc_item_scheme(&mut icx, parent_def_id, scheme_vars, body);
+                        this.item_schemes.insert(def_id, scheme);
                         if !hir_ids.is_empty() {
-                            self.coherence
+                            this.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
                     }
                     AssocItemKind::Type { type_, .. } => {
-                        let parent_def_id = self
+                        let parent_def_id = this
                             .coherence
                             .assoc_to_parent
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        self.current_self_ty = self.impl_self_types.get(&parent_def_id).cloned();
+                        this.current_self_ty = this.impl_self_types.get(&parent_def_id).cloned();
 
-                        match self.resolver.def(parent_def_id).kind {
+                        match this.resolver.def(parent_def_id).kind {
                             DefKind::Trait => {}
                             DefKind::Impl | DefKind::Struct => {
                                 let type_ = type_.as_ref().expect("assoc type is concrete");
-                                let body = self
+                                let body = this
                                     .ty_from_hir(&mut icx, type_, module_id)
                                     .unwrap_or_else(|err| {
-                                        emit_ty_from_hir_error(&err, self.ctx);
+                                        emit_ty_from_hir_error(&err, this.ctx);
                                         Ty::Error
                                     });
                                 // impls/structs do not yet have generic params, but act as if
                                 // they did so we can reuse logic
-                                let scheme = self.assoc_item_scheme(
+                                let scheme = this.assoc_item_scheme(
                                     &mut icx,
                                     parent_def_id,
                                     ThinVec::new(),
                                     body,
                                 );
-                                self.item_schemes.insert(def_id, scheme);
+                                this.item_schemes.insert(def_id, scheme);
                             }
                             _ => {
                                 unreachable!("other defs cannot have assoc types");
@@ -224,9 +215,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 OwnerNode::Crate => {}
             }
-        }
-        // Restore the crate's owners
-        self.krate.owners = owners;
+        });
 
         for err in &icx.errors {
             emit_unify_error(err, self.resolver, self.ctx, &icx);
@@ -272,6 +261,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_type_aliases(&mut self) {
         let type_aliases: Vec<_> = self
             .krate
+            .get()
             .owners
             .iter()
             .enumerate()
@@ -329,24 +319,25 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         // The resolved scheme bodies for recursive associated types are
         // Ty::Error or Ty::Projection, so walk the original HIR types instead.
-        let struct_assoc_types = self
-            .krate
-            .owners
-            .iter()
-            .enumerate()
-            .filter_map(|(i, owner)| {
-                let info = owner.as_owner()?;
-                let OwnerNode::AssocItem(assoc) = info.nodes.node() else {
-                    return None;
-                };
-                let AssocItemKind::Type { type_: Some(_), .. } = &assoc.kind else {
-                    return None;
-                };
-                let def_id = DefId(i as u32);
-                let parent_def_id = self.coherence.assoc_to_parent.get(&def_id).copied()?;
-                let kind = self.resolver.def(parent_def_id).kind;
-                matches!(kind, DefKind::Struct | DefKind::Impl).then_some(def_id)
-            });
+        let struct_assoc_types =
+            self.krate
+                .get()
+                .owners
+                .iter()
+                .enumerate()
+                .filter_map(|(i, owner)| {
+                    let info = owner.as_owner()?;
+                    let OwnerNode::AssocItem(assoc) = info.nodes.node() else {
+                        return None;
+                    };
+                    let AssocItemKind::Type { type_: Some(_), .. } = &assoc.kind else {
+                        return None;
+                    };
+                    let def_id = DefId(i as u32);
+                    let parent_def_id = self.coherence.assoc_to_parent.get(&def_id).copied()?;
+                    let kind = self.resolver.def(parent_def_id).kind;
+                    matches!(kind, DefKind::Struct | DefKind::Impl).then_some(def_id)
+                });
 
         for def_id in struct_assoc_types {
             if !visited.insert(def_id) {
@@ -358,7 +349,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             if let Some(cycle_span) = Self::visit_hir_assoc_type_alias(
                 def_id,
                 def_id,
-                self.krate,
+                self.krate.get(),
                 &full_assoc_type_index,
                 &self.coherence.assoc_to_parent,
                 &self.resolver.defs,

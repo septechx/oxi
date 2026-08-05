@@ -8,7 +8,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn collect_inherent_methods(&mut self) {
-        for (i, owner) in self.krate.owners.iter().enumerate() {
+        for (i, owner) in self.krate.get().owners.iter().enumerate() {
             let Some(ItemKind::Struct { items, .. }) = owner
                 .as_owner()
                 .map(|info| info.nodes.node())
@@ -34,7 +34,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         for ((trait_def_id, struct_def_id), impl_def_ids) in self.coherence.impls.iter() {
             for &impl_def_id in impl_def_ids {
                 let Some(ItemKind::Impl { items, .. }) =
-                    self.krate.owner(impl_def_id).and_then(|owner| {
+                    self.krate.get().owner(impl_def_id).and_then(|owner| {
                         owner
                             .as_owner()
                             .map(|info| info.nodes.node())

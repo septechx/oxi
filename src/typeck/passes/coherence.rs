@@ -18,10 +18,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut icx = InferCtx::default();
         icx.push_level();
 
-        // Take ownership of the crate's owners to avoid borrowing issues
-        let owners = std::mem::take(&mut self.krate.owners);
-        for (i, owner) in owners.iter().enumerate() {
-            let def_id = DefId(i as u32);
+        self.iter_owners(&mut |this, def_id, module_id, owner| {
             let Some(item) = owner
                 .as_owner()
                 .map(|info| info.nodes.node())
@@ -30,7 +27,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     _ => None,
                 })
             else {
-                continue;
+                return;
             };
             let ItemKind::Impl {
                 self_ty,
@@ -38,51 +35,43 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 items,
             } = &item.kind
             else {
-                continue;
+                return;
             };
 
-            let impl_module = self
-                .resolver
-                .def_to_module
-                .get(&def_id)
-                .copied()
-                .unwrap_or(ModuleId(0));
-
-            let Some(struct_def_id) = self.resolve_struct(self_ty.res) else {
+            let Some(struct_def_id) = this.resolve_struct(self_ty.res) else {
                 builders::emit_at(
-                    self.ctx,
+                    this.ctx,
                     self_ty.span,
-                    impl_module,
+                    module_id,
                     diag::ImplExpectedPathToStruct,
-                    diag_params! { type = self_ty.display(self.ctx) },
+                    diag_params! { type = self_ty.display(this.ctx) },
                 );
-                continue;
+                return;
             };
-            let Some(trait_def_id) = self.resolve_trait(trait_ty.res) else {
+            let Some(trait_def_id) = this.resolve_trait(trait_ty.res) else {
                 builders::emit_at(
-                    self.ctx,
+                    this.ctx,
                     trait_ty.span,
-                    impl_module,
+                    module_id,
                     diag::ImplExpectedPathToTrait,
-                    diag_params! { type = trait_ty.display(self.ctx) },
+                    diag_params! { type = trait_ty.display(this.ctx) },
                 );
-                continue;
+                return;
             };
 
             // 1. Extract and validate trait generic args from the path
-            let trait_scheme = self.item_schemes.get(&trait_def_id).cloned();
-            let trait_generic_args = match self.ty_hir_generic_args(&mut icx, trait_ty, impl_module)
-            {
+            let trait_scheme = this.item_schemes.get(&trait_def_id).cloned();
+            let trait_generic_args = match this.ty_hir_generic_args(&mut icx, trait_ty, module_id) {
                 Ok(args) => args,
                 Err(err) => {
-                    emit_ty_from_hir_error(&err, self.ctx);
-                    continue;
+                    emit_ty_from_hir_error(&err, this.ctx);
+                    return;
                 }
             };
 
             if let Some(scheme) = &trait_scheme
                 && !scheme.vars.is_empty()
-                && let Some(info) = self.coherence.generic_params.get(&trait_def_id)
+                && let Some(info) = this.coherence.generic_params.get(&trait_def_id)
             {
                 for &hir_id in &info.hir_ids {
                     if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
@@ -95,16 +84,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             // If no explicit generic args were provided and the trait has defaults, fill them in
             let trait_generic_args = match (&trait_scheme, &trait_generic_args) {
                 (Some(scheme), None) if !scheme.vars.is_empty() => {
-                    if let Some(info) = self.coherence.generic_params.get(&trait_def_id).cloned()
+                    if let Some(info) = this.coherence.generic_params.get(&trait_def_id).cloned()
                         && info.defaults.iter().all(|d| d.is_some())
                     {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
-                            let ty = self.resolve_default_generic_arg(
+                            let ty = this.resolve_default_generic_arg(
                                 &mut icx,
                                 default.as_ref().expect("default exists"),
-                                impl_module,
+                                module_id,
                                 &subst,
                                 Some((trait_def_id, struct_def_id)),
                             );
@@ -116,18 +105,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         Some(args)
                     } else {
                         emit_unexpected_generic_args(
-                            self.ctx,
+                            this.ctx,
                             trait_ty.span,
-                            impl_module,
+                            module_id,
                             scheme.vars.len(),
                             0,
                         );
-                        continue;
+                        return;
                     }
                 }
                 (Some(scheme), Some(args)) if scheme.vars.len() != args.len() => {
                     if args.len() < scheme.vars.len() {
-                        match self.coherence.generic_params.get(&trait_def_id).cloned() {
+                        match this.coherence.generic_params.get(&trait_def_id).cloned() {
                             Some(info)
                                 if info.defaults[args.len()..].iter().all(|d| d.is_some()) =>
                             {
@@ -142,10 +131,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     info.defaults[full_args.len()..].iter().enumerate()
                                 {
                                     let idx = full_args.len() + i;
-                                    let ty = self.resolve_default_generic_arg(
+                                    let ty = this.resolve_default_generic_arg(
                                         &mut icx,
                                         default.as_ref().expect("default exists"),
-                                        impl_module,
+                                        module_id,
                                         &subst,
                                         Some((trait_def_id, struct_def_id)),
                                     );
@@ -159,24 +148,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             }
                             _ => {
                                 emit_unexpected_generic_args(
-                                    self.ctx,
+                                    this.ctx,
                                     trait_ty.span,
-                                    impl_module,
+                                    module_id,
                                     scheme.vars.len(),
                                     args.len(),
                                 );
-                                continue;
+                                return;
                             }
                         }
                     } else {
                         emit_unexpected_generic_args(
-                            self.ctx,
+                            this.ctx,
                             trait_ty.span,
-                            impl_module,
+                            module_id,
                             scheme.vars.len(),
                             args.len(),
                         );
-                        continue;
+                        return;
                     }
                 }
                 _ => trait_generic_args,
@@ -184,24 +173,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 2. Check for duplicate impls using resolved generic args
             let self_type_generic_args =
-                match self.ty_hir_generic_args(&mut icx, self_ty, impl_module) {
+                match this.ty_hir_generic_args(&mut icx, self_ty, module_id) {
                     Ok(args) => args,
                     Err(err) => {
-                        emit_ty_from_hir_error(&err, self.ctx);
-                        continue;
+                        emit_ty_from_hir_error(&err, this.ctx);
+                        return;
                     }
                 };
             let self_type = Ty::Adt(struct_def_id, self_type_generic_args);
-            self.coherence
+            this.coherence
                 .impl_resolved_generic_args
                 .insert(def_id, trait_generic_args.clone());
-            self.coherence
+            this.coherence
                 .impl_resolved_self_type
                 .insert(def_id, self_type.clone());
 
             let key = (trait_def_id, struct_def_id);
             // Check for conflicts against other existing impls (exclude self)
-            let is_conflicting = self.coherence.impls.get(&key).is_some_and(|existing| {
+            let is_conflicting = this.coherence.impls.get(&key).is_some_and(|existing| {
                 let others: Vec<_> = existing
                     .iter()
                     .copied()
@@ -210,47 +199,49 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 if others.is_empty() {
                     false
                 } else {
-                    self.coherence
+                    this.coherence
                         .has_conflicting_impl(&others, &trait_generic_args, &self_type)
                 }
             });
             if is_conflicting {
-                let trait_ = self
+                let trait_ = this
                     .ctx
                     .interner
                     .lookup(
-                        self.resolver.defs[trait_def_id.0 as usize]
+                        this.resolver
+                            .def(trait_def_id)
                             .name
                             .expect("trait has name"),
                     )
                     .to_string();
-                let strct = self
+                let strct = this
                     .ctx
                     .interner
                     .lookup(
-                        self.resolver.defs[struct_def_id.0 as usize]
+                        this.resolver
+                            .def(struct_def_id)
                             .name
                             .expect("struct has name"),
                     )
                     .to_string();
-                let impl_span = self.resolver.defs[def_id.0 as usize].span;
+                let impl_span = this.resolver.def(def_id).span;
                 builders::emit_at(
-                    self.ctx,
+                    this.ctx,
                     impl_span,
-                    impl_module,
+                    module_id,
                     diag::ConflictingImplementations,
                     diag_params! { trait = trait_, struct = strct },
                 );
-                continue;
+                return;
             }
-            if !self
+            if !this
                 .coherence
                 .impls
                 .get(&key)
                 .is_some_and(|existing| existing.contains(&def_id))
             {
-                self.coherence.impls.entry(key).or_default().push(def_id);
-                self.coherence.impl_to_trait.insert(def_id, trait_def_id);
+                this.coherence.impls.entry(key).or_default().push(def_id);
+                this.coherence.impl_to_trait.insert(def_id, trait_def_id);
             }
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
@@ -261,36 +252,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
 
             // 3. Signatures check
-            let Some(trait_methods) = self.coherence.trait_methods.get(&trait_def_id).cloned()
+            let Some(trait_methods) = this.coherence.trait_methods.get(&trait_def_id).cloned()
             else {
-                continue;
+                return;
             };
 
             let mut impl_methods: FxHashMap<Symbol, DefId> = FxHashMap::default();
             for item in items {
-                impl_methods.insert(
-                    self.resolver.defs[item.0 as usize]
-                        .name
-                        .expect("item has name"),
-                    *item,
-                );
+                impl_methods.insert(this.resolver.def(*item).name.expect("item has name"), *item);
             }
 
             // Build assoc type substitution
             for (name, trait_method) in trait_methods.iter() {
                 let Some(impl_method) = impl_methods.get(name) else {
-                    let method = self.ctx.interner.lookup(*name).to_string();
+                    let method = this.ctx.interner.lookup(*name).to_string();
                     builders::emit_at(
-                        self.ctx,
+                        this.ctx,
                         item.span,
-                        impl_module,
+                        module_id,
                         diag::MissingImplementation,
                         diag_params! { method = method },
                     );
                     continue;
                 };
-                let trait_sig = self.item_schemes.get(trait_method);
-                let impl_sig = self.item_schemes.get(impl_method);
+                let trait_sig = this.item_schemes.get(trait_method);
+                let impl_sig = this.item_schemes.get(impl_method);
                 if let (Some(trait_sig), Some(impl_sig)) = (trait_sig, impl_sig) {
                     let trait_sig_sub = substitute_self(&trait_sig.body, trait_def_id, &self_type);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
@@ -299,31 +285,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let impl_sig_sub =
                         instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig.body.clone());
 
-                    let method_span = self.resolver.defs[impl_method.0 as usize].span;
-                    if self
+                    let method_span = this.resolver.def(*impl_method).span;
+                    if this
                         .unify(
                             &mut icx,
                             &trait_sig_sub,
                             &impl_sig_sub,
                             method_span,
-                            impl_module,
+                            module_id,
                         )
                         .is_err()
                     {
-                        let method = self.ctx.interner.lookup(*name).to_string();
+                        let method = this.ctx.interner.lookup(*name).to_string();
                         builders::emit_at(
-                            self.ctx,
+                            this.ctx,
                             method_span,
-                            impl_module,
+                            module_id,
                             diag::SignatureMismatch,
                             diag_params! { method = method },
                         );
                     }
                 }
             }
-        }
-        // Restore the crate's owners
-        self.krate.owners = owners;
+        });
     }
 
     pub(super) fn resolve_struct(&self, res: Res<HirId>) -> Option<DefId> {

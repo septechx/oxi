@@ -17,7 +17,7 @@ use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
-use crate::hir::{self, Crate, DefId, HirId};
+use crate::hir::{self, Crate, DefId, HirId, MaybeOwner, ModuleId};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
 use fxhash::FxHashMap;
@@ -40,9 +40,40 @@ pub enum Adjustment {
     AutoDeref,
 }
 
+/// Option<T> that is always expected to be Some
+struct Maybe<T> {
+    value: Option<T>,
+}
+
+impl<T> Maybe<T> {
+    pub fn new(value: T) -> Self {
+        Maybe { value: Some(value) }
+    }
+
+    pub fn replace(&mut self, value: T) {
+        assert!(self.value.is_none());
+        self.value = Some(value);
+    }
+
+    pub fn take(&mut self) -> T {
+        assert!(self.value.is_some());
+        self.value.take().expect("value is Some")
+    }
+
+    pub fn get(&self) -> &T {
+        assert!(self.value.is_some());
+        self.value.as_ref().expect("value is Some")
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        assert!(self.value.is_some());
+        self.value.as_mut().expect("value is Some")
+    }
+}
+
 struct Typeck<'ctx, 'hir, 'res> {
     ctx: &'ctx mut Ctx,
-    krate: &'hir mut Crate,
+    krate: Maybe<&'hir mut Crate>,
     resolver: &'res ResolverOutputs,
 
     /// maps (typed node hir id) -> (ty)
@@ -71,7 +102,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn new(ctx: &'ctx mut Ctx, krate: &'hir mut Crate, resolver: &'res ResolverOutputs) -> Self {
         Self {
             ctx,
-            krate,
+            krate: Maybe::new(krate),
             resolver,
             node_types: FxHashMap::default(),
             member_res: FxHashMap::default(),
@@ -110,6 +141,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             adjustments: self.adjustments,
             hir_id_to_ty_var: self.hir_id_to_ty_var,
         }
+    }
+
+    fn iter_owners(&mut self, f: &mut impl FnMut(&mut Typeck, DefId, ModuleId, &MaybeOwner)) {
+        let krate = self.krate.take();
+        krate.owners.iter().enumerate().for_each(|(i, owner)| {
+            let def_id = DefId(i as u32);
+            let module_id = self
+                .resolver
+                .def_to_module
+                .get(&def_id)
+                .copied()
+                .unwrap_or_default();
+            f(self, def_id, module_id, owner)
+        });
+        self.krate.replace(krate);
+    }
+
+    fn with_owners(&mut self, f: impl FnOnce(&mut Typeck, Vec<MaybeOwner>) -> Vec<MaybeOwner>) {
+        let krate = self.krate.take();
+        let owners = std::mem::take(&mut krate.owners);
+        let owners = f(self, owners);
+        krate.owners = owners;
+        self.krate.replace(krate);
     }
 }
 

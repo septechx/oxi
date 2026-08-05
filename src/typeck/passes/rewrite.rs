@@ -5,7 +5,7 @@ use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn rewrite_member_access(&mut self) {
-        for owner in self.krate.owners.iter_mut() {
+        for owner in self.krate.get_mut().owners.iter_mut() {
             let Some(info) = owner.as_owner_mut() else {
                 continue;
             };

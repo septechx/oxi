@@ -58,105 +58,104 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut local_schemes: FxHashMap<HirId, Scheme> = FxHashMap::default();
         let mut adjustments: FxHashMap<HirId, Vec<Adjustment>> = FxHashMap::default();
 
-        // Take ownership of the crate's owners so we can mutably borrow the rest of the struct in checker
-        let owners = std::mem::take(&mut self.krate.owners);
-        let owners = owners
-            .into_iter()
-            .enumerate()
-            .map(|(i, owner)| {
-                let def_id = DefId(i as u32);
-                let module_id = self
-                    .resolver
-                    .def_to_module
-                    .get(&def_id)
-                    .copied()
-                    .unwrap_or_default();
-                (def_id, owner, module_id)
-            })
-            .collect::<Vec<_>>();
+        self.with_owners(|this, owners| {
+            let owners = owners
+                .into_iter()
+                .enumerate()
+                .map(|(i, owner)| {
+                    let def_id = DefId(i as u32);
+                    let module_id = self
+                        .resolver
+                        .def_to_module
+                        .get(&def_id)
+                        .copied()
+                        .unwrap_or_default();
+                    (def_id, owner, module_id)
+                })
+                .collect::<Vec<_>>();
 
-        let mut checker = BodyChecker {
-            typeck: self,
-            icx: &mut icx,
-            node_types: &mut node_types,
-            member_res: &mut member_res,
-            local_schemes: &mut local_schemes,
-            adjustments: &mut adjustments,
-            env: ScopeEnv::new(),
-            module_id: ModuleId(0),
-            current_assoc_types: FxHashMap::default(),
-        };
-
-        for (def_id, owner, module_id) in owners.iter() {
-            checker.module_id = *module_id;
-            checker.typeck.current_self_ty = None;
-
-            let Some(info) = owner.as_owner() else {
-                continue;
+            let mut checker = BodyChecker {
+                typeck: this,
+                icx: &mut icx,
+                node_types: &mut node_types,
+                member_res: &mut member_res,
+                local_schemes: &mut local_schemes,
+                adjustments: &mut adjustments,
+                env: ScopeEnv::new(),
+                module_id: ModuleId(0),
+                current_assoc_types: FxHashMap::default(),
             };
 
-            match &info.nodes.node() {
-                OwnerNode::Item(item) => match &item.kind {
-                    ItemKind::Fn(fun) => {
-                        checker.current_assoc_types = FxHashMap::default();
-                        checker.register_if_generic(&fun.generic_params);
-                        if let Some(body_id) = fun.body_id
-                            && let Some(body) = info.nodes.body(body_id)
-                        {
-                            checker.check_fn_body(&fun.decl, body);
+            for (def_id, owner, module_id) in owners.iter() {
+                checker.module_id = *module_id;
+                checker.typeck.current_self_ty = None;
+
+                let Some(info) = owner.as_owner() else {
+                    continue;
+                };
+
+                match &info.nodes.node() {
+                    OwnerNode::Item(item) => match &item.kind {
+                        ItemKind::Fn(fun) => {
+                            checker.current_assoc_types = FxHashMap::default();
+                            checker.register_if_generic(&fun.generic_params);
+                            if let Some(body_id) = fun.body_id
+                                && let Some(body) = info.nodes.body(body_id)
+                            {
+                                checker.check_fn_body(&fun.decl, body);
+                            }
                         }
-                    }
-                    ItemKind::Const { ty, body_id, .. } => {
-                        checker.current_assoc_types = FxHashMap::default();
-                        if let Some(body_id) = body_id
-                            && let Some(body) = info.nodes.body(*body_id)
-                        {
-                            checker.check_const_body(ty, body);
+                        ItemKind::Const { ty, body_id, .. } => {
+                            checker.current_assoc_types = FxHashMap::default();
+                            if let Some(body_id) = body_id
+                                && let Some(body) = info.nodes.body(*body_id)
+                            {
+                                checker.check_const_body(ty, body);
+                            }
                         }
-                    }
-                    _ => {}
-                },
-                OwnerNode::AssocItem(assoc) => match &assoc.kind {
-                    AssocItemKind::Fn(fun) => {
-                        let parent_def_id = checker
-                            .typeck
-                            .coherence
-                            .assoc_to_parent
-                            .get(def_id)
-                            .copied()
-                            .expect("assoc item has parent");
-                        checker.current_assoc_types =
-                            checker.typeck.compute_assoc_types(parent_def_id);
-                        checker.typeck.current_self_ty =
-                            checker.typeck.impl_self_types.get(&parent_def_id).cloned();
-                        checker.register_if_generic_def(parent_def_id);
-                        checker.register_if_generic(&fun.generic_params);
-                        if let Some(body_id) = fun.body_id
-                            && let Some(body) = info.nodes.body(body_id)
-                        {
-                            checker.check_fn_body(&fun.decl, body);
+                        _ => {}
+                    },
+                    OwnerNode::AssocItem(assoc) => match &assoc.kind {
+                        AssocItemKind::Fn(fun) => {
+                            let parent_def_id = checker
+                                .typeck
+                                .coherence
+                                .assoc_to_parent
+                                .get(def_id)
+                                .copied()
+                                .expect("assoc item has parent");
+                            checker.current_assoc_types =
+                                checker.typeck.compute_assoc_types(parent_def_id);
+                            checker.typeck.current_self_ty =
+                                checker.typeck.impl_self_types.get(&parent_def_id).cloned();
+                            checker.register_if_generic_def(parent_def_id);
+                            checker.register_if_generic(&fun.generic_params);
+                            if let Some(body_id) = fun.body_id
+                                && let Some(body) = info.nodes.body(body_id)
+                            {
+                                checker.check_fn_body(&fun.decl, body);
+                            }
                         }
-                    }
-                    AssocItemKind::Type { .. } => {
-                        let parent_def_id = checker
-                            .typeck
-                            .coherence
-                            .assoc_to_parent
-                            .get(def_id)
-                            .copied()
-                            .expect("assoc item has parent");
-                        checker.current_assoc_types =
-                            checker.typeck.compute_assoc_types(parent_def_id);
-                        checker.typeck.current_self_ty =
-                            checker.typeck.impl_self_types.get(&parent_def_id).cloned();
-                    }
-                },
-                OwnerNode::Crate => {}
+                        AssocItemKind::Type { .. } => {
+                            let parent_def_id = checker
+                                .typeck
+                                .coherence
+                                .assoc_to_parent
+                                .get(def_id)
+                                .copied()
+                                .expect("assoc item has parent");
+                            checker.current_assoc_types =
+                                checker.typeck.compute_assoc_types(parent_def_id);
+                            checker.typeck.current_self_ty =
+                                checker.typeck.impl_self_types.get(&parent_def_id).cloned();
+                        }
+                    },
+                    OwnerNode::Crate => {}
+                }
             }
-        }
-        // Restore the crate's owners
-        drop(checker);
-        self.krate.owners = owners.into_iter().map(|(_, owner, _)| owner).collect();
+
+            owners.into_iter().map(|(_, owner, _)| owner).collect()
+        });
 
         self.hir_id_to_ty_var = std::mem::take(&mut icx.hir_id_to_ty_var);
 
@@ -1724,7 +1723,8 @@ fn generic_mismatch_info(
 ) -> Option<String> {
     match (expected, found) {
         (Ty::Adt(d1, Some(g1)), Ty::Adt(d2, Some(g2))) if d1 == d2 && g1.len() != g2.len() => {
-            let name = resolver.defs[d1.0 as usize]
+            let name = resolver
+                .def(*d1)
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Struct#{}", d1.0));
@@ -1774,7 +1774,8 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             format!("({})", es.join(", "))
         }
         Ty::Adt(d, generics) => {
-            let name = resolver.defs[d.0 as usize]
+            let name = resolver
+                .def(*d)
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Struct#{}", d.0));
@@ -1788,7 +1789,8 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             def_id,
             generic_args,
         } => {
-            let name = resolver.defs[def_id.0 as usize]
+            let name = resolver
+                .def(*def_id)
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Alias#{}", def_id.0));
@@ -1804,11 +1806,13 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             self_ty,
             generic_args,
         } => {
-            let name = resolver.defs[trait_def_id.0 as usize]
+            let name = resolver
+                .def(*trait_def_id)
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Trait#{}", trait_def_id.0));
-            let assoc_name = resolver.defs[assoc_def_id.0 as usize]
+            let assoc_name = resolver
+                .def(*assoc_def_id)
                 .name
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Ty#{}", assoc_def_id.0));
