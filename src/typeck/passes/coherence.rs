@@ -10,7 +10,6 @@ use crate::typeck::fold::{
 };
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
-use crate::typeck::unify::unify;
 use crate::typeck::{Scheme, Typeck, diag};
 
 use super::check::{emit_ty_from_hir_error, emit_unexpected_generic_args};
@@ -288,7 +287,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
 
             // 3. Signatures check
-            let Some(trait_methods) = self.coherence.trait_methods.get(&trait_def_id) else {
+            let Some(trait_methods) = self.coherence.trait_methods.get(&trait_def_id).cloned()
+            else {
                 continue;
             };
 
@@ -328,14 +328,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig_sub);
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
-                    if unify(
-                        &mut icx,
-                        &trait_sig_sub,
-                        &impl_sig_sub,
-                        method_span,
-                        impl_module,
-                    )
-                    .is_err()
+                    if self
+                        .unify(
+                            &mut icx,
+                            &trait_sig_sub,
+                            &impl_sig_sub,
+                            method_span,
+                            impl_module,
+                        )
+                        .is_err()
                     {
                         let method = self.ctx.interner.lookup(*name).to_string();
                         builders::emit_at(

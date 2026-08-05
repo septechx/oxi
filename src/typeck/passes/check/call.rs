@@ -7,7 +7,7 @@ use crate::interner::Symbol;
 use crate::span::Span;
 use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::passes::check::{BodyChecker, ty_display};
-use crate::typeck::unify::{OrPushErr, unify};
+use crate::typeck::unify::OrPushErr;
 use crate::typeck::{Adjustment, MemberRes, MethodKind, Scheme, Ty, diag};
 use crate::{diag_params, hir};
 
@@ -65,6 +65,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) -> Ty {
         let callee_ty = self.check_expr(callee);
         let callee_ty = self.icx.resolve(&callee_ty);
+        let callee_ty = self.typeck.normalize_assoc_projections(&callee_ty);
+        self.node_types.insert(callee.hir_id, callee_ty.clone());
         match callee_ty {
             Ty::Fn {
                 params: param_tys,
@@ -135,7 +137,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             let arg_ty = self.check_expr(arg);
             let expected_ty = &param_tys_without_self[i];
 
-            unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id).or_push_err(self.icx);
+            self.typeck
+                .unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id)
+                .or_push_err(self.icx);
         }
 
         true
@@ -267,15 +271,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             );
 
             let ret = self.icx.resolve(&ret);
-            if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+            let ret = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
                 let recv_args = recv_args.clone();
-                return fold_ty(&ret, &mut |ty| match ty {
+                fold_ty(&ret, &mut |ty| match ty {
                     Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
                     t => t,
-                });
+                })
             } else {
-                return ret;
-            }
+                ret
+            };
+            return self.typeck.normalize_assoc_projections(&ret);
         }
 
         // All candidates failed
@@ -344,10 +349,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         } else {
             if is_method_call && !param_tys.is_empty() {
                 let first = param_tys.first().expect("method has at least 1 param");
-                unify(self.icx, first, &recv_ty, call_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, first, &recv_ty, call_span, self.module_id)
+                    .or_push_err(self.icx);
             }
             for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_without_self) {
-                unify(self.icx, param_ty, arg_ty, call_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, param_ty, arg_ty, call_span, self.module_id)
+                    .or_push_err(self.icx);
             }
         }
         Ty::Error
@@ -423,16 +432,28 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 let Ty::Ptr(inner, _) = param_r else {
                     unreachable!()
                 };
-                if unify(self.icx, &inner, recv_ty, call_span, self.module_id).is_err() {
+                if self
+                    .typeck
+                    .unify(self.icx, &inner, recv_ty, call_span, self.module_id)
+                    .is_err()
+                {
                     return false;
                 }
-            } else if unify(self.icx, first, recv_ty, call_span, self.module_id).is_err() {
+            } else if self
+                .typeck
+                .unify(self.icx, first, recv_ty, call_span, self.module_id)
+                .is_err()
+            {
                 return false;
             }
         }
 
         for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_withut_self) {
-            if unify(self.icx, param_ty, arg_ty, call_span, self.module_id).is_err() {
+            if self
+                .typeck
+                .unify(self.icx, param_ty, arg_ty, call_span, self.module_id)
+                .is_err()
+            {
                 return false;
             }
         }
@@ -495,9 +516,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .or_default()
                         .push(Adjustment::AutoRef(mutability));
                 }
-                unify(self.icx, &inner, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &inner, recv_ty, call_span, self.module_id)
+                    .or_push_err(self.icx);
             } else {
-                unify(self.icx, first, recv_ty, call_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, first, recv_ty, call_span, self.module_id)
+                    .or_push_err(self.icx);
             }
         }
     }

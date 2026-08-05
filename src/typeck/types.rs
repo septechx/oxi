@@ -246,7 +246,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     if args.len() == scheme_vars.len() {
                                         let args: ThinVec<Ty> = args
                                             .into_iter()
-                                            .map(|arg| self.normalize_assoc_projections(arg))
+                                            .map(|arg| self.normalize_assoc_projections(&arg))
                                             .collect();
                                         let mapping: FxHashMap<TyVarId, Ty> =
                                             scheme_vars.into_iter().zip(args).collect();

@@ -22,7 +22,7 @@ use crate::typeck::fold::{
 };
 use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty, TyFromHirError, TyFromHirResult};
-use crate::typeck::unify::{OrPushErr, UnifyError, unify};
+use crate::typeck::unify::{OrPushErr, UnifyError};
 use crate::typeck::{Adjustment, AssocTypesMap, MemberRes, TyVarId, Typeck, diag};
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -168,7 +168,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let var_module = icx.ty_var_module(var);
-            unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module).or_push_err(&mut icx);
+            self.unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module)
+                .or_push_err(&mut icx);
         }
         let float_ids = icx.vars_with_source(TyVarSource::FloatLit);
         let f64_ty = Ty::Prim(PrimTy::Float(FloatTy::F64));
@@ -178,7 +179,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let var_module = icx.ty_var_module(var);
-            unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module).or_push_err(&mut icx);
+            self.unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module)
+                .or_push_err(&mut icx);
         }
 
         let empty_array_ids = icx.vars_with_source(TyVarSource::EmptyArray);
@@ -204,7 +206,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             let span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
             let module_id = icx.ty_var_module(var);
-            unify(&mut icx, &Ty::Var(var), &default_ty, span, module_id).or_push_err(&mut icx);
+            self.unify(&mut icx, &Ty::Var(var), &default_ty, span, module_id)
+                .or_push_err(&mut icx);
         }
 
         let resolved: FxHashMap<HirId, Ty> = node_types
@@ -232,7 +235,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .get(def_id)
                                 .copied()
                                 .unwrap_or_default();
-                            let mut default_ty = self
+                            let default_ty = self
                                 .ty_from_hir(
                                     &mut icx,
                                     default.as_ref().expect("default exists"),
@@ -242,7 +245,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     emit_ty_from_hir_error(&err, self.ctx);
                                     Ty::Error
                                 });
-                            default_ty = self.normalize_assoc_projections(default_ty);
+                            let mut default_ty = self.normalize_assoc_projections(&default_ty);
                             if !subst.is_empty() {
                                 default_ty = substitute_ty_vars(&default_ty, &subst);
                             }
@@ -297,7 +300,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         assoc_types
     }
 
-    pub(crate) fn normalize_assoc_projections(&mut self, ty: Ty) -> Ty {
+    pub(crate) fn normalize_assoc_projections(&mut self, ty: &Ty) -> Ty {
         self.normalize_assoc_projections_inner(
             ty,
             &mut FxHashSet::default(),
@@ -307,11 +310,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
     fn normalize_assoc_projections_inner(
         &mut self,
-        ty: Ty,
+        ty: &Ty,
         aliases_in_progress: &mut FxHashSet<DefId>,
         projections_in_progress: &mut FxHashSet<(DefId, DefId, DefId)>,
     ) -> Ty {
-        fold_ty(&ty, &mut |ty| match &ty {
+        fold_ty(ty, &mut |ty| match &ty {
             Ty::Adt(def_id, generic_args)
                 if self.resolver.def(*def_id).kind == DefKind::TypeAlias =>
             {
@@ -323,7 +326,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     {
                         Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
                             Some(resolved) => self.normalize_assoc_projections_inner(
-                                resolved,
+                                &resolved,
                                 aliases_in_progress,
                                 projections_in_progress,
                             ),
@@ -352,7 +355,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let key = (*trait_def_id, *self_def_id, *assoc_def_id);
                         if projections_in_progress.insert(key) {
                             let assoc_types = self.compute_assoc_types(impl_def_id);
-                            let concrete = assoc_types.get(&(*trait_def_id, name)).cloned();
+                            let concrete = assoc_types.get(&(*trait_def_id, name));
                             if let Some(concrete) = concrete {
                                 let normalized = self.normalize_assoc_projections_inner(
                                     concrete,
@@ -558,7 +561,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let expected = self.ty_from_hir_resolved(ty);
         self.node_types.insert(ty.hir_id, expected.clone());
         let body_ty = self.check_expr(&body.value);
-        if let Err(err) = unify(
+        if let Err(err) = self.typeck.unify(
             self.icx,
             &expected,
             &body_ty,
@@ -583,7 +586,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         self.check_expr(&body.value);
         self.check_return_values(&body.value, &expected, body.value.span);
         if let Some(body_ty) = self.node_types.get(&body.value.hir_id).cloned()
-            && let Err(err) = unify(
+            && let Err(err) = self.typeck.unify(
                 self.icx,
                 &expected,
                 &body_ty,
@@ -607,7 +610,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 } else {
                     Ty::Prim(PrimTy::Void)
                 };
-                if let Err(err) = unify(self.icx, expected, &inner, span, self.module_id) {
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, expected, &inner, span, self.module_id)
+                {
                     self.report_type_error(err);
                 }
             }
@@ -655,7 +661,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 Ty::Error
             }
             ExprKind::Literal(lit) => self.check_lit(lit, expr_span),
-            ExprKind::Path(qpath) => self.check_path(qpath),
+            ExprKind::Path(qpath) => self.check_path(qpath, hir_id),
             ExprKind::Binary { left, op, right } => self.check_binary(left, *op, right),
             ExprKind::Unary { op, right } => self.check_unary(*op, right),
             ExprKind::Dereference { expr } => self.check_dereference(expr),
@@ -679,7 +685,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             } => {
                 let cond_ty = self.check_expr(cond);
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) = unify(self.icx, &bool_ty, &cond_ty, cond.span, self.module_id) {
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, &bool_ty, &cond_ty, cond.span, self.module_id)
+                {
                     self.report_type_error(err);
                 }
                 let then_span = then_branch.span;
@@ -688,17 +697,25 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
                 match else_ty {
                     Some(else_ty) => {
-                        if let Err(err) =
-                            unify(self.icx, &then_ty, &else_ty, then_span, self.module_id)
-                        {
+                        if let Err(err) = self.typeck.unify(
+                            self.icx,
+                            &then_ty,
+                            &else_ty,
+                            then_span,
+                            self.module_id,
+                        ) {
                             self.report_type_error(err);
                         }
                         then_ty
                     }
                     None => {
-                        if let Err(err) =
-                            unify(self.icx, &void_ty, &then_ty, then_span, self.module_id)
-                        {
+                        if let Err(err) = self.typeck.unify(
+                            self.icx,
+                            &void_ty,
+                            &then_ty,
+                            then_span,
+                            self.module_id,
+                        ) {
                             self.report_type_error(err);
                         }
                         void_ty
@@ -714,7 +731,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             ExprKind::Assign { target, value, .. } => {
                 let target_ty = self.check_expr(target);
                 let value_ty = self.check_expr(value);
-                if let Err(err) = unify(self.icx, &target_ty, &value_ty, value.span, self.module_id)
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, &target_ty, &value_ty, value.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
@@ -747,13 +766,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
     }
 
-    fn check_path(&mut self, qpath: &QPath) -> Ty {
+    fn check_path(&mut self, qpath: &QPath, hir_id: HirId) -> Ty {
         match qpath {
             QPath::Resolved(_, path) => match &path.res {
-                Res::Def(def_id) => self.check_resolved_path(*def_id, path),
+                Res::Def(def_id) => self.check_resolved_path(*def_id, path, hir_id),
                 Res::SelfTyAlias { alias_to } => match &self.typeck.current_self_ty {
-                    Some(Ty::Adt(id, _)) => self.check_resolved_path(*id, path),
-                    _ => self.check_resolved_path(*alias_to, path),
+                    Some(Ty::Adt(id, _)) => self.check_resolved_path(*id, path, hir_id),
+                    _ => self.check_resolved_path(*alias_to, path, hir_id),
                 },
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
                     Some(scheme) => self.icx.instantiate(scheme),
@@ -766,7 +785,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
     }
 
-    fn check_resolved_path(&mut self, def_id: DefId, path: &hir::Path) -> Ty {
+    fn check_resolved_path(&mut self, def_id: DefId, path: &hir::Path, hir_id: HirId) -> Ty {
         let scheme = match self.typeck.item_schemes.get(&def_id) {
             Some(scheme) => scheme.clone(),
             None => return Ty::Error,
@@ -787,11 +806,15 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 None => Ty::Adt(def_id, None),
             }
         } else {
-            self.instantiate_fn_scheme(def_id, &scheme, explicit_args, path.span, false)
+            let ty = self
+                .instantiate_fn_scheme(def_id, &scheme, explicit_args, path.span, false)
                 .unwrap_or_else(|err| {
                     self.report_ty_from_hir_error(err);
                     Ty::Error
-                })
+                });
+            let ty = self.typeck.normalize_assoc_projections(&ty);
+            self.node_types.insert(hir_id, ty.clone());
+            ty
         }
     }
 
@@ -868,7 +891,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             };
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
-            unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id).or_push_err(self.icx);
+            self.typeck
+                .unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id)
+                .or_push_err(self.icx);
         }
         Ok(self.icx.instantiate_with(&scheme.body, &mapping))
     }
@@ -945,13 +970,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let right = self.check_expr(right);
         match op {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                unify(self.icx, &left, &right, left_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &left, &right, left_span, self.module_id)
+                    .or_push_err(self.icx);
                 Ty::Prim(PrimTy::Bool)
             }
             BinOp::And | BinOp::Or => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                unify(self.icx, &bool_ty, &left, left_span, self.module_id).or_push_err(self.icx);
-                unify(self.icx, &bool_ty, &right, right_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &bool_ty, &left, left_span, self.module_id)
+                    .or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &bool_ty, &right, right_span, self.module_id)
+                    .or_push_err(self.icx);
                 bool_ty
             }
             _ => {
@@ -975,7 +1006,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     return Ty::Error;
                 }
 
-                unify(self.icx, &left, &right, left_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &left, &right, left_span, self.module_id)
+                    .or_push_err(self.icx);
                 left
             }
         }
@@ -987,7 +1020,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         match op {
             UnOp::Not => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                unify(self.icx, &bool_ty, &right, right_span, self.module_id).or_push_err(self.icx);
+                self.typeck
+                    .unify(self.icx, &bool_ty, &right, right_span, self.module_id)
+                    .or_push_err(self.icx);
                 bool_ty
             }
             UnOp::Neg => {
@@ -1088,7 +1123,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 .collect();
             for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
                 if let Some(&fresh) = fresh_var_map.get(hir_id) {
-                    unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
+                    self.typeck
+                        .unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
                         .or_push_err(self.icx);
                 }
             }
@@ -1199,7 +1235,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 if !ty_var_subst.is_empty() {
                     field_ty = substitute_ty_vars(&field_ty, ty_var_subst);
                 }
-                if let Err(err) = unify(self.icx, &field_ty, &expr, expr_span, self.module_id) {
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, &field_ty, &expr, expr_span, self.module_id)
+                {
                     self.icx.errors.push(err);
                 }
             }
@@ -1213,7 +1252,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         for expr in contents {
             let expr_ty = self.check_expr(expr);
             if let Some(elem_ty) = &elem_ty {
-                if let Err(err) = unify(self.icx, elem_ty, &expr_ty, expr.span, self.module_id) {
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, elem_ty, &expr_ty, expr.span, self.module_id)
+                {
                     self.report_type_error(err);
                 }
             } else {
@@ -1270,7 +1312,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .as_ref()
                         .map(|expr| self.check_expr(expr))
                         .unwrap_or_else(|| ty.clone());
-                    if let Err(err) = unify(self.icx, &ty, &bound, init_span, self.module_id) {
+                    if let Err(err) =
+                        self.typeck
+                            .unify(self.icx, &ty, &bound, init_span, self.module_id)
+                    {
                         self.icx.errors.push(err);
                     }
                     let scope = self.icx.current_level();
@@ -1341,7 +1386,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .map_or(Ty::Prim(PrimTy::Void), |inner| self.check_expr(inner));
 
                 if let Some(existing_break_ty) = break_ty
-                    && let Err(err) = unify(
+                    && let Err(err) = self.typeck.unify(
                         self.icx,
                         existing_break_ty,
                         &break_value_ty,
@@ -1377,7 +1422,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let block_ty_res = self.check_block(block);
 
         let void_ty = Ty::Prim(PrimTy::Void);
-        if let Err(err) = unify(
+        if let Err(err) = self.typeck.unify(
             self.icx,
             &void_ty,
             &block_ty_res.tail,
@@ -1539,7 +1584,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             Ty::Slice(elem) | Ty::Array(elem, _) => {
                 let index_ty = self.check_expr(index);
                 let usize_ty = Ty::Prim(PrimTy::Uint(UintTy::Usize));
-                if let Err(err) = unify(self.icx, &usize_ty, &index_ty, index.span, self.module_id)
+                if let Err(err) =
+                    self.typeck
+                        .unify(self.icx, &usize_ty, &index_ty, index.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
