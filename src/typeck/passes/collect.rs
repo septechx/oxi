@@ -294,14 +294,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
 
             let mut in_progress: Vec<(DefId, Option<ThinVec<Ty>>)> = Vec::new();
-
-            if Self::visit_alias(
-                def_id,
-                def_id,
-                &self.item_schemes,
-                &self.resolver.defs,
-                &mut in_progress,
-            ) {
+            if self.visit_alias(def_id, def_id, &mut in_progress) {
                 let module_id = self
                     .resolver
                     .def_to_module
@@ -391,10 +384,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn visit_alias(
+        &self,
         current: DefId,
         start: DefId,
-        item_schemes: &FxHashMap<DefId, Scheme>,
-        defs: &ThinVec<Def>,
         in_progress: &mut Vec<(DefId, Option<ThinVec<Ty>>)>,
     ) -> bool {
         const MAX_ALIAS_EXPANSION_DEPTH: usize = 128;
@@ -402,7 +394,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         struct AliasVisitor<'a> {
             start: DefId,
             item_schemes: &'a FxHashMap<DefId, Scheme>,
-            defs: &'a ThinVec<Def>,
             in_progress: &'a mut Vec<(DefId, Option<ThinVec<Ty>>)>,
             found_cycle: bool,
         }
@@ -413,12 +404,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     return VisitAction::SkipChildren;
                 }
 
-                let Ty::Adt(def_id, generic_args) = ty else {
+                let Ty::Alias {
+                    def_id,
+                    generic_args,
+                } = ty
+                else {
                     return VisitAction::Continue;
                 };
-                if self.defs[def_id.0 as usize].kind != DefKind::TypeAlias {
-                    return VisitAction::Continue;
-                }
                 if *def_id == self.start
                     || self
                         .in_progress
@@ -444,7 +436,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
         }
 
-        let Some(scheme) = item_schemes.get(&current) else {
+        let Some(scheme) = self.item_schemes.get(&current) else {
             return false;
         };
 
@@ -452,8 +444,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
         let mut visitor = AliasVisitor {
             start,
-            item_schemes,
-            defs,
+            item_schemes: &self.item_schemes,
             in_progress,
             found_cycle: false,
         };

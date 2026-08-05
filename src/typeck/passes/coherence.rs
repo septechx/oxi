@@ -2,18 +2,16 @@ use thin_vec::ThinVec;
 
 use crate::diag_params;
 use crate::errors::builders;
-use crate::hir::{DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
+use crate::hir::{self, DefId, DefKind, HirId, ItemKind, ModuleId, OwnerNode};
 use crate::interner::Symbol;
-use crate::resolve::{Res, ResolverOutputs};
-use crate::typeck::fold::{
-    expand_type_alias, fold_ty, resolve_scheme_with_args, substitute_ty_vars,
-};
+use crate::resolve::Res;
+use crate::typeck::fold::{fold_ty, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId};
 use crate::typeck::types::Ty;
 use crate::typeck::{Scheme, Typeck, diag};
 
 use super::check::{emit_ty_from_hir_error, emit_unexpected_generic_args};
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_coherence(&mut self) {
@@ -103,21 +101,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
-                            let mut ty = self
-                                .ty_from_hir(
-                                    &mut icx,
-                                    default.as_ref().expect("default exists"),
-                                    impl_module,
-                                )
-                                .unwrap_or_else(|err| {
-                                    emit_ty_from_hir_error(&err, self.ctx);
-                                    Ty::Error
-                                });
-                            ty = normalize_type_aliases(ty, self.resolver, &self.item_schemes);
-                            if !subst.is_empty() {
-                                ty = substitute_ty_vars(&ty, &subst);
-                            }
-                            ty = substitute_self(&ty, trait_def_id, &Ty::Adt(struct_def_id, None));
+                            let ty = self.resolve_default_generic_arg(
+                                &mut icx,
+                                default.as_ref().expect("default exists"),
+                                impl_module,
+                                &subst,
+                                Some((trait_def_id, struct_def_id)),
+                            );
                             if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, ty.clone());
                             }
@@ -152,28 +142,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     info.defaults[full_args.len()..].iter().enumerate()
                                 {
                                     let idx = full_args.len() + i;
-                                    let mut ty = self
-                                        .ty_from_hir(
-                                            &mut icx,
-                                            default.as_ref().expect("default exists"),
-                                            impl_module,
-                                        )
-                                        .unwrap_or_else(|err| {
-                                            emit_ty_from_hir_error(&err, self.ctx);
-                                            Ty::Error
-                                        });
-                                    ty = normalize_type_aliases(
-                                        ty,
-                                        self.resolver,
-                                        &self.item_schemes,
-                                    );
-                                    if !subst.is_empty() {
-                                        ty = substitute_ty_vars(&ty, &subst);
-                                    }
-                                    ty = substitute_self(
-                                        &ty,
-                                        trait_def_id,
-                                        &Ty::Adt(struct_def_id, None),
+                                    let ty = self.resolve_default_generic_arg(
+                                        &mut icx,
+                                        default.as_ref().expect("default exists"),
+                                        impl_module,
+                                        &subst,
+                                        Some((trait_def_id, struct_def_id)),
                                     );
                                     if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
                                     {
@@ -366,44 +340,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         };
         (self.resolver.def(def_id).kind == kind).then_some(def_id)
     }
-}
 
-fn normalize_type_aliases(
-    ty: Ty,
-    resolver: &ResolverOutputs,
-    item_schemes: &FxHashMap<DefId, Scheme>,
-) -> Ty {
-    normalize_type_aliases_inner(ty, resolver, item_schemes, &mut FxHashSet::default())
-}
-
-fn normalize_type_aliases_inner(
-    ty: Ty,
-    resolver: &ResolverOutputs,
-    item_schemes: &FxHashMap<DefId, Scheme>,
-    in_progress: &mut FxHashSet<DefId>,
-) -> Ty {
-    fold_ty(&ty, &mut |ty| match ty {
-        Ty::Adt(def_id, generic_args) if resolver.def(def_id).kind == DefKind::TypeAlias => {
-            expand_type_alias(
-                def_id,
-                &generic_args,
-                in_progress,
-                |in_progress, def_id, generic_args| match item_schemes.get(&def_id) {
-                    Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
-                        Some(resolved) => normalize_type_aliases_inner(
-                            resolved,
-                            resolver,
-                            item_schemes,
-                            in_progress,
-                        ),
-                        None => Ty::Adt(def_id, generic_args.clone()),
-                    },
-                    None => Ty::Adt(def_id, generic_args.clone()),
-                },
-            )
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn resolve_default_generic_arg(
+        &mut self,
+        icx: &mut InferCtx,
+        default: &hir::Ty,
+        module_id: ModuleId,
+        subst: &FxHashMap<TyVarId, Ty>,
+        self_subst: Option<(DefId, DefId)>,
+    ) -> Ty {
+        let mut ty = self
+            .ty_from_hir(icx, default, module_id)
+            .unwrap_or_else(|err| {
+                emit_ty_from_hir_error(&err, self.ctx);
+                Ty::Error
+            });
+        ty = self.normalize_assoc_projections(&ty);
+        if !subst.is_empty() {
+            ty = substitute_ty_vars(&ty, subst);
         }
-        t => t,
-    })
+        if let Some((trait_def_id, struct_def_id)) = self_subst {
+            ty = substitute_self(&ty, trait_def_id, &Ty::Adt(struct_def_id, None));
+        }
+        ty
+    }
 }
 
 fn instantiate_scheme_into_icx(icx: &mut InferCtx, scheme: &Scheme, body: &Ty) -> Ty {

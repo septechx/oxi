@@ -192,6 +192,13 @@ impl InferCtx {
                     }
                 }
             }
+            Ty::Alias { generic_args, .. } => {
+                if let Some(generics) = generic_args {
+                    for ty in generics {
+                        self.vars_in(&ty, out);
+                    }
+                }
+            }
             Ty::Projection {
                 self_ty,
                 generic_args,

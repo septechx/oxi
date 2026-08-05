@@ -160,6 +160,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         receiver_hir_id: Option<HirId>,
         explicit_generic_args: Option<&ThinVec<hir::Ty>>,
     ) -> Ty {
+        let recv_ty = self.typeck.normalize_assoc_projections(&recv_ty);
         let candidates = self.resolve_method_candidates(&recv_ty, member);
         if candidates.is_empty() {
             builders::emit_at(

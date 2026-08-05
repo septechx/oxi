@@ -23,6 +23,7 @@ impl TyVisitable for Ty {
                 }
                 Ty::Tuple(elements) => elements.visit(visitor),
                 Ty::Adt(_, generics) => generics.visit(visitor),
+                Ty::Alias { generic_args, .. } => generic_args.visit(visitor),
                 Ty::Projection {
                     self_ty,
                     generic_args,

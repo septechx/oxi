@@ -50,6 +50,10 @@ pub enum Ty {
     },
     Tuple(ThinVec<Ty>),
     Adt(DefId, Option<ThinVec<Ty>>),
+    Alias {
+        def_id: DefId,
+        generic_args: Option<ThinVec<Ty>>,
+    },
     Projection {
         trait_def_id: DefId,
         assoc_def_id: DefId,
@@ -105,7 +109,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) => {
                         let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
-                        Ok(Ty::Adt(def_id, generic_args))
+                        match self.resolver.def(def_id).kind {
+                            DefKind::TypeAlias => Ok(Ty::Alias {
+                                def_id,
+                                generic_args,
+                            }),
+                            _ => Ok(Ty::Adt(def_id, generic_args)),
+                        }
                     }
                     Res::SelfTyAlias { alias_to } => {
                         self.resolve_self_ty(alias_to, icx, path, module_id)

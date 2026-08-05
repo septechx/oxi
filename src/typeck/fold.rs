@@ -27,6 +27,15 @@ where
                 .as_ref()
                 .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
         ),
+        Ty::Alias {
+            def_id,
+            generic_args,
+        } => Ty::Alias {
+            def_id: *def_id,
+            generic_args: generic_args
+                .as_ref()
+                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
+        },
         Ty::Ptr(inner, m) => Ty::Ptr(fold_ty(inner, f).into_box(), *m),
         Ty::Slice(inner) => Ty::Slice(fold_ty(inner, f).into_box()),
         Ty::Array(inner, n) => Ty::Array(fold_ty(inner, f).into_box(), *n),
@@ -70,6 +79,20 @@ where
                 })
                 .transpose()?,
         ),
+        Ty::Alias {
+            def_id,
+            generic_args,
+        } => Ty::Alias {
+            def_id: *def_id,
+            generic_args: generic_args
+                .as_ref()
+                .map(|args| {
+                    args.iter()
+                        .map(|ty| try_fold_ty(ty, f))
+                        .collect::<Result<ThinVec<_>, _>>()
+                })
+                .transpose()?,
+        },
         Ty::Ptr(inner, m) => Ty::Ptr(try_fold_ty(inner, f)?.into_box(), *m),
         Ty::Slice(inner) => Ty::Slice(try_fold_ty(inner, f)?.into_box()),
         Ty::Array(inner, n) => Ty::Array(try_fold_ty(inner, f)?.into_box(), *n),

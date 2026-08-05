@@ -235,20 +235,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .get(def_id)
                                 .copied()
                                 .unwrap_or_default();
-                            let default_ty = self
-                                .ty_from_hir(
-                                    &mut icx,
-                                    default.as_ref().expect("default exists"),
-                                    module_id,
-                                )
-                                .unwrap_or_else(|err| {
-                                    emit_ty_from_hir_error(&err, self.ctx);
-                                    Ty::Error
-                                });
-                            let mut default_ty = self.normalize_assoc_projections(&default_ty);
-                            if !subst.is_empty() {
-                                default_ty = substitute_ty_vars(&default_ty, &subst);
-                            }
+                            let default_ty = self.resolve_default_generic_arg(
+                                &mut icx,
+                                default.as_ref().expect("default exists"),
+                                module_id,
+                                &subst,
+                                None,
+                            );
                             if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, default_ty.clone());
                             }
@@ -315,27 +308,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         projections_in_progress: &mut FxHashSet<(DefId, DefId, DefId)>,
     ) -> Ty {
         fold_ty(ty, &mut |ty| match &ty {
-            Ty::Adt(def_id, generic_args)
-                if self.resolver.def(*def_id).kind == DefKind::TypeAlias =>
-            {
-                expand_type_alias(
-                    *def_id,
-                    generic_args,
-                    aliases_in_progress,
-                    |aliases_in_progress, def_id, generic_args| match self.item_schemes.get(&def_id)
-                    {
-                        Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
-                            Some(resolved) => self.normalize_assoc_projections_inner(
-                                &resolved,
-                                aliases_in_progress,
-                                projections_in_progress,
-                            ),
-                            None => Ty::Adt(def_id, generic_args.clone()),
+            Ty::Alias {
+                def_id,
+                generic_args,
+            } => expand_type_alias(
+                *def_id,
+                generic_args,
+                aliases_in_progress,
+                |aliases_in_progress, def_id, generic_args| match self.item_schemes.get(&def_id) {
+                    Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
+                        Some(resolved) => self.normalize_assoc_projections_inner(
+                            &resolved,
+                            aliases_in_progress,
+                            projections_in_progress,
+                        ),
+                        None => Ty::Alias {
+                            def_id,
+                            generic_args: generic_args.clone(),
                         },
-                        None => Ty::Adt(def_id, generic_args.clone()),
                     },
-                )
-            }
+                    None => Ty::Alias {
+                        def_id,
+                        generic_args: generic_args.clone(),
+                    },
+                },
+            ),
             Ty::Projection {
                 trait_def_id,
                 assoc_def_id,
@@ -447,37 +444,38 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         projections_in_progress: &mut FxHashSet<(DefId, Option<DefId>, DefId)>,
     ) -> TyFromHirResult<Ty> {
         try_fold_ty(&ty, &mut |ty| match ty {
-            Ty::Adt(def_id, generic_args)
-                if self.typeck.resolver.def(def_id).kind == DefKind::TypeAlias =>
-            {
-                try_expand_type_alias(
-                    def_id,
-                    &generic_args,
-                    in_progress,
-                    |in_progress, def_id, generic_args| match self.typeck.item_schemes.get(&def_id)
-                    {
-                        Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
-                            Some(resolved) => self.normalize_aliases_inner(
-                                resolved,
+            Ty::Alias {
+                def_id,
+                generic_args,
+            } => try_expand_type_alias(
+                def_id,
+                &generic_args,
+                in_progress,
+                |in_progress, def_id, generic_args| match self.typeck.item_schemes.get(&def_id) {
+                    Some(scheme) => match resolve_scheme_with_args(scheme, generic_args) {
+                        Some(resolved) => self.normalize_aliases_inner(
+                            resolved,
+                            span,
+                            in_progress,
+                            projections_in_progress,
+                        ),
+                        None => {
+                            let expected = scheme.vars.len();
+                            let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
+                            Err(TyFromHirError::UnexpectedGenericArgs {
                                 span,
-                                in_progress,
-                                projections_in_progress,
-                            ),
-                            None => {
-                                let expected = scheme.vars.len();
-                                let found = generic_args.as_ref().map(|a| a.len()).unwrap_or(0);
-                                Err(TyFromHirError::UnexpectedGenericArgs {
-                                    span,
-                                    module_id: self.module_id,
-                                    expected,
-                                    found,
-                                })
-                            }
-                        },
-                        None => Ok(Ty::Adt(def_id, generic_args.clone())),
+                                module_id: self.module_id,
+                                expected,
+                                found,
+                            })
+                        }
                     },
-                )
-            }
+                    None => Ok(Ty::Alias {
+                        def_id,
+                        generic_args: generic_args.clone(),
+                    }),
+                },
+            ),
             Ty::Projection {
                 trait_def_id,
                 assoc_def_id,
@@ -1507,6 +1505,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
         let recv_ty = self.icx.resolve(&recv_ty);
+        let recv_ty = self.typeck.normalize_assoc_projections(&recv_ty);
 
         // TODO: Maybe run in a loop to dereference types like `&&T`
         let recv_ty = if let Ty::Ptr(inner, _) = &recv_ty {
@@ -1783,6 +1782,20 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 "{}{}",
                 name,
                 generics_to_string(generics.as_ref(), resolver, interner)
+            )
+        }
+        Ty::Alias {
+            def_id,
+            generic_args,
+        } => {
+            let name = resolver.defs[def_id.0 as usize]
+                .name
+                .map(|sym| interner.lookup(sym).to_string())
+                .unwrap_or_else(|| format!("Alias#{}", def_id.0));
+            format!(
+                "{}{}",
+                name,
+                generics_to_string(generic_args.as_ref(), resolver, interner)
             )
         }
         Ty::Projection {
