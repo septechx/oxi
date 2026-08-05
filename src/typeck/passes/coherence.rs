@@ -320,12 +320,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 if let (Some(trait_sig), Some(impl_sig)) = (trait_sig, impl_sig) {
                     let trait_sig_sub = substitute_self(&trait_sig.body, trait_def_id, &self_type);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
-                    let trait_sig_sub = self.normalize_projections(trait_sig_sub);
                     let trait_sig_sub =
                         instantiate_scheme_into_icx(&mut icx, trait_sig, &trait_sig_sub);
-                    let impl_sig_sub = self.normalize_projections(impl_sig.body.clone());
                     let impl_sig_sub =
-                        instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig_sub);
+                        instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig.body.clone());
 
                     let method_span = self.resolver.defs[impl_method.0 as usize].span;
                     if self
@@ -367,73 +365,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             return None;
         };
         (self.resolver.def(def_id).kind == kind).then_some(def_id)
-    }
-
-    fn normalize_projections(&self, ty: Ty) -> Ty {
-        let mut prev = ty;
-        let mut seen: FxHashSet<DefId> = FxHashSet::default();
-        loop {
-            let mut resolved_this_pass: FxHashSet<DefId> = FxHashSet::default();
-            let next = fold_ty(&prev, &mut |inner| match inner {
-                Ty::Projection {
-                    trait_def_id,
-                    assoc_def_id,
-                    ref self_ty,
-                    ..
-                } => {
-                    if seen.contains(&assoc_def_id) {
-                        return inner;
-                    }
-                    if let Some(concrete) =
-                        self.assoc_type_body(trait_def_id, assoc_def_id, self_ty)
-                    {
-                        resolved_this_pass.insert(assoc_def_id);
-                        concrete
-                    } else {
-                        inner
-                    }
-                }
-                t => t,
-            });
-            if next == prev {
-                break next;
-            }
-            seen.extend(resolved_this_pass);
-            prev = next;
-        }
-    }
-
-    fn assoc_type_body(
-        &self,
-        trait_def_id: DefId,
-        assoc_def_id: DefId,
-        self_ty: &Ty,
-    ) -> Option<Ty> {
-        let Ty::Adt(struct_def_id, self_generic_args) = self_ty else {
-            return None;
-        };
-        let impl_def_ids = self.coherence.impls.get(&(trait_def_id, *struct_def_id))?;
-        let target = Ty::Adt(*struct_def_id, self_generic_args.clone());
-        let impl_def_id = impl_def_ids
-            .iter()
-            .find(|&impl_def_id| {
-                self.coherence.impl_resolved_self_type.get(impl_def_id) == Some(&target)
-            })
-            .copied()?;
-        let name = self.resolver.def(assoc_def_id).name?;
-        self.coherence
-            .parent_to_assoc
-            .get(&impl_def_id)?
-            .iter()
-            .find(|&&item_def_id| {
-                self.resolver.def(item_def_id).kind == DefKind::AssocType
-                    && self.resolver.def(item_def_id).name == Some(name)
-            })
-            .and_then(|&item_def_id| {
-                self.item_schemes
-                    .get(&item_def_id)
-                    .map(|scheme| scheme.body.clone())
-            })
     }
 }
 
