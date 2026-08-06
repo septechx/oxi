@@ -285,13 +285,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             let mut in_progress: Vec<(DefId, Option<ThinVec<Ty>>)> = Vec::new();
             if self.visit_alias(def_id, def_id, &mut in_progress) {
-                let module_id = self
-                    .resolver
-                    .def_to_module
-                    .get(&def_id)
-                    .copied()
-                    .unwrap_or_default();
-
+                let module_id = self.owner_module(def_id);
                 builders::emit_at(
                     self.ctx,
                     span,
@@ -356,13 +350,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 &mut visited,
                 &mut in_progress,
             ) {
-                let module_id = self
-                    .resolver
-                    .def_to_module
-                    .get(&def_id)
-                    .copied()
-                    .unwrap_or_default();
-
+                let module_id = self.owner_module(def_id);
                 builders::emit_at(
                     self.ctx,
                     cycle_span,

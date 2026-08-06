@@ -223,12 +223,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
-                            let module_id = self
-                                .resolver
-                                .def_to_module
-                                .get(def_id)
-                                .copied()
-                                .unwrap_or_default();
+                            let module_id = self.owner_module(*def_id);
                             let default_ty = self.resolve_default_generic_arg(
                                 &mut icx,
                                 default.as_ref().expect("default exists"),
