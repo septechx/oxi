@@ -2,6 +2,8 @@ use fxhash::{FxHashMap, FxHashSet};
 use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
+use crate::diag_params;
+use crate::errors::builders;
 use crate::hir::{self, DefId, DefKind, ModuleId, Path, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
@@ -448,11 +450,23 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         if let Some(info) = self.coherence.generic_params.get(&def_id).cloned()
             && info.defaults.iter().all(|d| d.is_some())
         {
-            let args: ThinVec<Ty> = info
+            if !self.default_resolution_in_progress.insert(def_id) {
+                builders::emit_at(
+                    self.ctx,
+                    span,
+                    module_id,
+                    super::diag::RecursiveType,
+                    diag_params! {},
+                );
+                return Ok(Some(Ty::Error));
+            }
+            let args: TyFromHirResult<ThinVec<Ty>> = info
                 .defaults
                 .iter()
                 .map(|d| self.ty_from_hir(icx, d.as_ref().expect("default exists"), module_id))
-                .collect::<TyFromHirResult<ThinVec<_>>>()?;
+                .collect();
+            self.default_resolution_in_progress.remove(&def_id);
+            let args = args?;
             if args.len() == scheme_vars.len() {
                 let args: ThinVec<Ty> = args
                     .into_iter()

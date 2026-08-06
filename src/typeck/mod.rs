@@ -22,7 +22,7 @@ use crate::hir::{
 };
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 include_diagnostics!("diagnostics.toml");
 
@@ -97,6 +97,10 @@ struct Typeck<'ctx, 'hir, 'res> {
     assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
     /// maps (def id) -> (number of generic params, whether each has a default)
     hir_generic_arity: FxHashMap<DefId, (usize, ThinVec<bool>)>,
+    /// def ids whose generic defaults are currently being resolved, to guard
+    /// against recursive associated-type default resolution
+    /// e.g. `struct Foo<T = Foo::Bar> { type Bar = T; }`
+    default_resolution_in_progress: FxHashSet<DefId>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -117,6 +121,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             current_self_ty: None,
             assoc_types_cache: FxHashMap::default(),
             hir_generic_arity: FxHashMap::default(),
+            default_resolution_in_progress: FxHashSet::default(),
         }
     }
 
