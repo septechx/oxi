@@ -109,6 +109,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) => {
                         let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                        self.check_generic_arity(def_id, &generic_args, path.span, module_id)?;
                         match self.resolver.def(def_id).kind {
                             DefKind::TypeAlias => Ok(Ty::Alias {
                                 def_id,
@@ -140,6 +141,32 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 Ok(Ty::Var(*ty_var))
             }
         }
+    }
+
+    fn check_generic_arity(
+        &self,
+        def_id: DefId,
+        generic_args: &Option<ThinVec<Ty>>,
+        span: Span,
+        module_id: ModuleId,
+    ) -> TyFromHirResult<()> {
+        let Some(&(expected, ref has_default)) = self.hir_generic_arity.get(&def_id) else {
+            return Ok(());
+        };
+        let found = generic_args.as_ref().map(|args| args.len()).unwrap_or(0);
+        if found == expected {
+            return Ok(());
+        }
+        let defaults_fill = found < expected && has_default[found..expected].iter().all(|d| *d);
+        if found > expected || !defaults_fill {
+            return Err(TyFromHirError::UnexpectedGenericArgs {
+                span,
+                module_id,
+                expected,
+                found,
+            });
+        }
+        Ok(())
     }
 
     fn resolve_self_ty(
@@ -403,9 +430,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         module_id: ModuleId,
     ) -> TyFromHirResult<Option<ThinVec<Ty>>> {
         // TODO: Handle generic args in spots other than the last segment.
-        // Currently Adt's can only have generic args in the last segment, but
-        // when support for associated types is added, this will need to be
-        // implemented.
+        // Needed for code like:
+        // struct Foo<T> {
+        //     type Bar<U> = (T, U);
+        //             ^^^ currently not supported
+        // }
+        // fn foo() void {
+        //     let x: Foo::<u8>::Bar::<u16> = (1, 2);
+        //                       ^^^^^^^^^^ only this segment gets processed
+        //            ^^^^^^^^^ this segment's generic args are ignored
+        // }
         path.segments
             .last()
             .expect("path has segments")

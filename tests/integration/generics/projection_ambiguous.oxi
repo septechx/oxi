@@ -24,6 +24,10 @@ impl Bar for Foo::<bool> {
     }
 }
 
+fn project<T>(_: Foo::<T>) <Foo::<T> as Bar>::BarTy {
+    let _ = 0;
+}
+
 pub fn main() void {
-    let x: <Foo as Bar>::BarTy;
+    let x = project(Foo::<i32> {});
 }

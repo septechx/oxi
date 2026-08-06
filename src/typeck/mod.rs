@@ -17,7 +17,9 @@ use thin_vec::ThinVec;
 
 use crate::ast::Mutability;
 use crate::context::Ctx;
-use crate::hir::{self, Crate, DefId, HirId, MaybeOwner, ModuleId};
+use crate::hir::{
+    self, AssocItemKind, Crate, DefId, HirId, ItemKind, MaybeOwner, ModuleId, OwnerNode,
+};
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
 use fxhash::FxHashMap;
@@ -93,6 +95,8 @@ struct Typeck<'ctx, 'hir, 'res> {
     current_self_ty: Option<Ty>,
     /// maps (impl def id) -> (trait def id, assoc type name) -> resolved type
     assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
+    /// maps (def id) -> (number of generic params, whether each has a default)
+    hir_generic_arity: FxHashMap<DefId, (usize, ThinVec<bool>)>,
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
@@ -112,10 +116,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             impl_self_types: FxHashMap::default(),
             current_self_ty: None,
             assoc_types_cache: FxHashMap::default(),
+            hir_generic_arity: FxHashMap::default(),
         }
     }
 
     fn run(&mut self) {
+        self.build_hir_generic_arity();
         self.collect_signatures();
         self.check_type_aliases();
         if self.ctx.errors.has_errors() {
@@ -146,6 +152,39 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .get(&def_id)
             .copied()
             .unwrap_or_default()
+    }
+
+    fn build_hir_generic_arity(&mut self) {
+        let map = &mut self.hir_generic_arity;
+        for (i, owner) in self.krate.get().owners.iter().enumerate() {
+            let Some(info) = owner.as_owner() else {
+                continue;
+            };
+            let params = match info.nodes.node() {
+                OwnerNode::Item(item) => match &item.kind {
+                    ItemKind::Struct { generic_params, .. }
+                    | ItemKind::TypeAlias { generic_params, .. }
+                    | ItemKind::Trait { generic_params, .. } => generic_params,
+                    _ => continue,
+                },
+                OwnerNode::AssocItem(assoc) => match &assoc.kind {
+                    AssocItemKind::Fn(fun) => &fun.generic_params,
+                    _ => continue,
+                },
+                OwnerNode::Crate => continue,
+            };
+            let (expected, has_default) = match params {
+                Some(params) => (
+                    params.len(),
+                    params
+                        .iter()
+                        .map(|param| param.default.is_some())
+                        .collect::<ThinVec<_>>(),
+                ),
+                None => (0, ThinVec::new()),
+            };
+            map.insert(DefId(i as u32), (expected, has_default));
+        }
     }
 
     fn iter_owners(&mut self, f: &mut impl FnMut(&mut Typeck, DefId, ModuleId, &MaybeOwner)) {
