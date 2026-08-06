@@ -1100,73 +1100,75 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 assert_eq!(args.len(), param_hir_ids);
                 let ty_var_subst = self.def_ty_var_subst(def, &args);
                 let struct_ty = Ty::Adt(def, Some(args));
-                return self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst);
+                self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
             }
-            StructInitDef::Error => return Ty::Error,
-            StructInitDef::Struct => {}
-        }
+            StructInitDef::Struct => {
+                self.register_if_generic_def(def);
 
-        self.register_if_generic_def(def);
+                let param_hir_ids = self
+                    .typeck
+                    .coherence
+                    .generic_params
+                    .get(&def)
+                    .expect("struct exists")
+                    .hir_ids
+                    .clone();
 
-        let param_hir_ids = self
-            .typeck
-            .coherence
-            .generic_params
-            .get(&def)
-            .expect("struct exists")
-            .hir_ids
-            .clone();
-
-        let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
-            .iter()
-            .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
-            .collect();
-
-        let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
-            let provided = generic_args.len();
-            let mut hir_args = generic_args.clone();
-            if !self.try_complete_generic_args(def, &mut hir_args, param_hir_ids.len()) {
-                emit_unexpected_generic_args(
-                    self.typeck.ctx,
-                    span,
-                    self.module_id,
-                    param_hir_ids.len(),
-                    provided,
-                );
-                return Ty::Error;
-            }
-            let args: ThinVec<Ty> = hir_args
-                .iter()
-                .map(|arg| {
-                    let arg_ty = self.ty_from_hir_resolved(arg);
-                    self.node_types.insert(arg.hir_id, arg_ty.clone());
-                    arg_ty
-                })
-                .collect();
-            for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
-                if let Some(&fresh) = fresh_var_map.get(hir_id) {
-                    self.typeck
-                        .unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
-                        .or_push_err(self.icx);
-                }
-            }
-            let subst = self.def_ty_var_subst(def, &args);
-            (Ty::Adt(def, Some(args)), subst)
-        } else {
-            if param_hir_ids.is_empty() {
-                (Ty::Adt(def, None), FxHashMap::default())
-            } else {
-                let args: ThinVec<Ty> = param_hir_ids
+                let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
                     .iter()
-                    .map(|&hir_id| Ty::Var(*fresh_var_map.get(&hir_id).expect("fresh var exists")))
+                    .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
                     .collect();
-                self.stash_generic_defaults(def, &fresh_var_map);
-                let subst = self.def_ty_var_subst(def, &args);
-                (Ty::Adt(def, Some(args)), subst)
-            }
-        };
 
-        self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
+                let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
+                    let provided = generic_args.len();
+                    let mut hir_args = generic_args.clone();
+                    if !self.try_complete_generic_args(def, &mut hir_args, param_hir_ids.len()) {
+                        emit_unexpected_generic_args(
+                            self.typeck.ctx,
+                            span,
+                            self.module_id,
+                            param_hir_ids.len(),
+                            provided,
+                        );
+                        return Ty::Error;
+                    }
+                    let args: ThinVec<Ty> = hir_args
+                        .iter()
+                        .map(|arg| {
+                            let arg_ty = self.ty_from_hir_resolved(arg);
+                            self.node_types.insert(arg.hir_id, arg_ty.clone());
+                            arg_ty
+                        })
+                        .collect();
+                    for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
+                        if let Some(&fresh) = fresh_var_map.get(hir_id) {
+                            self.typeck
+                                .unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
+                                .or_push_err(self.icx);
+                        }
+                    }
+                    let subst = self.def_ty_var_subst(def, &args);
+                    (Ty::Adt(def, Some(args)), subst)
+                } else {
+                    if param_hir_ids.is_empty() {
+                        (Ty::Adt(def, None), FxHashMap::default())
+                    } else {
+                        let args: ThinVec<Ty> = param_hir_ids
+                            .iter()
+                            .map(|&hir_id| {
+                                Ty::Var(*fresh_var_map.get(&hir_id).expect("fresh var exists"))
+                            })
+                            .collect();
+                        self.stash_generic_defaults(def, &fresh_var_map);
+                        let subst = self.def_ty_var_subst(def, &args);
+                        (Ty::Adt(def, Some(args)), subst)
+                    }
+                };
+
+                self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
+            }
+            StructInitDef::Error => Ty::Error,
+        }
     }
 
     fn expand_struct_init_def(
