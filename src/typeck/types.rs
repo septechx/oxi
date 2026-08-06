@@ -108,8 +108,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) => {
-                        let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                        let mut generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
                         self.check_generic_arity(def_id, &generic_args, path.span, module_id)?;
+                        self.fill_generic_defaults(def_id, &mut generic_args, icx, module_id);
                         match self.resolver.def(def_id).kind {
                             DefKind::TypeAlias => Ok(Ty::Alias {
                                 def_id,
@@ -150,15 +151,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         span: Span,
         module_id: ModuleId,
     ) -> TyFromHirResult<()> {
+        // For `struct A<T, U = i32>`
+        // Accept `A::<i32>` and `A::<i32, i32>`
+        // Reject `A` and `A::<i32, i32, i32>`
         let Some(&(expected, ref has_default)) = self.hir_generic_arity.get(&def_id) else {
             return Ok(());
         };
         let found = generic_args.as_ref().map(|args| args.len()).unwrap_or(0);
-        if found == expected {
-            return Ok(());
-        }
-        let defaults_fill = found < expected && has_default[found..expected].iter().all(|d| *d);
-        if found > expected || !defaults_fill {
+        if found > expected {
             return Err(TyFromHirError::UnexpectedGenericArgs {
                 span,
                 module_id,
@@ -166,7 +166,54 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 found,
             });
         }
-        Ok(())
+        let required = has_default.iter().position(|d| *d).unwrap_or(expected);
+        if found >= required {
+            return Ok(());
+        }
+        Err(TyFromHirError::UnexpectedGenericArgs {
+            span,
+            module_id,
+            expected,
+            found,
+        })
+    }
+
+    fn fill_generic_defaults(
+        &mut self,
+        def_id: DefId,
+        generic_args: &mut Option<ThinVec<Ty>>,
+        icx: &mut InferCtx,
+        module_id: ModuleId,
+    ) {
+        let Some(info) = self.coherence.generic_params.get(&def_id).cloned() else {
+            return;
+        };
+        let Some(args) = generic_args.take() else {
+            return;
+        };
+        let expected = info.hir_ids.len();
+        if args.len() >= expected {
+            *generic_args = Some(args);
+            return;
+        }
+        let mut args = args;
+        let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+        for (i, arg) in args.iter().enumerate() {
+            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                subst.insert(var, arg.clone());
+            }
+        }
+        for i in args.len()..expected {
+            let Some(default_ty) = info.defaults.get(i).and_then(|d| d.as_ref()) else {
+                break;
+            };
+            let ty = self.resolve_default_generic_arg(icx, default_ty, module_id, &subst, None);
+            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                subst.insert(var, ty.clone());
+            }
+            args.push(ty);
+        }
+        *generic_args = Some(args);
     }
 
     fn resolve_self_ty(
