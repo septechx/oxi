@@ -142,13 +142,17 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 {
                     if t1 == t2 && ad1 == ad2 {
                         self.unify(icx, s1, s2, span, module_id)?;
-                        if let (Some(g1), Some(g2)) = (g1, g2) {
-                            if g1.len() != g2.len() {
-                                return Err(mismatch(a, b, span, module_id));
+                        match (g1, g2) {
+                            (Some(g1), Some(g2)) => {
+                                if g1.len() != g2.len() {
+                                    return Err(mismatch(a, b, span, module_id));
+                                }
+                                for (x, y) in g1.iter().zip(g2) {
+                                    self.unify(icx, x, y, span, module_id)?;
+                                }
                             }
-                            for (x, y) in g1.iter().zip(g2) {
-                                self.unify(icx, x, y, span, module_id)?;
-                            }
+                            (None, None) => {}
+                            _ => return Err(mismatch(a, b, span, module_id)),
                         }
                         Ok(())
                     } else {
@@ -280,7 +284,7 @@ fn mismatch(expected: Ty, found: Ty, span: Span, module_id: ModuleId) -> UnifyEr
 mod tests {
     use super::*;
     use crate::context::Ctx;
-    use crate::hir::{Crate, DefId, IntTy, PrimTy, UintTy};
+    use crate::hir::{Crate, Def, DefId, DefKind, IntTy, PrimTy, UintTy};
     use crate::resolve::{PerModule, ResolverOutputs};
     use fxhash::FxHashMap;
     use thin_vec::thin_vec;
@@ -295,13 +299,38 @@ mod tests {
         Ty::Prim(PrimTy::Int(IntTy::I32))
     }
 
+    fn assoc_type_def() -> Def {
+        Def {
+            name: Some(0),
+            visibility: None,
+            kind: DefKind::AssocType,
+            span: no_span(),
+        }
+    }
+
+    fn projection(
+        trait_def_id: DefId,
+        assoc_def_id: DefId,
+        generic_args: Option<thin_vec::ThinVec<Ty>>,
+    ) -> Ty {
+        Ty::Projection {
+            trait_def_id,
+            assoc_def_id,
+            self_ty: Box::new(int()),
+            generic_args,
+        }
+    }
+
     fn typeck() -> Typeck<'static, 'static, 'static> {
         let ctx = Box::leak(Box::new(Ctx::new()));
         let krate = Box::leak(Box::new(Crate::new()));
+        // `resolver.def` indexes `defs` directly; the projection-normalization
+        // code reads the assoc type's name, so pre-populate spare entries.
+        let defs: thin_vec::ThinVec<Def> = (0..4).map(|_| assoc_type_def()).collect();
         let resolver = Box::leak(Box::new(ResolverOutputs {
             res_map: FxHashMap::default(),
             def_map: FxHashMap::default(),
-            defs: thin_vec![],
+            defs,
             modules: PerModule::new(0),
             def_to_module: FxHashMap::default(),
         }));
@@ -422,14 +451,13 @@ mod tests {
     fn error_ty_unifies_with_anything() {
         let mut icx = InferCtx::default();
         icx.push_level();
+        let mut tc = typeck();
         assert!(
-            typeck()
-                .unify(&mut icx, &Ty::Error, &int(), no_span(), NO_MODULE)
+            tc.unify(&mut icx, &Ty::Error, &int(), no_span(), NO_MODULE)
                 .is_ok()
         );
         assert!(
-            typeck()
-                .unify(&mut icx, &int(), &Ty::Error, no_span(), NO_MODULE)
+            tc.unify(&mut icx, &int(), &Ty::Error, no_span(), NO_MODULE)
                 .is_ok()
         );
     }
@@ -438,15 +466,14 @@ mod tests {
     fn never_unifies_with_everything() {
         let mut icx = InferCtx::default();
         icx.push_level();
+        let mut tc = typeck();
         assert!(
-            typeck()
-                .unify(&mut icx, &Ty::Never, &int(), no_span(), NO_MODULE)
+            tc.unify(&mut icx, &Ty::Never, &int(), no_span(), NO_MODULE)
                 .is_ok()
         );
         let v = icx.next_ty_var();
         assert!(
-            typeck()
-                .unify(&mut icx, &Ty::Var(v), &Ty::Never, no_span(), NO_MODULE)
+            tc.unify(&mut icx, &Ty::Var(v), &Ty::Never, no_span(), NO_MODULE)
                 .is_ok()
         );
     }
@@ -490,10 +517,40 @@ mod tests {
             Ty::Ptr(i, _) => i.as_ref().clone(),
             _ => unreachable!(),
         };
+        let mut tc = typeck();
         assert!(
-            typeck()
-                .unify(&mut icx, &inner, &arg, no_span(), NO_MODULE)
+            tc.unify(&mut icx, &inner, &arg, no_span(), NO_MODULE)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn unify_matching_projection_succeeds() {
+        let mut icx = InferCtx::default();
+        icx.push_level();
+        let a = projection(DefId(0), DefId(1), None);
+        let b = projection(DefId(0), DefId(1), None);
+        let mut tc = typeck();
+        assert!(tc.unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_ok());
+    }
+
+    #[test]
+    fn unify_projection_mismatched_assoc_id_fails() {
+        let mut icx = InferCtx::default();
+        icx.push_level();
+        let a = projection(DefId(0), DefId(1), None);
+        let b = projection(DefId(0), DefId(2), None);
+        let mut tc = typeck();
+        assert!(tc.unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_err());
+    }
+
+    #[test]
+    fn unify_projection_generic_args_presence_mismatch_fails() {
+        let mut icx = InferCtx::default();
+        icx.push_level();
+        let a = projection(DefId(0), DefId(1), Some(thin_vec![int()]));
+        let b = projection(DefId(0), DefId(1), None);
+        let mut tc = typeck();
+        assert!(tc.unify(&mut icx, &a, &b, no_span(), NO_MODULE).is_err());
     }
 }

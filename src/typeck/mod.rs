@@ -56,17 +56,14 @@ impl<T> Maybe<T> {
     }
 
     pub fn take(&mut self) -> T {
-        assert!(self.value.is_some());
         self.value.take().expect("value is Some")
     }
 
     pub fn get(&self) -> &T {
-        assert!(self.value.is_some());
         self.value.as_ref().expect("value is Some")
     }
 
     pub fn get_mut(&mut self) -> &mut T {
-        assert!(self.value.is_some());
         self.value.as_mut().expect("value is Some")
     }
 }
@@ -143,16 +140,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         }
     }
 
+    fn owner_module(&self, def_id: DefId) -> ModuleId {
+        self.resolver
+            .def_to_module
+            .get(&def_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
     fn iter_owners(&mut self, f: &mut impl FnMut(&mut Typeck, DefId, ModuleId, &MaybeOwner)) {
         let krate = self.krate.take();
         krate.owners.iter().enumerate().for_each(|(i, owner)| {
             let def_id = DefId(i as u32);
-            let module_id = self
-                .resolver
-                .def_to_module
-                .get(&def_id)
-                .copied()
-                .unwrap_or_default();
+            let module_id = self.owner_module(def_id);
             f(self, def_id, module_id, owner)
         });
         self.krate.replace(krate);
@@ -232,7 +232,7 @@ pub struct CoherenceTable {
     pub assoc_to_parent: FxHashMap<DefId, DefId>,
     /// maps (parent def id) -> (assoc item def ids)
     pub parent_to_assoc: FxHashMap<DefId, Vec<DefId>>,
-    /// maps (parent trait def id, assoc type name) -> (assoc type def id)
+    /// maps (parent def id, assoc type name) -> (assoc type def id)
     pub assoc_type_index: FxHashMap<(DefId, Symbol), DefId>,
     /// maps (struct def id) -> implemented trait def ids
     pub struct_to_traits: FxHashMap<DefId, Vec<DefId>>,

@@ -64,12 +64,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 .enumerate()
                 .map(|(i, owner)| {
                     let def_id = DefId(i as u32);
-                    let module_id = self
-                        .resolver
-                        .def_to_module
-                        .get(&def_id)
-                        .copied()
-                        .unwrap_or_default();
+                    let module_id = this.owner_module(def_id);
                     (def_id, owner, module_id)
                 })
                 .collect::<Vec<_>>();
@@ -498,43 +493,42 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         module_id: self.module_id,
                     });
                 }
-                let resolved =
-                    if let Some(concrete) = self.current_assoc_types.get(&(trait_def_id, name)) {
-                        self.normalize_aliases_inner(
-                            concrete.clone(),
-                            span,
-                            in_progress,
-                            projections_in_progress,
-                        )
-                    } else if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
-                        && let Some(impl_def_ids) = self
-                            .typeck
+                let resolved = if self
+                    .typeck
+                    .current_self_ty
+                    .as_ref()
+                    .is_some_and(|current| current == self_ty.as_ref())
+                    && let Some(concrete) = self.current_assoc_types.get(&(trait_def_id, name))
+                {
+                    self.normalize_aliases_inner(
+                        concrete.clone(),
+                        span,
+                        in_progress,
+                        projections_in_progress,
+                    )
+                } else if let Ty::Adt(self_def_id, self_generic_args) = self_ty.as_ref()
+                    && let Some(impl_def_ids) = self
+                        .typeck
+                        .coherence
+                        .impls
+                        .get(&(trait_def_id, *self_def_id))
+                {
+                    let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
+                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
+                        self.typeck
                             .coherence
-                            .impls
-                            .get(&(trait_def_id, *self_def_id))
-                    {
-                        let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
-                        if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
-                            self.typeck
-                                .coherence
-                                .impl_resolved_self_type
-                                .get(impl_def_id)
-                                == Some(&target_self_ty)
-                        }) {
-                            let assoc_types = self.typeck.compute_assoc_types(impl_def_id);
-                            if let Some(concrete) = assoc_types.get(&(trait_def_id, name)) {
-                                self.normalize_aliases_inner(
-                                    concrete.clone(),
-                                    span,
-                                    in_progress,
-                                    projections_in_progress,
-                                )
-                            } else {
-                                Err(TyFromHirError::UnresolvedAssocType {
-                                    span,
-                                    module_id: self.module_id,
-                                })
-                            }
+                            .impl_resolved_self_type
+                            .get(impl_def_id)
+                            == Some(&target_self_ty)
+                    }) {
+                        let assoc_types = self.typeck.compute_assoc_types(impl_def_id);
+                        if let Some(concrete) = assoc_types.get(&(trait_def_id, name)) {
+                            self.normalize_aliases_inner(
+                                concrete.clone(),
+                                span,
+                                in_progress,
+                                projections_in_progress,
+                            )
                         } else {
                             Err(TyFromHirError::UnresolvedAssocType {
                                 span,
@@ -546,7 +540,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                             span,
                             module_id: self.module_id,
                         })
-                    };
+                    }
+                } else {
+                    Err(TyFromHirError::UnresolvedAssocType {
+                        span,
+                        module_id: self.module_id,
+                    })
+                };
                 projections_in_progress.remove(&key);
                 resolved
             }

@@ -14,52 +14,12 @@ pub fn res_to_def_id(res: Res<HirId>) -> Option<DefId> {
     }
 }
 
-// TODO: Refactor into trait.
 pub fn fold_ty<F>(ty: &Ty, f: &mut F) -> Ty
 where
     F: FnMut(Ty) -> Ty,
 {
-    let ty = match ty {
-        Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
-        Ty::Adt(d, generics) => Ty::Adt(
-            *d,
-            generics
-                .as_ref()
-                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
-        ),
-        Ty::Alias {
-            def_id,
-            generic_args,
-        } => Ty::Alias {
-            def_id: *def_id,
-            generic_args: generic_args
-                .as_ref()
-                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
-        },
-        Ty::Ptr(inner, m) => Ty::Ptr(fold_ty(inner, f).into_box(), *m),
-        Ty::Slice(inner) => Ty::Slice(fold_ty(inner, f).into_box()),
-        Ty::Array(inner, n) => Ty::Array(fold_ty(inner, f).into_box(), *n),
-        Ty::Fn { params, ret } => Ty::Fn {
-            params: params.iter().map(|ty| fold_ty(ty, f)).collect(),
-            ret: fold_ty(ret, f).into_box(),
-        },
-        Ty::Tuple(elements) => Ty::Tuple(elements.iter().map(|ty| fold_ty(ty, f)).collect()),
-        Ty::Projection {
-            trait_def_id,
-            assoc_def_id,
-            self_ty,
-            generic_args,
-        } => Ty::Projection {
-            self_ty: fold_ty(self_ty, f).into_box(),
-            generic_args: generic_args
-                .as_ref()
-                .map(|args| args.iter().map(|ty| fold_ty(ty, f)).collect()),
-            trait_def_id: *trait_def_id,
-            assoc_def_id: *assoc_def_id,
-        },
-    };
-
-    f(ty)
+    try_fold_ty(ty, &mut |ty| Ok::<_, std::convert::Infallible>(f(ty)))
+        .unwrap_or_else(|infallible| match infallible {})
 }
 
 pub fn try_fold_ty<F, E>(ty: &Ty, f: &mut F) -> Result<Ty, E>

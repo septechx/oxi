@@ -1,8 +1,0 @@
-type Pair<T> = (T, T);
-
-pub fn main() void {
-    let p: Pair::<i32> = (1, 2);
-    let _ = p;
-    let a = [1, 2, 3];
-    let _ = a;
-}
