@@ -34,6 +34,16 @@ struct BlockTyRes {
     early: Option<Ty>,
 }
 
+enum StructInitDef {
+    /// `def` is a plain struct; no expansion is needed
+    Struct,
+    /// `def` was a type alias expanded to the underlying struct def and its
+    /// fully-instantiated generic args
+    Expanded(DefId, ThinVec<Ty>),
+    /// Expansion failed; an error has been emitted
+    Error,
+}
+
 fn tail_span(expr: &Expr) -> Span {
     match &expr.kind {
         ExprKind::Block(block) => block
@@ -1076,6 +1086,26 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         fields: &ThinVec<(Ident, Expr)>,
         span: Span,
     ) -> Ty {
+        match self.expand_struct_init_def(def, generic_args, span) {
+            StructInitDef::Expanded(def, args) => {
+                self.register_if_generic_def(def);
+                let param_hir_ids = self
+                    .typeck
+                    .coherence
+                    .generic_params
+                    .get(&def)
+                    .expect("struct exists")
+                    .hir_ids
+                    .len();
+                assert_eq!(args.len(), param_hir_ids);
+                let ty_var_subst = self.def_ty_var_subst(def, &args);
+                let struct_ty = Ty::Adt(def, Some(args));
+                return self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst);
+            }
+            StructInitDef::Error => return Ty::Error,
+            StructInitDef::Struct => {}
+        }
+
         self.register_if_generic_def(def);
 
         let param_hir_ids = self
@@ -1137,6 +1167,129 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         };
 
         self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
+    }
+
+    fn expand_struct_init_def(
+        &mut self,
+        def: DefId,
+        generic_args: &Option<ThinVec<hir::Ty>>,
+        span: Span,
+    ) -> StructInitDef {
+        if self.typeck.resolver.def(def).kind != DefKind::TypeAlias {
+            return StructInitDef::Struct;
+        }
+        let Some(scheme) = self.typeck.item_schemes.get(&def).cloned() else {
+            return StructInitDef::Error;
+        };
+        let alias_info = self.typeck.coherence.generic_params.get(&def).cloned();
+
+        let alias_args: ThinVec<Ty> = match generic_args {
+            Some(args) => {
+                let mut resolved: ThinVec<Ty> = args
+                    .iter()
+                    .map(|arg| {
+                        let arg_ty = self.ty_from_hir_resolved(arg);
+                        self.node_types.insert(arg.hir_id, arg_ty.clone());
+                        arg_ty
+                    })
+                    .collect();
+                if let Some(info) = alias_info {
+                    for i in resolved.len()..info.hir_ids.len() {
+                        match info.defaults.get(i).and_then(|d| d.as_ref()) {
+                            Some(default_ty) => {
+                                resolved.push(self.ty_from_hir_resolved(default_ty))
+                            }
+                            None => break,
+                        }
+                    }
+                }
+                resolved
+            }
+            None => {
+                let fresh_vars: ThinVec<Ty> = (0..scheme.vars.len())
+                    .map(|_| Ty::Var(self.icx.next_ty_var()))
+                    .collect();
+                if let Some(info) = alias_info {
+                    let subst: FxHashMap<TyVarId, Ty> = scheme
+                        .vars
+                        .iter()
+                        .copied()
+                        .zip(fresh_vars.iter().cloned())
+                        .collect();
+                    for (i, default_ty) in info.defaults.iter().enumerate() {
+                        if let Some(default_ty) = default_ty
+                            && let Ty::Var(var) = fresh_vars[i]
+                        {
+                            let default_ty =
+                                substitute_ty_vars(&self.ty_from_hir_resolved(default_ty), &subst);
+                            self.icx.add_generic_default(var, default_ty);
+                        }
+                    }
+                }
+                fresh_vars
+            }
+        };
+
+        if alias_args.len() != scheme.vars.len() {
+            emit_unexpected_generic_args(
+                self.typeck.ctx,
+                span,
+                self.module_id,
+                scheme.vars.len(),
+                alias_args.len(),
+            );
+            return StructInitDef::Error;
+        }
+
+        let Some(body) = resolve_scheme_with_args(&scheme, &Some(alias_args)) else {
+            return StructInitDef::Error;
+        };
+        let Ok(body) = self.normalize_aliases(body, span) else {
+            return StructInitDef::Error;
+        };
+        if body.is_error() {
+            return StructInitDef::Error;
+        }
+
+        match body {
+            Ty::Adt(struct_def, Some(mut args)) => {
+                let struct_info = self
+                    .typeck
+                    .coherence
+                    .generic_params
+                    .get(&struct_def)
+                    .cloned();
+                if let Some(info) = &struct_info {
+                    for i in args.len()..info.hir_ids.len() {
+                        let var = self.icx.next_ty_var();
+                        if let Some(Some(default_ty)) = info.defaults.get(i) {
+                            let default_ty = self.ty_from_hir_resolved(default_ty);
+                            self.icx.add_generic_default(var, default_ty);
+                        }
+                        args.push(Ty::Var(var));
+                    }
+                }
+                StructInitDef::Expanded(struct_def, args)
+            }
+            Ty::Adt(struct_def, None) => StructInitDef::Expanded(struct_def, ThinVec::new()),
+            _ => {
+                let name = self
+                    .typeck
+                    .resolver
+                    .def(def)
+                    .name
+                    .map(|sym| self.typeck.ctx.interner.lookup(sym).to_string())
+                    .unwrap_or_default();
+                builders::emit_at(
+                    self.typeck.ctx,
+                    span,
+                    self.module_id,
+                    diag::TypeAliasNotStruct,
+                    diag_params! { name = name },
+                );
+                StructInitDef::Error
+            }
+        }
     }
 
     fn stash_generic_defaults(&mut self, def: DefId, fresh_var_map: &FxHashMap<HirId, TyVarId>) {

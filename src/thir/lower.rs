@@ -418,11 +418,17 @@ impl<'a> ThirLowerer<'a> {
         span: Span,
         hir_id: HirId,
     ) -> ExprId {
+        // The HIR def might be a type alias; the checked type resolves it to the
+        // underlying struct.
+        let struct_def_id = match ty {
+            Ty::Adt(struct_def_id, _) => *struct_def_id,
+            _ => def_id,
+        };
         let struct_field_info = self
             .typeck
             .coherence
             .struct_fields
-            .get(&def_id)
+            .get(&struct_def_id)
             .expect("struct exists");
 
         let mut ordered = vec![None; struct_field_info.len()];
@@ -435,7 +441,10 @@ impl<'a> ThirLowerer<'a> {
         let fields = ordered.into_iter().flatten().collect();
 
         self.alloc_expr(
-            ExprKind::StructInit { def_id, fields },
+            ExprKind::StructInit {
+                def_id: struct_def_id,
+                fields,
+            },
             ty.clone(),
             span,
             hir_id,

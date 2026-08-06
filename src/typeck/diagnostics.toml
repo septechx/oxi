@@ -66,6 +66,10 @@ message = "Signature mismatch in method `{method}`"
 level = "Error"
 message = "Type mismatch: expected `{expected}`, found `{found}`"
 
+[type_alias_not_struct]
+level = "Error"
+message = "Type alias `{name}` cannot be used in a struct literal because it does not resolve to a struct"
+
 [recursive_type]
 level = "Error"
 message = "Recursive type detected"
