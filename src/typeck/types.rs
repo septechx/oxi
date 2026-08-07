@@ -122,7 +122,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
                     }
                     Res::SelfTyAlias { alias_to } => {
-                        self.resolve_self_ty(alias_to, icx, path, module_id)
+                        self.resolve_self_ty(alias_to, true, icx, path, module_id)
                     }
                     Res::PrimTy(prim) => Ok(Ty::Prim(prim)),
                     Res::GenericParam(hir_id) => {
@@ -221,16 +221,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn resolve_self_ty(
         &mut self,
         alias_to: DefId,
+        is_self_alias: bool,
         icx: &mut InferCtx,
         path: &hir::Path,
         module_id: ModuleId,
     ) -> TyFromHirResult<Ty> {
-        if let Some(Ty::Adt(id, args)) = &self.current_self_ty
+        if is_self_alias
+            && let Some(Ty::Adt(id, args)) = &self.current_self_ty
             && *id == alias_to
         {
             Ok(Ty::Adt(alias_to, args.clone()))
         } else {
-            let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+            let mut generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+            self.check_generic_arity(alias_to, &generic_args, path.span, module_id)?;
+            self.fill_generic_defaults(alias_to, &mut generic_args, icx, module_id);
             Ok(Ty::Adt(alias_to, generic_args))
         }
     }
@@ -284,10 +288,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     let is_self_alias = matches!(path.res, Res::SelfTyAlias { .. });
                     let self_ty =
-                        self.shorthand_self_ty(def_id, is_self_alias, icx, path, module_id)?;
+                        self.resolve_self_ty(def_id, is_self_alias, icx, path, module_id)?;
                     let generic_args = match &self_ty {
                         Ty::Adt(_, args) => args.clone(),
-                        _ => unreachable!("shorthand_self_ty always yields Ty::Adt"),
+                        _ => unreachable!("resolve_self_ty always yields Ty::Adt"),
                     };
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
@@ -356,25 +360,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             self_ty: Box::new(self_ty),
             generic_args: segment_args.or(trait_path_args),
         })
-    }
-
-    fn shorthand_self_ty(
-        &mut self,
-        def_id: DefId,
-        is_self_alias: bool,
-        icx: &mut InferCtx,
-        path: &hir::Path,
-        module_id: ModuleId,
-    ) -> TyFromHirResult<Ty> {
-        if is_self_alias
-            && let Some(Ty::Adt(id, args)) = &self.current_self_ty
-            && *id == def_id
-        {
-            Ok(Ty::Adt(def_id, args.clone()))
-        } else {
-            let generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
-            Ok(Ty::Adt(def_id, generic_args))
-        }
     }
 
     fn find_trait_assoc_type_for_struct(
