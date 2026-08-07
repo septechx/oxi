@@ -280,7 +280,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         });
                     }
                 };
-                let trait_path_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                let mut trait_path_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                self.check_generic_arity(trait_def_id, &trait_path_args, path.span, module_id)?;
+                self.fill_generic_defaults(trait_def_id, &mut trait_path_args, icx, module_id);
                 (
                     trait_def_id,
                     assoc_def_id,

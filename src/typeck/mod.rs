@@ -18,7 +18,7 @@ use thin_vec::ThinVec;
 use crate::ast::Mutability;
 use crate::context::Ctx;
 use crate::hir::{
-    self, AssocItemKind, Crate, DefId, HirId, ItemKind, MaybeOwner, ModuleId, OwnerNode,
+    self, AssocItemKind, Crate, DefId, HirId, ItemKind, MaybeOwner, ModuleId, OwnerNode, Path,
 };
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
@@ -265,8 +265,10 @@ pub struct CoherenceTable {
     pub inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
     /// maps (struct def id) -> (maps (method name) -> [(trait def id, method def id)])
     pub struct_trait_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
-    /// maps (def id of struct/trait/impl) -> (declared self type)
+    /// maps (struct/trait/impl def id) -> (declared self type)
     pub impl_self_types: FxHashMap<DefId, Ty>,
+    /// maps (impl def id) -> (self type HIR path)
+    pub impl_self_ty_hir: FxHashMap<DefId, Path>,
     /// maps (impl def id) -> ((trait def id, assoc type name) -> resolved type)
     pub assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
 }

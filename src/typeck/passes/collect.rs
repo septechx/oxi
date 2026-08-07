@@ -158,6 +158,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             this.coherence
                                 .impl_self_types
                                 .insert(def_id, Ty::Adt(struct_def_id, self_generic_args));
+                            this.coherence
+                                .impl_self_ty_hir
+                                .insert(def_id, self_ty.clone());
                         }
 
                         this.register_assoc_items(def_id, items);

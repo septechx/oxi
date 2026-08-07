@@ -131,13 +131,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.typeck.current_self_ty = checker
-                                .typeck
-                                .coherence
-                                .impl_self_types
-                                .get(&parent_def_id)
-                                .cloned();
                             checker.register_if_generic_def(parent_def_id);
+                            checker.set_self_ty_for_parent(parent_def_id);
                             checker.register_if_generic(&fun.generic_params);
                             if let Some(body_id) = fun.body_id
                                 && let Some(body) = info.nodes.body(body_id)
@@ -155,12 +150,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.typeck.current_self_ty = checker
-                                .typeck
-                                .coherence
-                                .impl_self_types
-                                .get(&parent_def_id)
-                                .cloned();
+                            checker.register_if_generic_def(parent_def_id);
+                            checker.set_self_ty_for_parent(parent_def_id);
                         }
                     },
                     OwnerNode::Crate => {}
@@ -413,6 +404,59 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     self.icx.hir_id_to_ty_var.insert(hir_id, ty_var);
                 }
             }
+        }
+    }
+
+    fn set_self_ty_for_parent(&mut self, parent_def_id: DefId) {
+        self.typeck.current_self_ty = self.current_self_ty_for_parent(parent_def_id);
+    }
+
+    fn current_self_ty_for_parent(&mut self, parent_def_id: DefId) -> Option<Ty> {
+        match self.typeck.resolver.def(parent_def_id).kind {
+            // For a struct or trait, `Self` is that entity instantiated with its
+            // own generic params, freshly registered in the active icx
+            DefKind::Struct | DefKind::Trait => {
+                let info = self.typeck.coherence.generic_params.get(&parent_def_id);
+                let generic_args = info.filter(|info| !info.hir_ids.is_empty()).map(|info| {
+                    info.hir_ids
+                        .iter()
+                        .map(|hir_id| {
+                            let var = self
+                                .icx
+                                .hir_id_to_ty_var
+                                .get(hir_id)
+                                .copied()
+                                .expect("parent generic param registered");
+                            Ty::Var(var)
+                        })
+                        .collect()
+                });
+                Some(Ty::Adt(parent_def_id, generic_args))
+            }
+            // For an impl, re-infer the declared self path through the active
+            // icx so generic references resolve to body-inference vars
+            DefKind::Impl => {
+                let path = self
+                    .typeck
+                    .coherence
+                    .impl_self_ty_hir
+                    .get(&parent_def_id)?
+                    .clone();
+                let generic_args = self
+                    .typeck
+                    .ty_hir_generic_args(self.icx, &path, self.module_id)
+                    .ok()?;
+                let Res::Def(struct_def_id) = path.res else {
+                    return None;
+                };
+                Some(Ty::Adt(struct_def_id, generic_args))
+            }
+            _ => self
+                .typeck
+                .coherence
+                .impl_self_types
+                .get(&parent_def_id)
+                .cloned(),
         }
     }
 
