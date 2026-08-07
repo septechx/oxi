@@ -344,10 +344,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         self.coherence.impls.get(&(*trait_def_id, *self_def_id))
                 {
                     let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
-                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
-                        self.coherence.impl_resolved_self_type.get(impl_def_id)
-                            == Some(&target_self_ty)
-                    }) {
+                    let matching = self
+                        .coherence
+                        .impls_matching_self(impl_def_ids, &target_self_ty);
+                    if matching.len() == 1
+                        && let Some(&impl_def_id) = matching.first()
+                    {
                         let key = (*trait_def_id, *self_def_id, *assoc_def_id);
                         if projections_in_progress.insert(key) {
                             let assoc_types = self.compute_assoc_types(impl_def_id);
@@ -572,13 +574,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .get(&(trait_def_id, *self_def_id))
                 {
                     let target_self_ty = Ty::Adt(*self_def_id, self_generic_args.clone());
-                    if let Some(&impl_def_id) = impl_def_ids.iter().find(|&impl_def_id| {
-                        self.typeck
-                            .coherence
-                            .impl_resolved_self_type
-                            .get(impl_def_id)
-                            == Some(&target_self_ty)
-                    }) {
+                    let matching = self
+                        .typeck
+                        .coherence
+                        .impls_matching_self(impl_def_ids, &target_self_ty);
+                    if matching.len() == 1
+                        && let Some(&impl_def_id) = matching.first()
+                    {
                         let assoc_types = self.typeck.compute_assoc_types(impl_def_id);
                         if let Some(concrete) = assoc_types.get(&(trait_def_id, name)) {
                             self.normalize_aliases_inner(

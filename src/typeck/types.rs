@@ -8,9 +8,9 @@ use crate::hir::{self, DefId, DefKind, ModuleId, Path, PrimTy, QPath, TyKind};
 use crate::interner::Symbol;
 use crate::resolve::Res;
 use crate::span::Span;
-use crate::typeck::Typeck;
 use crate::typeck::fold::{fold_ty, resolve_scheme_with_args, substitute_ty_vars};
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
+use crate::typeck::{Typeck, diag};
 
 #[derive(Debug, Clone)]
 pub enum TyFromHirError {
@@ -447,23 +447,37 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     self.ctx,
                     span,
                     module_id,
-                    super::diag::RecursiveType,
+                    diag::RecursiveType,
                     diag_params! {},
                 );
                 return Ok(Some(Ty::Error));
             }
-            let args: TyFromHirResult<ThinVec<Ty>> = info
-                .defaults
-                .iter()
-                .map(|d| self.ty_from_hir(icx, d.as_ref().expect("default exists"), module_id))
-                .collect();
+            for &hir_id in &info.hir_ids {
+                if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                    let var = icx.next_ty_var();
+                    icx.hir_id_to_ty_var.insert(hir_id, var);
+                }
+            }
+            let args: TyFromHirResult<ThinVec<Ty>> = (|| {
+                let mut param_args: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                let mut args: ThinVec<Ty> = ThinVec::new();
+                for (i, default) in info.defaults.iter().enumerate() {
+                    let default = default.as_ref().expect("default exists");
+                    let mut ty = self.ty_from_hir(icx, default, module_id)?;
+                    if !param_args.is_empty() {
+                        ty = substitute_ty_vars(&ty, &param_args);
+                    }
+                    ty = self.normalize_assoc_projections(&ty);
+                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                        param_args.insert(var, ty.clone());
+                    }
+                    args.push(ty);
+                }
+                Ok(args)
+            })();
             self.default_resolution_in_progress.remove(&def_id);
             let args = args?;
             if args.len() == scheme_vars.len() {
-                let args: ThinVec<Ty> = args
-                    .into_iter()
-                    .map(|arg| self.normalize_assoc_projections(&arg))
-                    .collect();
                 let mapping: FxHashMap<TyVarId, Ty> = scheme_vars.into_iter().zip(args).collect();
                 return Ok(Some(substitute_ty_vars(&scheme_body, &mapping)));
             }

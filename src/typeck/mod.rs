@@ -297,6 +297,23 @@ impl CoherenceTable {
         })
     }
 
+    pub fn impls_matching_self(&self, impl_def_ids: &[DefId], target_self_ty: &Ty) -> Vec<DefId> {
+        let mut matching: Vec<DefId> = Vec::new();
+        for &def_id in impl_def_ids {
+            if self.impl_resolved_self_type.get(&def_id) != Some(target_self_ty) {
+                continue;
+            }
+            let args = self.impl_resolved_generic_args.get(&def_id).cloned();
+            let already = matching
+                .iter()
+                .any(|&seen| self.impl_resolved_generic_args.get(&seen).cloned() == args);
+            if !already {
+                matching.push(def_id);
+            }
+        }
+        matching
+    }
+
     pub(super) fn register_trait(&mut self, trait_: DefId, methods: Vec<(Symbol, DefId)>) {
         // or_default() will always be called
         let entry = self.trait_methods.entry(trait_).or_default();
