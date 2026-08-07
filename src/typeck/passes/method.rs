@@ -20,7 +20,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 continue;
             };
             let def_id = DefId(i as u32);
-            let entry = self.inherent_methods.entry(def_id).or_default();
+            let entry = self.coherence.inherent_methods.entry(def_id).or_default();
             for &item in items {
                 if self.resolver.def(item).kind != DefKind::AssocFn {
                     continue;
@@ -46,7 +46,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 else {
                     continue;
                 };
-                let entry = self.trait_methods.entry(*struct_def_id).or_default();
+                let entry = self
+                    .coherence
+                    .struct_trait_methods
+                    .entry(*struct_def_id)
+                    .or_default();
                 for &item in items {
                     if self.resolver.def(item).kind != DefKind::AssocFn {
                         continue;

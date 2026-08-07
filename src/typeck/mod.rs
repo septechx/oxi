@@ -79,24 +79,16 @@ struct Typeck<'ctx, 'hir, 'res> {
     node_types: FxHashMap<HirId, Ty>,
     /// maps (member access expr hir id) -> (res chosen)
     member_res: FxHashMap<HirId, MemberRes>,
+    /// tables describing structs, traits, impls, and their methods
     coherence: CoherenceTable,
-    /// maps (struct def id) -> (maps (method name) -> (method def id))
-    inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> [(trait def id, method def id)])
-    trait_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
     adjustments: FxHashMap<HirId, Vec<Adjustment>>,
     /// maps (generic param hir id) -> (type variable id)
     hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
-    /// maps (impl def id) -> (resolved self type)
-    impl_self_types: FxHashMap<DefId, Ty>,
+    /// the current `Self` type being typechecked, if any
     current_self_ty: Option<Ty>,
-    /// maps (impl def id) -> (trait def id, assoc type name) -> resolved type
-    assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
-    /// maps (def id) -> (number of generic params, whether each has a default)
-    hir_generic_arity: FxHashMap<DefId, (usize, ThinVec<bool>)>,
     /// def ids whose generic defaults are currently being resolved, to guard
     /// against recursive associated-type default resolution
     /// e.g. `struct Foo<T = Foo::Bar> { type Bar = T; }`
@@ -112,21 +104,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             node_types: FxHashMap::default(),
             member_res: FxHashMap::default(),
             coherence: CoherenceTable::default(),
-            inherent_methods: FxHashMap::default(),
-            trait_methods: FxHashMap::default(),
             item_schemes: FxHashMap::default(),
             adjustments: FxHashMap::default(),
             hir_id_to_ty_var: FxHashMap::default(),
-            impl_self_types: FxHashMap::default(),
             current_self_ty: None,
-            assoc_types_cache: FxHashMap::default(),
-            hir_generic_arity: FxHashMap::default(),
             default_resolution_in_progress: FxHashSet::default(),
         }
     }
 
     fn run(&mut self) {
-        self.build_hir_generic_arity();
+        self.build_generic_params();
         self.collect_signatures();
         self.check_type_aliases();
         if self.ctx.errors.has_errors() {
@@ -143,8 +130,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             node_types: self.node_types,
             member_res: self.member_res,
             coherence: self.coherence,
-            inherent_methods: self.inherent_methods,
-            trait_methods: self.trait_methods,
             item_schemes: self.item_schemes,
             adjustments: self.adjustments,
             hir_id_to_ty_var: self.hir_id_to_ty_var,
@@ -159,17 +144,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .unwrap_or_default()
     }
 
-    fn build_hir_generic_arity(&mut self) {
-        let map = &mut self.hir_generic_arity;
+    fn build_generic_params(&mut self) {
         for (i, owner) in self.krate.get().owners.iter().enumerate() {
             let Some(info) = owner.as_owner() else {
                 continue;
             };
             let params = match info.nodes.node() {
                 OwnerNode::Item(item) => match &item.kind {
+                    ItemKind::Fn(fun) => &fun.generic_params,
                     ItemKind::Struct { generic_params, .. }
                     | ItemKind::TypeAlias { generic_params, .. }
                     | ItemKind::Trait { generic_params, .. } => generic_params,
+                    ItemKind::Impl { .. } => &None,
                     _ => continue,
                 },
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
@@ -178,17 +164,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 },
                 OwnerNode::Crate => continue,
             };
-            let (expected, has_default) = match params {
-                Some(params) => (
-                    params.len(),
-                    params
-                        .iter()
-                        .map(|param| param.default.is_some())
-                        .collect::<ThinVec<_>>(),
-                ),
-                None => (0, ThinVec::new()),
-            };
-            map.insert(DefId(i as u32), (expected, has_default));
+            let generic_params = params
+                .as_ref()
+                .map(|params| GenericParamInfo {
+                    hir_ids: params.iter().map(|param| param.hir_id).collect(),
+                    defaults: params.iter().map(|param| param.default.clone()).collect(),
+                })
+                .unwrap_or_default();
+            self.coherence
+                .generic_params
+                .insert(DefId(i as u32), generic_params);
         }
     }
 
@@ -218,10 +203,6 @@ pub struct TypeckOutputs {
     /// maps (member access expr hir id) -> (res chosen)
     pub member_res: FxHashMap<HirId, MemberRes>,
     pub coherence: CoherenceTable,
-    /// maps (struct def id) -> (maps (method name) -> (method def id))
-    pub inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
-    /// maps (struct def id) -> (maps (method name) -> [(trait def id, method def id)])
-    pub trait_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
     /// maps (item def id) -> (scheme)
     pub item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
@@ -280,6 +261,14 @@ pub struct CoherenceTable {
     pub assoc_type_index: FxHashMap<(DefId, Symbol), DefId>,
     /// maps (struct def id) -> implemented trait def ids
     pub struct_to_traits: FxHashMap<DefId, Vec<DefId>>,
+    /// maps (struct def id) -> (maps (method name) -> (method def id))
+    pub inherent_methods: FxHashMap<DefId, FxHashMap<Symbol, DefId>>,
+    /// maps (struct def id) -> (maps (method name) -> [(trait def id, method def id)])
+    pub struct_trait_methods: FxHashMap<DefId, FxHashMap<Symbol, Vec<(DefId, DefId)>>>,
+    /// maps (def id of struct/trait/impl) -> (declared self type)
+    pub impl_self_types: FxHashMap<DefId, Ty>,
+    /// maps (impl def id) -> ((trait def id, assoc type name) -> resolved type)
+    pub assoc_types_cache: FxHashMap<DefId, AssocTypesMap>,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -470,13 +470,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
         let mut candidates = vec![];
 
-        if let Some(method) = self.typeck.inherent_methods.get(&struct_id)
+        if let Some(method) = self.typeck.coherence.inherent_methods.get(&struct_id)
             && let Some(&method_def_id) = method.get(&member)
         {
             candidates.push((method_def_id, MethodKind::Inherent));
         }
 
-        if let Some(method) = self.typeck.trait_methods.get(&struct_id)
+        if let Some(method) = self.typeck.coherence.struct_trait_methods.get(&struct_id)
             && let Some(entries) = method.get(&member)
         {
             for &(trait_, method_def_id) in entries {

@@ -131,8 +131,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.typeck.current_self_ty =
-                                checker.typeck.impl_self_types.get(&parent_def_id).cloned();
+                            checker.typeck.current_self_ty = checker
+                                .typeck
+                                .coherence
+                                .impl_self_types
+                                .get(&parent_def_id)
+                                .cloned();
                             checker.register_if_generic_def(parent_def_id);
                             checker.register_if_generic(&fun.generic_params);
                             if let Some(body_id) = fun.body_id
@@ -151,8 +155,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.typeck.current_self_ty =
-                                checker.typeck.impl_self_types.get(&parent_def_id).cloned();
+                            checker.typeck.current_self_ty = checker
+                                .typeck
+                                .coherence
+                                .impl_self_types
+                                .get(&parent_def_id)
+                                .cloned();
                         }
                     },
                     OwnerNode::Crate => {}
@@ -269,7 +277,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     pub(crate) fn compute_assoc_types(&mut self, parent_def_id: DefId) -> AssocTypesMap {
-        if let Some(cached) = self.assoc_types_cache.get(&parent_def_id) {
+        if let Some(cached) = self.coherence.assoc_types_cache.get(&parent_def_id) {
             return cached.clone();
         }
         let mut assoc_types: AssocTypesMap = FxHashMap::default();
@@ -287,7 +295,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
         }
-        self.assoc_types_cache
+        self.coherence
+            .assoc_types_cache
             .insert(parent_def_id, assoc_types.clone());
         assoc_types
     }

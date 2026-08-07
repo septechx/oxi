@@ -156,9 +156,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         // For `struct A<T, U = i32>`
         // Accept `A::<i32>` and `A::<i32, i32>`
         // Reject `A` and `A::<i32, i32, i32>`
-        let Some(&(expected, ref has_default)) = self.hir_generic_arity.get(&def_id) else {
+        let Some(info) = self.coherence.generic_params.get(&def_id) else {
             return Ok(());
         };
+        let expected = info.hir_ids.len();
         let found = generic_args.as_ref().map(|args| args.len()).unwrap_or(0);
         if found > expected {
             return Err(TyFromHirError::UnexpectedGenericArgs {
@@ -168,7 +169,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 found,
             });
         }
-        let required = has_default.iter().position(|d| *d).unwrap_or(expected);
+        let required = info
+            .defaults
+            .iter()
+            .position(|d| d.is_some())
+            .unwrap_or(expected);
         if found >= required {
             return Ok(());
         }

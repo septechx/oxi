@@ -64,7 +64,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
-                        this.impl_self_types.insert(def_id, scheme.body.clone());
+                        this.coherence
+                            .impl_self_types
+                            .insert(def_id, scheme.body.clone());
                         this.item_schemes.insert(def_id, scheme);
 
                         let entry = this.coherence.struct_fields.entry(def_id).or_default();
@@ -106,7 +108,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
-                        this.impl_self_types.insert(def_id, scheme.body.clone());
+                        this.coherence
+                            .impl_self_types
+                            .insert(def_id, scheme.body.clone());
                         this.item_schemes.insert(def_id, scheme);
 
                         let methods: Vec<(Symbol, DefId)> = items
@@ -151,7 +155,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             let self_generic_args = this
                                 .ty_hir_generic_args(&mut icx, self_ty, module_id)
                                 .unwrap_or(None);
-                            this.impl_self_types
+                            this.coherence
+                                .impl_self_types
                                 .insert(def_id, Ty::Adt(struct_def_id, self_generic_args));
                         }
 
@@ -168,7 +173,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        this.current_self_ty = this.impl_self_types.get(&parent_def_id).cloned();
+                        this.current_self_ty =
+                            this.coherence.impl_self_types.get(&parent_def_id).cloned();
 
                         let body = this.fn_ty(&mut icx, &fun.decl, module_id);
                         let scheme =
@@ -187,7 +193,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .get(&def_id)
                             .copied()
                             .expect("assoc item has parent");
-                        this.current_self_ty = this.impl_self_types.get(&parent_def_id).cloned();
+                        this.current_self_ty =
+                            this.coherence.impl_self_types.get(&parent_def_id).cloned();
 
                         match this.resolver.def(parent_def_id).kind {
                             DefKind::Trait => {}
