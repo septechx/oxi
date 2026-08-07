@@ -2,16 +2,15 @@ mod env;
 mod fold;
 mod infctx;
 mod passes;
-mod unify;
-
-mod visitor;
-pub use visitor::*;
-
 mod types;
-pub use types::*;
+mod unify;
+mod visitor;
 
 pub(super) use infctx::TyVarId;
+pub use types::*;
+pub use visitor::*;
 
+use fxhash::{FxHashMap, FxHashSet};
 use oxic_diag::include_diagnostics;
 use thin_vec::ThinVec;
 
@@ -22,7 +21,8 @@ use crate::hir::{
 };
 use crate::interner::Symbol;
 use crate::resolve::ResolverOutputs;
-use fxhash::{FxHashMap, FxHashSet};
+
+use infctx::InferCtx;
 
 include_diagnostics!("diagnostics.toml");
 
@@ -75,6 +75,7 @@ struct Typeck<'ctx, 'hir, 'res> {
     krate: Maybe<&'hir mut Crate>,
     resolver: &'res ResolverOutputs,
 
+    icx: InferCtx,
     /// maps (typed node hir id) -> (ty)
     node_types: FxHashMap<HirId, Ty>,
     /// maps (member access expr hir id) -> (res chosen)
@@ -85,8 +86,6 @@ struct Typeck<'ctx, 'hir, 'res> {
     item_schemes: FxHashMap<DefId, Scheme>,
     /// maps (expr hir id) -> (adjustments)
     adjustments: FxHashMap<HirId, Vec<Adjustment>>,
-    /// maps (generic param hir id) -> (type variable id)
-    hir_id_to_ty_var: FxHashMap<HirId, TyVarId>,
     /// the current `Self` type being typechecked, if any
     current_self_ty: Option<Ty>,
     /// def ids whose generic defaults are currently being resolved, to guard
@@ -97,16 +96,19 @@ struct Typeck<'ctx, 'hir, 'res> {
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn new(ctx: &'ctx mut Ctx, krate: &'hir mut Crate, resolver: &'res ResolverOutputs) -> Self {
+        let mut icx = InferCtx::default();
+        icx.push_level();
+
         Self {
             ctx,
             krate: Maybe::new(krate),
             resolver,
+            icx,
             node_types: FxHashMap::default(),
             member_res: FxHashMap::default(),
             coherence: CoherenceTable::default(),
             item_schemes: FxHashMap::default(),
             adjustments: FxHashMap::default(),
-            hir_id_to_ty_var: FxHashMap::default(),
             current_self_ty: None,
             default_resolution_in_progress: FxHashSet::default(),
         }
@@ -132,7 +134,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             coherence: self.coherence,
             item_schemes: self.item_schemes,
             adjustments: self.adjustments,
-            hir_id_to_ty_var: self.hir_id_to_ty_var,
+            hir_id_to_ty_var: self.icx.hir_id_to_ty_var,
         }
     }
 

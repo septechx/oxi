@@ -72,47 +72,39 @@ pub enum Ty {
 }
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
-    pub fn ty_from_hir(
-        &mut self,
-        icx: &mut InferCtx,
-        hir_ty: &hir::Ty,
-        module_id: ModuleId,
-    ) -> TyFromHirResult<Ty> {
+    pub fn ty_from_hir(&mut self, hir_ty: &hir::Ty, module_id: ModuleId) -> TyFromHirResult<Ty> {
         match &hir_ty.kind {
             TyKind::Error => Ok(Ty::Error),
             TyKind::Never => Ok(Ty::Never),
-            TyKind::Infer => Ok(icx.alloc_ty_var()),
+            TyKind::Infer => Ok(self.icx.alloc_ty_var()),
             TyKind::PrimTy(prim) => Ok(Ty::Prim(*prim)),
-            TyKind::Ptr(inner, m) => Ok(Ty::Ptr(
-                self.ty_from_hir(icx, inner, module_id)?.into_box(),
-                *m,
-            )),
-            TyKind::Slice(inner) => Ok(Ty::Slice(
-                self.ty_from_hir(icx, inner, module_id)?.into_box(),
-            )),
+            TyKind::Ptr(inner, m) => {
+                Ok(Ty::Ptr(self.ty_from_hir(inner, module_id)?.into_box(), *m))
+            }
+            TyKind::Slice(inner) => Ok(Ty::Slice(self.ty_from_hir(inner, module_id)?.into_box())),
             TyKind::Array(inner, size) => Ok(Ty::Array(
-                self.ty_from_hir(icx, inner, module_id)?.into_box(),
+                self.ty_from_hir(inner, module_id)?.into_box(),
                 *size,
             )),
             TyKind::Fn { params, ret } => Ok(Ty::Fn {
                 params: params
                     .iter()
-                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
+                    .map(|hir_ty| self.ty_from_hir(hir_ty, module_id))
                     .collect::<TyFromHirResult<ThinVec<_>>>()?,
-                ret: self.ty_from_hir(icx, ret, module_id)?.into_box(),
+                ret: self.ty_from_hir(ret, module_id)?.into_box(),
             }),
             TyKind::Tuple(elements) => Ok(Ty::Tuple(
                 elements
                     .iter()
-                    .map(|hir_ty| self.ty_from_hir(icx, hir_ty, module_id))
+                    .map(|hir_ty| self.ty_from_hir(hir_ty, module_id))
                     .collect::<TyFromHirResult<ThinVec<_>>>()?,
             )),
             TyKind::Path(qpath) => match qpath {
                 QPath::Resolved(_, path) => match path.res {
                     Res::Def(def_id) => {
-                        let mut generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                        let mut generic_args = self.ty_hir_generic_args(path, module_id)?;
                         self.check_generic_arity(def_id, &generic_args, path.span, module_id)?;
-                        self.fill_generic_defaults(def_id, &mut generic_args, icx, module_id);
+                        self.fill_generic_defaults(def_id, &mut generic_args, module_id);
                         match self.resolver.def(def_id).kind {
                             DefKind::TypeAlias => Ok(Ty::Alias {
                                 def_id,
@@ -122,11 +114,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         }
                     }
                     Res::SelfTyAlias { alias_to } => {
-                        self.resolve_self_ty(alias_to, true, icx, path, module_id)
+                        self.resolve_self_ty(alias_to, true, path, module_id)
                     }
                     Res::PrimTy(prim) => Ok(Ty::Prim(prim)),
                     Res::GenericParam(hir_id) => {
-                        let Some(ty_var) = icx.hir_id_to_ty_var.get(&hir_id) else {
+                        let Some(ty_var) = self.icx.hir_id_to_ty_var.get(&hir_id) else {
                             return Ok(Ty::Error);
                         };
                         Ok(Ty::Var(*ty_var))
@@ -134,11 +126,11 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     Res::Local(_) | Res::Err => Ok(Ty::Error),
                 },
                 QPath::TypeRelative { qself, segment } => {
-                    self.resolve_type_relative_projection(icx, qself, segment, module_id)
+                    self.resolve_type_relative_projection(qself, segment, module_id)
                 }
             },
             TyKind::GenericParam(hir_id, _) => {
-                let Some(ty_var) = icx.hir_id_to_ty_var.get(hir_id) else {
+                let Some(ty_var) = self.icx.hir_id_to_ty_var.get(hir_id) else {
                     return Ok(Ty::Error);
                 };
                 Ok(Ty::Var(*ty_var))
@@ -189,7 +181,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         &mut self,
         def_id: DefId,
         generic_args: &mut Option<ThinVec<Ty>>,
-        icx: &mut InferCtx,
         module_id: ModuleId,
     ) {
         let Some(info) = self.coherence.generic_params.get(&def_id).cloned() else {
@@ -206,7 +197,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let mut args = args;
         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
         for (i, arg) in args.iter().enumerate() {
-            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+            if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                 subst.insert(var, arg.clone());
             }
         }
@@ -214,8 +205,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             let Some(default_ty) = info.defaults.get(i).and_then(|d| d.as_ref()) else {
                 break;
             };
-            let ty = self.resolve_default_generic_arg(icx, default_ty, module_id, &subst, None);
-            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+            let ty = self.resolve_default_generic_arg(default_ty, module_id, &subst, None);
+            if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                 subst.insert(var, ty.clone());
             }
             args.push(ty);
@@ -227,7 +218,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         &mut self,
         alias_to: DefId,
         is_self_alias: bool,
-        icx: &mut InferCtx,
         path: &hir::Path,
         module_id: ModuleId,
     ) -> TyFromHirResult<Ty> {
@@ -237,9 +227,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         {
             Ok(Ty::Adt(alias_to, args.clone()))
         } else {
-            let mut generic_args = self.ty_hir_generic_args(icx, path, module_id)?;
+            let mut generic_args = self.ty_hir_generic_args(path, module_id)?;
             self.check_generic_arity(alias_to, &generic_args, path.span, module_id)?;
-            self.fill_generic_defaults(alias_to, &mut generic_args, icx, module_id);
+            self.fill_generic_defaults(alias_to, &mut generic_args, module_id);
             Ok(Ty::Adt(alias_to, generic_args))
         }
     }
@@ -247,7 +237,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     /// Resolve `QPath::TypeRelative` to a `Ty::Projection`
     fn resolve_type_relative_projection(
         &mut self,
-        icx: &mut InferCtx,
         qself: &QPath,
         segment: &hir::PathSegment,
         module_id: ModuleId,
@@ -280,13 +269,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         });
                     }
                 };
-                let mut trait_path_args = self.ty_hir_generic_args(icx, path, module_id)?;
+                let mut trait_path_args = self.ty_hir_generic_args(path, module_id)?;
                 self.check_generic_arity(trait_def_id, &trait_path_args, path.span, module_id)?;
-                self.fill_generic_defaults(trait_def_id, &mut trait_path_args, icx, module_id);
+                self.fill_generic_defaults(trait_def_id, &mut trait_path_args, module_id);
                 (
                     trait_def_id,
                     assoc_def_id,
-                    self.ty_from_hir(icx, self_ty, module_id)?,
+                    self.ty_from_hir(self_ty, module_id)?,
                     trait_path_args,
                 )
             }
@@ -294,8 +283,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             QPath::Resolved(None, path) => match path.res {
                 Res::Def(def_id) | Res::SelfTyAlias { alias_to: def_id } => {
                     let is_self_alias = matches!(path.res, Res::SelfTyAlias { .. });
-                    let self_ty =
-                        self.resolve_self_ty(def_id, is_self_alias, icx, path, module_id)?;
+                    let self_ty = self.resolve_self_ty(def_id, is_self_alias, path, module_id)?;
                     let generic_args = match &self_ty {
                         Ty::Adt(_, args) => args.clone(),
                         _ => unreachable!("resolve_self_ty always yields Ty::Adt"),
@@ -313,7 +301,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         DefKind::Struct => {
                             if let Some(resolved) = self.resolve_inherent_assoc_type(
                                 def_id,
-                                icx,
                                 assoc_name,
                                 &generic_args,
                                 path.span,
@@ -338,7 +325,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     }
                 }
                 Res::GenericParam(hir_id) => {
-                    if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                    if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
                         return Ok(Ty::Error);
                     }
                     return Err(TyFromHirError::UnresolvedAssocType {
@@ -356,7 +343,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .as_ref()
             .map(|args| {
                 args.iter()
-                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
+                    .map(|ty| self.ty_from_hir(ty, module_id))
                     .collect::<TyFromHirResult<ThinVec<_>>>()
             })
             .transpose()?;
@@ -411,7 +398,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     fn resolve_inherent_assoc_type(
         &mut self,
         def_id: DefId,
-        icx: &mut InferCtx,
         assoc_name: Symbol,
         generic_args: &Option<ThinVec<Ty>>,
         span: Span,
@@ -453,9 +439,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 return Ok(Some(Ty::Error));
             }
             for &hir_id in &info.hir_ids {
-                if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
-                    let var = icx.next_ty_var();
-                    icx.hir_id_to_ty_var.insert(hir_id, var);
+                if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
+                    let var = self.icx.next_ty_var();
+                    self.icx.hir_id_to_ty_var.insert(hir_id, var);
                 }
             }
             let args: TyFromHirResult<ThinVec<Ty>> = (|| {
@@ -463,12 +449,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let mut args: ThinVec<Ty> = ThinVec::new();
                 for (i, default) in info.defaults.iter().enumerate() {
                     let default = default.as_ref().expect("default exists");
-                    let mut ty = self.ty_from_hir(icx, default, module_id)?;
+                    let mut ty = self.ty_from_hir(default, module_id)?;
                     if !param_args.is_empty() {
                         ty = substitute_ty_vars(&ty, &param_args);
                     }
                     ty = self.normalize_assoc_projections(&ty);
-                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                    if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                         param_args.insert(var, ty.clone());
                     }
                     args.push(ty);
@@ -492,7 +478,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
     pub(super) fn ty_hir_generic_args(
         &mut self,
-        icx: &mut InferCtx,
         path: &hir::Path,
         module_id: ModuleId,
     ) -> TyFromHirResult<Option<ThinVec<Ty>>> {
@@ -514,7 +499,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .as_ref()
             .map(|args| {
                 args.iter()
-                    .map(|ty| self.ty_from_hir(icx, ty, module_id))
+                    .map(|ty| self.ty_from_hir(ty, module_id))
                     .collect::<TyFromHirResult<ThinVec<_>>>()
             })
             .transpose()

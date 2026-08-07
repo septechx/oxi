@@ -60,9 +60,6 @@ fn tail_span(expr: &Expr) -> Span {
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_bodies(&mut self) {
-        let mut icx = InferCtx::default();
-        icx.push_level();
-
         let mut node_types: FxHashMap<HirId, Ty> = FxHashMap::default();
         let mut member_res: FxHashMap<HirId, MemberRes> = FxHashMap::default();
         let mut local_schemes: FxHashMap<HirId, Scheme> = FxHashMap::default();
@@ -81,7 +78,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             let mut checker = BodyChecker {
                 typeck: this,
-                icx: &mut icx,
                 node_types: &mut node_types,
                 member_res: &mut member_res,
                 local_schemes: &mut local_schemes,
@@ -103,7 +99,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     OwnerNode::Item(item) => match &item.kind {
                         ItemKind::Fn(fun) => {
                             checker.current_assoc_types = FxHashMap::default();
-                            checker.register_if_generic(&fun.generic_params);
                             if let Some(body_id) = fun.body_id
                                 && let Some(body) = info.nodes.body(body_id)
                             {
@@ -131,9 +126,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.register_if_generic_def(parent_def_id);
                             checker.set_self_ty_for_parent(parent_def_id);
-                            checker.register_if_generic(&fun.generic_params);
                             if let Some(body_id) = fun.body_id
                                 && let Some(body) = info.nodes.body(body_id)
                             {
@@ -150,7 +143,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
-                            checker.register_if_generic_def(parent_def_id);
                             checker.set_self_ty_for_parent(parent_def_id);
                         }
                     },
@@ -161,38 +153,36 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             owners.into_iter().map(|(_, owner, _)| owner).collect()
         });
 
-        self.hir_id_to_ty_var = std::mem::take(&mut icx.hir_id_to_ty_var);
-
-        let int_ids = icx.vars_with_source(TyVarSource::IntLit);
+        let int_ids = self.icx.vars_with_source(TyVarSource::IntLit);
         let i32_ty = Ty::Prim(PrimTy::Int(IntTy::I32));
         for var in int_ids {
-            if icx.is_bound(var) {
+            if self.icx.is_bound(var) {
                 continue;
             }
-            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
-            let var_module = icx.ty_var_module(var);
-            self.unify(&mut icx, &Ty::Var(var), &i32_ty, var_span, var_module)
-                .or_push_err(&mut icx);
+            let var_span = self.icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = self.icx.ty_var_module(var);
+            self.unify(&Ty::Var(var), &i32_ty, var_span, var_module)
+                .or_push_err(&mut self.icx);
         }
-        let float_ids = icx.vars_with_source(TyVarSource::FloatLit);
+        let float_ids = self.icx.vars_with_source(TyVarSource::FloatLit);
         let f64_ty = Ty::Prim(PrimTy::Float(FloatTy::F64));
         for var in float_ids {
-            if icx.is_bound(var) {
+            if self.icx.is_bound(var) {
                 continue;
             }
-            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
-            let var_module = icx.ty_var_module(var);
-            self.unify(&mut icx, &Ty::Var(var), &f64_ty, var_span, var_module)
-                .or_push_err(&mut icx);
+            let var_span = self.icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = self.icx.ty_var_module(var);
+            self.unify(&Ty::Var(var), &f64_ty, var_span, var_module)
+                .or_push_err(&mut self.icx);
         }
 
-        let empty_array_ids = icx.vars_with_source(TyVarSource::EmptyArray);
+        let empty_array_ids = self.icx.vars_with_source(TyVarSource::EmptyArray);
         for var in empty_array_ids {
-            if icx.is_bound(var) {
+            if self.icx.is_bound(var) {
                 continue;
             }
-            let var_span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
-            let var_module = icx.ty_var_module(var);
+            let var_span = self.icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let var_module = self.icx.ty_var_module(var);
             builders::emit_at(
                 self.ctx,
                 var_span,
@@ -202,45 +192,38 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             )
         }
 
-        let generic_defaults = std::mem::take(&mut icx.generic_defaults);
+        let generic_defaults = std::mem::take(&mut self.icx.generic_defaults);
         for (var, default_ty) in generic_defaults {
-            if icx.is_bound(var) {
+            if self.icx.is_bound(var) {
                 continue;
             }
-            let span = icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
-            let module_id = icx.ty_var_module(var);
-            self.unify(&mut icx, &Ty::Var(var), &default_ty, span, module_id)
-                .or_push_err(&mut icx);
+            let span = self.icx.ty_var_span(var).unwrap_or(Span::new(0, 0));
+            let module_id = self.icx.ty_var_module(var);
+            self.unify(&Ty::Var(var), &default_ty, span, module_id)
+                .or_push_err(&mut self.icx);
         }
 
         let resolved: FxHashMap<HirId, Ty> = node_types
             .iter()
             .map(|(&id, ty)| {
-                let mut ty = icx.resolve(ty);
+                let mut ty = self.icx.resolve(ty);
                 if let Ty::Adt(def_id, None) = &ty {
                     let info = self.coherence.generic_params.get(def_id).cloned();
                     if let Some(info) = info
                         && !info.hir_ids.is_empty()
                         && info.defaults.iter().all(|d| d.is_some())
                     {
-                        for &hir_id in &info.hir_ids {
-                            if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
-                                let var = icx.next_ty_var();
-                                icx.hir_id_to_ty_var.insert(hir_id, var);
-                            }
-                        }
                         let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
                             let module_id = self.owner_module(*def_id);
                             let default_ty = self.resolve_default_generic_arg(
-                                &mut icx,
                                 default.as_ref().expect("default exists"),
                                 module_id,
                                 &subst,
                                 None,
                             );
-                            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                            if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, default_ty.clone());
                             }
                             args.push(default_ty);
@@ -258,8 +241,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         self.member_res.extend(member_res);
         self.adjustments.extend(adjustments);
 
-        for err in &icx.errors {
-            emit_unify_error(err, self.resolver, self.ctx, &icx);
+        let errors = self.icx.take_errors();
+        for err in &errors {
+            emit_unify_error(err, self.resolver, self.ctx, &self.icx);
         }
     }
 
@@ -379,7 +363,6 @@ struct BodyChecker<'a, 'ctx, 'hir, 'res> {
     typeck: &'a mut Typeck<'ctx, 'hir, 'res>,
     module_id: ModuleId,
 
-    icx: &'a mut InferCtx,
     node_types: &'a mut FxHashMap<HirId, Ty>,
     member_res: &'a mut FxHashMap<HirId, MemberRes>,
     local_schemes: &'a mut FxHashMap<HirId, Scheme>,
@@ -389,26 +372,6 @@ struct BodyChecker<'a, 'ctx, 'hir, 'res> {
 }
 
 impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
-    fn register_if_generic(&mut self, generic_params: &Option<ThinVec<hir::GenericParam>>) {
-        if let Some(params) = generic_params {
-            for param in params {
-                let ty_var = self.icx.next_ty_var();
-                self.icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
-            }
-        }
-    }
-
-    fn register_if_generic_def(&mut self, def: DefId) {
-        if let Some(info) = self.typeck.coherence.generic_params.get(&def) {
-            for &hir_id in &info.hir_ids {
-                if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
-                    let ty_var = self.icx.next_ty_var();
-                    self.icx.hir_id_to_ty_var.insert(hir_id, ty_var);
-                }
-            }
-        }
-    }
-
     fn set_self_ty_for_parent(&mut self, parent_def_id: DefId) {
         self.typeck.current_self_ty = self.current_self_ty_for_parent(parent_def_id);
     }
@@ -424,6 +387,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .iter()
                         .map(|hir_id| {
                             let var = self
+                                .typeck
                                 .icx
                                 .hir_id_to_ty_var
                                 .get(hir_id)
@@ -446,7 +410,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .clone();
                 let generic_args = self
                     .typeck
-                    .ty_hir_generic_args(self.icx, &path, self.module_id)
+                    .ty_hir_generic_args(&path, self.module_id)
                     .ok()?;
                 let Res::Def(struct_def_id) = path.res else {
                     return None;
@@ -463,7 +427,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     }
 
     fn try_ty_from_hir_resolved(&mut self, hir_ty: &hir::Ty) -> TyFromHirResult<Ty> {
-        let ty = self.typeck.ty_from_hir(self.icx, hir_ty, self.module_id)?;
+        let ty = self.typeck.ty_from_hir(hir_ty, self.module_id)?;
         self.normalize_aliases(ty, hir_ty.span)
     }
 
@@ -618,13 +582,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let expected = self.ty_from_hir_resolved(ty);
         self.node_types.insert(ty.hir_id, expected.clone());
         let body_ty = self.check_expr(&body.value);
-        if let Err(err) = self.typeck.unify(
-            self.icx,
-            &expected,
-            &body_ty,
-            body.value.span,
-            self.module_id,
-        ) {
+        if let Err(err) = self
+            .typeck
+            .unify(&expected, &body_ty, body.value.span, self.module_id)
+        {
             self.report_type_error(err);
         }
     }
@@ -643,13 +604,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         self.check_expr(&body.value);
         self.check_return_values(&body.value, &expected, body.value.span);
         if let Some(body_ty) = self.node_types.get(&body.value.hir_id).cloned()
-            && let Err(err) = self.typeck.unify(
-                self.icx,
-                &expected,
-                &body_ty,
-                tail_span(&body.value),
-                self.module_id,
-            )
+            && let Err(err) =
+                self.typeck
+                    .unify(&expected, &body_ty, tail_span(&body.value), self.module_id)
         {
             self.report_type_error(err);
         }
@@ -667,10 +624,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 } else {
                     Ty::Prim(PrimTy::Void)
                 };
-                if let Err(err) =
-                    self.typeck
-                        .unify(self.icx, expected, &inner, span, self.module_id)
-                {
+                if let Err(err) = self.typeck.unify(expected, &inner, span, self.module_id) {
                     self.report_type_error(err);
                 }
             }
@@ -742,9 +696,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             } => {
                 let cond_ty = self.check_expr(cond);
                 let bool_ty = Ty::Prim(PrimTy::Bool);
-                if let Err(err) =
-                    self.typeck
-                        .unify(self.icx, &bool_ty, &cond_ty, cond.span, self.module_id)
+                if let Err(err) = self
+                    .typeck
+                    .unify(&bool_ty, &cond_ty, cond.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
@@ -754,25 +708,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 let else_ty = else_branch.as_ref().map(|expr| self.check_expr(expr));
                 match else_ty {
                     Some(else_ty) => {
-                        if let Err(err) = self.typeck.unify(
-                            self.icx,
-                            &then_ty,
-                            &else_ty,
-                            then_span,
-                            self.module_id,
-                        ) {
+                        if let Err(err) =
+                            self.typeck
+                                .unify(&then_ty, &else_ty, then_span, self.module_id)
+                        {
                             self.report_type_error(err);
                         }
                         then_ty
                     }
                     None => {
-                        if let Err(err) = self.typeck.unify(
-                            self.icx,
-                            &void_ty,
-                            &then_ty,
-                            then_span,
-                            self.module_id,
-                        ) {
+                        if let Err(err) =
+                            self.typeck
+                                .unify(&void_ty, &then_ty, then_span, self.module_id)
+                        {
                             self.report_type_error(err);
                         }
                         void_ty
@@ -790,7 +738,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 let value_ty = self.check_expr(value);
                 if let Err(err) =
                     self.typeck
-                        .unify(self.icx, &target_ty, &value_ty, value.span, self.module_id)
+                        .unify(&target_ty, &value_ty, value.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
@@ -815,8 +763,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     fn check_lit(&mut self, lit: &Literal, span: Span) -> Ty {
         match lit {
-            Literal::Integer(_) => Ty::Var(self.icx.next_int_var(span, self.module_id)),
-            Literal::Float(_) => Ty::Var(self.icx.next_float_var(span, self.module_id)),
+            Literal::Integer(_) => Ty::Var(self.typeck.icx.next_int_var(span, self.module_id)),
+            Literal::Float(_) => Ty::Var(self.typeck.icx.next_float_var(span, self.module_id)),
             Literal::Bool(_) => Ty::Prim(PrimTy::Bool),
             Literal::Char(_) => Ty::Prim(PrimTy::Uint(UintTy::U8)),
             Literal::String(_) => Ty::Slice(Ty::Prim(PrimTy::Uint(UintTy::U8)).into_box()),
@@ -832,7 +780,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     _ => self.check_resolved_path(*alias_to, path, hir_id),
                 },
                 Res::Local(id) | Res::GenericParam(id) => match self.env.get(id) {
-                    Some(scheme) => self.icx.instantiate(scheme),
+                    Some(scheme) => self.typeck.icx.instantiate(scheme),
                     None => Ty::Error,
                 },
                 Res::PrimTy(prim) => Ty::Prim(*prim),
@@ -859,7 +807,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         self.report_ty_from_hir_error(err);
                         Ty::Error
                     }),
-                None if scheme.vars.is_empty() => self.icx.instantiate(&scheme),
+                None if scheme.vars.is_empty() => self.typeck.icx.instantiate(&scheme),
                 None => Ty::Adt(def_id, None),
             }
         } else {
@@ -919,7 +867,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
         let mut mapping = FxHashMap::default();
         for &v in &scheme.vars {
-            mapping.insert(v, self.icx.next_ty_var());
+            mapping.insert(v, self.typeck.icx.next_ty_var());
         }
         let parent_var_count = self
             .typeck
@@ -933,7 +881,11 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         if let Some(info) = self.typeck.coherence.generic_params.get(&def_id) {
             for (hir_id, &v) in info.hir_ids.iter().zip(method_vars) {
                 if let Some(&fresh) = mapping.get(&v) {
-                    self.icx.hir_id_to_ty_var.entry(*hir_id).or_insert(fresh);
+                    self.typeck
+                        .icx
+                        .hir_id_to_ty_var
+                        .entry(*hir_id)
+                        .or_insert(fresh);
                 }
             }
         }
@@ -949,10 +901,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
             self.typeck
-                .unify(self.icx, &Ty::Var(fresh), &arg_ty, span, self.module_id)
-                .or_push_err(self.icx);
+                .unify(&Ty::Var(fresh), &arg_ty, span, self.module_id)
+                .or_push_err(&mut self.typeck.icx);
         }
-        Ok(self.icx.instantiate_with(&scheme.body, &mapping))
+        Ok(self.typeck.icx.instantiate_with(&scheme.body, &mapping))
     }
 
     fn instantiate_fn_scheme(
@@ -967,7 +919,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             Some(args) => {
                 self.instantiate_with_explicit_args(def_id, scheme, args, span, suppress_errors)
             }
-            None => Ok(self.icx.instantiate(scheme)),
+            None => Ok(self.typeck.icx.instantiate(scheme)),
         }
     }
 
@@ -998,7 +950,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                             if matches!(scheme.body, Ty::Adt(_, _)) {
                                 Ty::Adt(*def_id, None)
                             } else {
-                                self.icx.instantiate(&scheme)
+                                self.typeck.icx.instantiate(&scheme)
                             }
                         }
                     }
@@ -1012,7 +964,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             },
             QPath::TypeRelative { qself, .. } => return self.qpath_recv_ty(qself),
         };
-        let base = self.icx.resolve(&base);
+        let base = self.typeck.icx.resolve(&base);
         if matches!(base, Ty::Adt(_, _)) {
             Some(base)
         } else {
@@ -1028,22 +980,22 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         match op {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 self.typeck
-                    .unify(self.icx, &left, &right, left_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&left, &right, left_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
                 Ty::Prim(PrimTy::Bool)
             }
             BinOp::And | BinOp::Or => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
                 self.typeck
-                    .unify(self.icx, &bool_ty, &left, left_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&bool_ty, &left, left_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
                 self.typeck
-                    .unify(self.icx, &bool_ty, &right, right_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&bool_ty, &right, right_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
                 bool_ty
             }
             _ => {
-                if !left.is_numeric(self.icx) {
+                if !left.is_numeric(&self.typeck.icx) {
                     builders::emit_at(
                         self.typeck.ctx,
                         left_span,
@@ -1052,7 +1004,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         diag_params! { operator = op },
                     );
                     return Ty::Error;
-                } else if !right.is_numeric(self.icx) {
+                } else if !right.is_numeric(&self.typeck.icx) {
                     builders::emit_at(
                         self.typeck.ctx,
                         right_span,
@@ -1064,8 +1016,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 }
 
                 self.typeck
-                    .unify(self.icx, &left, &right, left_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&left, &right, left_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
                 left
             }
         }
@@ -1078,13 +1030,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             UnOp::Not => {
                 let bool_ty = Ty::Prim(PrimTy::Bool);
                 self.typeck
-                    .unify(self.icx, &bool_ty, &right, right_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&bool_ty, &right, right_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
                 bool_ty
             }
             UnOp::Neg => {
-                let resolved = self.icx.resolve(&right);
-                if !resolved.is_numeric(self.icx) {
+                let resolved = self.typeck.icx.resolve(&right);
+                if !resolved.is_numeric(&self.typeck.icx) {
                     builders::emit_at(
                         self.typeck.ctx,
                         right_span,
@@ -1126,7 +1078,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let mut subst = FxHashMap::default();
         if let Some(info) = self.typeck.coherence.generic_params.get(&def) {
             for (hir_id, arg_ty) in info.hir_ids.iter().zip(args.iter()) {
-                if let Some(&registered_var) = self.icx.hir_id_to_ty_var.get(hir_id) {
+                if let Some(&registered_var) = self.typeck.icx.hir_id_to_ty_var.get(hir_id) {
                     subst.insert(registered_var, arg_ty.clone());
                 }
             }
@@ -1143,7 +1095,6 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) -> Ty {
         match self.expand_struct_init_def(def, generic_args, span) {
             StructInitDef::Expanded(def, args) => {
-                self.register_if_generic_def(def);
                 let param_hir_ids = self
                     .typeck
                     .coherence
@@ -1158,8 +1109,6 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 self.check_struct_fields(def, struct_ty, fields, span, &ty_var_subst)
             }
             StructInitDef::Struct => {
-                self.register_if_generic_def(def);
-
                 let param_hir_ids = self
                     .typeck
                     .coherence
@@ -1171,7 +1120,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
                 let fresh_var_map: FxHashMap<HirId, TyVarId> = param_hir_ids
                     .iter()
-                    .map(|&hir_id| (hir_id, self.icx.next_ty_var()))
+                    .map(|&hir_id| (hir_id, self.typeck.icx.next_ty_var()))
                     .collect();
 
                 let (struct_ty, ty_var_subst) = if let Some(generic_args) = generic_args {
@@ -1198,8 +1147,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
                         if let Some(&fresh) = fresh_var_map.get(hir_id) {
                             self.typeck
-                                .unify(self.icx, &Ty::Var(fresh), arg, span, self.module_id)
-                                .or_push_err(self.icx);
+                                .unify(&Ty::Var(fresh), arg, span, self.module_id)
+                                .or_push_err(&mut self.typeck.icx);
                         }
                     }
                     let subst = self.def_ty_var_subst(def, &args);
@@ -1264,7 +1213,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             }
             None => {
                 let fresh_vars: ThinVec<Ty> = (0..scheme.vars.len())
-                    .map(|_| Ty::Var(self.icx.next_ty_var()))
+                    .map(|_| Ty::Var(self.typeck.icx.next_ty_var()))
                     .collect();
                 if let Some(info) = alias_info {
                     let subst: FxHashMap<TyVarId, Ty> = scheme
@@ -1279,7 +1228,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         {
                             let default_ty =
                                 substitute_ty_vars(&self.ty_from_hir_resolved(default_ty), &subst);
-                            self.icx.add_generic_default(var, default_ty);
+                            self.typeck.icx.add_generic_default(var, default_ty);
                         }
                     }
                 }
@@ -1318,10 +1267,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .cloned();
                 if let Some(info) = &struct_info {
                     for i in args.len()..info.hir_ids.len() {
-                        let var = self.icx.next_ty_var();
+                        let var = self.typeck.icx.next_ty_var();
                         if let Some(Some(default_ty)) = info.defaults.get(i) {
                             let default_ty = self.ty_from_hir_resolved(default_ty);
-                            self.icx.add_generic_default(var, default_ty);
+                            self.typeck.icx.add_generic_default(var, default_ty);
                         }
                         args.push(Ty::Var(var));
                     }
@@ -1338,10 +1287,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 let mut args: ThinVec<Ty> = ThinVec::new();
                 if let Some(info) = &struct_info {
                     for i in 0..info.hir_ids.len() {
-                        let var = self.icx.next_ty_var();
+                        let var = self.typeck.icx.next_ty_var();
                         if let Some(Some(default_ty)) = info.defaults.get(i) {
                             let default_ty = self.ty_from_hir_resolved(default_ty);
-                            self.icx.add_generic_default(var, default_ty);
+                            self.typeck.icx.add_generic_default(var, default_ty);
                         }
                         args.push(Ty::Var(var));
                     }
@@ -1379,7 +1328,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             .iter()
             .filter_map(|hir_id| {
                 fresh_var_map.get(hir_id).and_then(|&fresh| {
-                    self.icx
+                    self.typeck
+                        .icx
                         .hir_id_to_ty_var
                         .get(hir_id)
                         .map(|&def_var| (def_var, Ty::Var(fresh)))
@@ -1392,7 +1342,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             {
                 let default_ty = self.ty_from_hir_resolved(default_ty);
                 let default_ty = substitute_ty_vars(&default_ty, &subst);
-                self.icx.add_generic_default(fresh, default_ty);
+                self.typeck.icx.add_generic_default(fresh, default_ty);
             }
         }
     }
@@ -1456,11 +1406,11 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 if !ty_var_subst.is_empty() {
                     field_ty = substitute_ty_vars(&field_ty, ty_var_subst);
                 }
-                if let Err(err) =
-                    self.typeck
-                        .unify(self.icx, &field_ty, &expr, expr_span, self.module_id)
+                if let Err(err) = self
+                    .typeck
+                    .unify(&field_ty, &expr, expr_span, self.module_id)
                 {
-                    self.icx.errors.push(err);
+                    self.typeck.icx.errors.push(err);
                 }
             }
         }
@@ -1473,9 +1423,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         for expr in contents {
             let expr_ty = self.check_expr(expr);
             if let Some(elem_ty) = &elem_ty {
-                if let Err(err) =
-                    self.typeck
-                        .unify(self.icx, elem_ty, &expr_ty, expr.span, self.module_id)
+                if let Err(err) = self
+                    .typeck
+                    .unify(elem_ty, &expr_ty, expr.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
@@ -1484,8 +1434,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             }
         }
         let elem_ty = elem_ty.unwrap_or_else(|| {
-            let var = self.icx.next_ty_var_at(
-                self.icx.current_level(),
+            let var = self.typeck.icx.next_ty_var_at(
+                self.typeck.icx.current_level(),
                 TyVarSource::EmptyArray,
                 Some(span),
                 Some(self.module_id),
@@ -1527,28 +1477,25 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 } => {
                     let ty = self.ty_from_hir_resolved(hir_ty);
                     self.node_types.insert(hir_ty.hir_id, ty.clone());
-                    self.icx.push_level();
+                    self.typeck.icx.push_level();
                     let init_span = init.as_ref().map(|e| e.span).unwrap_or(stmt.span);
                     let bound = init
                         .as_ref()
                         .map(|expr| self.check_expr(expr))
                         .unwrap_or_else(|| ty.clone());
-                    if let Err(err) =
-                        self.typeck
-                            .unify(self.icx, &ty, &bound, init_span, self.module_id)
-                    {
-                        self.icx.errors.push(err);
+                    if let Err(err) = self.typeck.unify(&ty, &bound, init_span, self.module_id) {
+                        self.typeck.icx.errors.push(err);
                     }
-                    let scope = self.icx.current_level();
+                    let scope = self.typeck.icx.current_level();
                     let parent = scope.saturating_sub(1);
-                    let quantified = self.icx.generalize(&ty, parent);
+                    let quantified = self.typeck.icx.generalize(&ty, parent);
                     let scheme = Scheme {
                         vars: quantified,
                         body: ty.clone(),
                     };
                     self.local_schemes.insert(*local, scheme.clone());
                     self.env.insert(*local, scheme);
-                    self.icx.pop_level();
+                    self.typeck.icx.pop_level();
                     if let Some(init) = init {
                         self.collect_break_ty_from_expr(init, &mut break_ty, stmt.span);
                     }
@@ -1607,13 +1554,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .map_or(Ty::Prim(PrimTy::Void), |inner| self.check_expr(inner));
 
                 if let Some(existing_break_ty) = break_ty
-                    && let Err(err) = self.typeck.unify(
-                        self.icx,
-                        existing_break_ty,
-                        &break_value_ty,
-                        span,
-                        self.module_id,
-                    )
+                    && let Err(err) =
+                        self.typeck
+                            .unify(existing_break_ty, &break_value_ty, span, self.module_id)
                 {
                     self.report_type_error(err);
                     return;
@@ -1643,13 +1586,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let block_ty_res = self.check_block(block);
 
         let void_ty = Ty::Prim(PrimTy::Void);
-        if let Err(err) = self.typeck.unify(
-            self.icx,
-            &void_ty,
-            &block_ty_res.tail,
-            block.span,
-            self.module_id,
-        ) {
+        if let Err(err) =
+            self.typeck
+                .unify(&void_ty, &block_ty_res.tail, block.span, self.module_id)
+        {
             self.report_type_error(err);
         }
 
@@ -1663,7 +1603,6 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         member: Symbol,
         hir_id: HirId,
     ) -> Option<Ty> {
-        self.register_if_generic_def(struct_id);
         let fields = self.typeck.coherence.struct_fields.get(&struct_id)?.clone();
         let (hir_field_ty, index) = fields.get(&member)?;
         self.member_res
@@ -1694,7 +1633,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                                 if !subst.is_empty() {
                                     ty = substitute_ty_vars(&ty, &subst);
                                 }
-                                if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                                if let Some(&var) =
+                                    self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
                                 {
                                     subst.insert(var, ty.clone());
                                 }
@@ -1727,7 +1667,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) -> Ty {
         let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
-        let recv_ty = self.icx.resolve(&recv_ty);
+        let recv_ty = self.typeck.icx.resolve(&recv_ty);
         let recv_ty = self.typeck.normalize_assoc_projections(&recv_ty);
 
         // TODO: Maybe run in a loop to dereference types like `&&T`
@@ -1801,14 +1741,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     fn check_index(&mut self, base: &Expr, index: &Expr, expr_span: Span, _hir_id: HirId) -> Ty {
         let base_ty = self.check_expr(base);
-        let base = self.icx.resolve(&base_ty);
+        let base = self.typeck.icx.resolve(&base_ty);
         match base {
             Ty::Slice(elem) | Ty::Array(elem, _) => {
                 let index_ty = self.check_expr(index);
                 let usize_ty = Ty::Prim(PrimTy::Uint(UintTy::Usize));
                 if let Err(err) =
                     self.typeck
-                        .unify(self.icx, &usize_ty, &index_ty, index.span, self.module_id)
+                        .unify(&usize_ty, &index_ty, index.span, self.module_id)
                 {
                     self.report_type_error(err);
                 }
@@ -1829,7 +1769,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     }
 
     fn report_type_error(&mut self, err: UnifyError) {
-        emit_unify_error(&err, self.typeck.resolver, self.typeck.ctx, self.icx);
+        emit_unify_error(
+            &err,
+            self.typeck.resolver,
+            self.typeck.ctx,
+            &self.typeck.icx,
+        );
     }
 }
 

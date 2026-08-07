@@ -12,15 +12,12 @@ use crate::hir::{
 use crate::interner::Symbol;
 use crate::span::Span;
 use crate::typeck::fold::{fold_ty, res_to_def_id, resolve_scheme_with_args};
-use crate::typeck::infctx::{InferCtx, TyVarId};
+use crate::typeck::infctx::TyVarId;
 use crate::typeck::types::{Scheme, Ty};
 use crate::typeck::{GenericParamInfo, TyVisitable, TyVisitor, Typeck, diag};
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn collect_signatures(&mut self) {
-        let mut icx = InferCtx::default();
-        icx.push_level();
-
         self.iter_owners(&mut |this, def_id, module_id, owner| {
             let Some(info) = owner.as_owner() else {
                 return;
@@ -32,18 +29,18 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 OwnerNode::Item(item) => match &item.kind {
                     ItemKind::Fn(fun) => {
                         let (vars, hir_ids, defaults) =
-                            Self::collect_generic_params(&mut icx, &fun.generic_params);
+                            this.collect_generic_params(&fun.generic_params);
                         if !hir_ids.is_empty() {
                             this.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body = this.fn_ty(&mut icx, &fun.decl, module_id);
+                        let body = this.fn_ty(&fun.decl, module_id);
                         this.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Const { ty, .. } => {
                         let ty = this
-                            .ty_from_hir(&mut icx, ty, module_id)
+                            .ty_from_hir(ty, module_id)
                             .unwrap_or_else(|err| {
                                 emit_ty_from_hir_error(&err, this.ctx);
                                 Ty::Error
@@ -57,8 +54,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (vars, hir_ids, defaults) =
-                            Self::collect_generic_params(&mut icx, generic_params);
+                        let (vars, hir_ids, defaults) = this.collect_generic_params(generic_params);
                         this.coherence
                             .generic_params
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
@@ -81,19 +77,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (vars, hir_ids, defaults) =
-                            Self::collect_generic_params(&mut icx, generic_params);
+                        let (vars, hir_ids, defaults) = this.collect_generic_params(generic_params);
                         if !hir_ids.is_empty() {
                             this.coherence
                                 .generic_params
                                 .insert(def_id, GenericParamInfo { hir_ids, defaults });
                         }
-                        let body =
-                            this.ty_from_hir(&mut icx, type_, module_id)
-                                .unwrap_or_else(|err| {
-                                    emit_ty_from_hir_error(&err, this.ctx);
-                                    Ty::Error
-                                });
+                        let body = this.ty_from_hir(type_, module_id).unwrap_or_else(|err| {
+                            emit_ty_from_hir_error(&err, this.ctx);
+                            Ty::Error
+                        });
                         this.item_schemes.insert(def_id, Scheme { vars, body });
                     }
                     ItemKind::Trait {
@@ -101,8 +94,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         generic_params,
                         ..
                     } => {
-                        let (vars, hir_ids, defaults) =
-                            Self::collect_generic_params(&mut icx, generic_params);
+                        let (vars, hir_ids, defaults) = this.collect_generic_params(generic_params);
                         this.coherence
                             .generic_params
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
@@ -152,9 +144,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .push(trait_def_id);
                         }
                         if let Some(struct_def_id) = this.resolve_struct(self_ty.res) {
-                            let self_generic_args = this
-                                .ty_hir_generic_args(&mut icx, self_ty, module_id)
-                                .unwrap_or(None);
+                            let self_generic_args =
+                                this.ty_hir_generic_args(self_ty, module_id).unwrap_or(None);
                             this.coherence
                                 .impl_self_types
                                 .insert(def_id, Ty::Adt(struct_def_id, self_generic_args));
@@ -169,7 +160,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 OwnerNode::AssocItem(assoc) => match &assoc.kind {
                     AssocItemKind::Fn(fun) => {
                         let (scheme_vars, hir_ids, defaults) =
-                            Self::collect_generic_params(&mut icx, &fun.generic_params);
+                            this.collect_generic_params(&fun.generic_params);
                         let parent_def_id = this
                             .coherence
                             .assoc_to_parent
@@ -179,9 +170,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         this.current_self_ty =
                             this.coherence.impl_self_types.get(&parent_def_id).cloned();
 
-                        let body = this.fn_ty(&mut icx, &fun.decl, module_id);
-                        let scheme =
-                            this.assoc_item_scheme(&mut icx, parent_def_id, scheme_vars, body);
+                        let body = this.fn_ty(&fun.decl, module_id);
+                        let scheme = this.assoc_item_scheme(parent_def_id, scheme_vars, body);
                         this.item_schemes.insert(def_id, scheme);
                         if !hir_ids.is_empty() {
                             this.coherence
@@ -203,20 +193,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             DefKind::Trait => {}
                             DefKind::Impl | DefKind::Struct => {
                                 let type_ = type_.as_ref().expect("assoc type is concrete");
-                                let body = this
-                                    .ty_from_hir(&mut icx, type_, module_id)
-                                    .unwrap_or_else(|err| {
+                                let body =
+                                    this.ty_from_hir(type_, module_id).unwrap_or_else(|err| {
                                         emit_ty_from_hir_error(&err, this.ctx);
                                         Ty::Error
                                     });
                                 // impls/structs do not yet have generic params, but act as if
                                 // they did so we can reuse logic
-                                let scheme = this.assoc_item_scheme(
-                                    &mut icx,
-                                    parent_def_id,
-                                    ThinVec::new(),
-                                    body,
-                                );
+                                let scheme =
+                                    this.assoc_item_scheme(parent_def_id, ThinVec::new(), body);
                                 this.item_schemes.insert(def_id, scheme);
                             }
                             _ => {
@@ -229,14 +214,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
         });
 
-        for err in &icx.errors {
-            emit_unify_error(err, self.resolver, self.ctx, &icx);
+        let errors = self.icx.take_errors();
+        for err in &errors {
+            emit_unify_error(err, self.resolver, self.ctx, &self.icx);
         }
     }
 
     fn assoc_item_scheme(
         &self,
-        icx: &mut InferCtx,
         parent_def_id: DefId,
         mut scheme_vars: ThinVec<TyVarId>,
         body: Ty,
@@ -250,7 +235,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .hir_ids
             .iter()
             .map(|hir_id| {
-                *icx.hir_id_to_ty_var
+                *self
+                    .icx
+                    .hir_id_to_ty_var
                     .get(hir_id)
                     .expect("parent generic param registered")
             })
@@ -679,7 +666,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     fn collect_generic_params(
-        icx: &mut InferCtx,
+        &mut self,
         generic_params: &Option<ThinVec<GenericParam>>,
     ) -> (ThinVec<TyVarId>, Vec<HirId>, ThinVec<Option<hir::Ty>>) {
         generic_params
@@ -688,8 +675,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 params
                     .iter()
                     .map(|param| {
-                        let ty_var = icx.next_ty_var();
-                        icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
+                        let ty_var = self.icx.next_ty_var();
+                        self.icx.hir_id_to_ty_var.insert(param.hir_id, ty_var);
                         (ty_var, param.hir_id, param.default.clone())
                     })
                     .collect()
@@ -697,12 +684,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             .unwrap_or_default()
     }
 
-    fn fn_ty(&mut self, icx: &mut InferCtx, decl: &FnDecl, module_id: ModuleId) -> Ty {
+    fn fn_ty(&mut self, decl: &FnDecl, module_id: ModuleId) -> Ty {
         let params: ThinVec<Ty> = decl
             .params
             .iter()
             .map(|param| {
-                self.ty_from_hir(icx, &param.ty, module_id)
+                self.ty_from_hir(&param.ty, module_id)
                     .unwrap_or_else(|err| {
                         emit_ty_from_hir_error(&err, self.ctx);
                         Ty::Error
@@ -710,7 +697,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             })
             .collect();
         let ret = self
-            .ty_from_hir(icx, &decl.ret, module_id)
+            .ty_from_hir(&decl.ret, module_id)
             .unwrap_or_else(|err| {
                 emit_ty_from_hir_error(&err, self.ctx);
                 Ty::Error

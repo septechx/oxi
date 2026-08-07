@@ -15,9 +15,6 @@ use fxhash::FxHashMap;
 
 impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     pub(crate) fn check_coherence(&mut self) {
-        let mut icx = InferCtx::default();
-        icx.push_level();
-
         self.iter_owners(&mut |this, def_id, module_id, owner| {
             let Some(item) = owner
                 .as_owner()
@@ -61,25 +58,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
 
             // 1. Extract and validate trait generic args from the path
             let trait_scheme = this.item_schemes.get(&trait_def_id).cloned();
-            let trait_generic_args = match this.ty_hir_generic_args(&mut icx, trait_ty, module_id) {
+            let trait_generic_args = match this.ty_hir_generic_args(trait_ty, module_id) {
                 Ok(args) => args,
                 Err(err) => {
                     emit_ty_from_hir_error(&err, this.ctx);
                     return;
                 }
             };
-
-            if let Some(scheme) = &trait_scheme
-                && !scheme.vars.is_empty()
-                && let Some(info) = this.coherence.generic_params.get(&trait_def_id)
-            {
-                for &hir_id in &info.hir_ids {
-                    if !icx.hir_id_to_ty_var.contains_key(&hir_id) {
-                        let var = icx.next_ty_var();
-                        icx.hir_id_to_ty_var.insert(hir_id, var);
-                    }
-                }
-            }
 
             // If no explicit generic args were provided and the trait has defaults, fill them in
             let trait_generic_args = match (&trait_scheme, &trait_generic_args) {
@@ -91,13 +76,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                         let mut args: ThinVec<Ty> = ThinVec::new();
                         for (i, default) in info.defaults.iter().enumerate() {
                             let ty = this.resolve_default_generic_arg(
-                                &mut icx,
                                 default.as_ref().expect("default exists"),
                                 module_id,
                                 &subst,
                                 Some((trait_def_id, struct_def_id)),
                             );
-                            if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                            if let Some(&var) = this.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                                 subst.insert(var, ty.clone());
                             }
                             args.push(ty);
@@ -123,7 +107,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                                 let mut full_args: ThinVec<Ty> = args.clone();
                                 for (i, arg) in full_args.iter().enumerate() {
-                                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                                    if let Some(&var) =
+                                        this.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                                    {
                                         subst.insert(var, arg.clone());
                                     }
                                 }
@@ -132,13 +118,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 {
                                     let idx = full_args.len() + i;
                                     let ty = this.resolve_default_generic_arg(
-                                        &mut icx,
                                         default.as_ref().expect("default exists"),
                                         module_id,
                                         &subst,
                                         Some((trait_def_id, struct_def_id)),
                                     );
-                                    if let Some(&var) = icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
+                                    if let Some(&var) =
+                                        this.icx.hir_id_to_ty_var.get(&info.hir_ids[idx])
                                     {
                                         subst.insert(var, ty.clone());
                                     }
@@ -172,14 +158,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             };
 
             // 2. Check for duplicate impls using resolved generic args
-            let self_type_generic_args =
-                match this.ty_hir_generic_args(&mut icx, self_ty, module_id) {
-                    Ok(args) => args,
-                    Err(err) => {
-                        emit_ty_from_hir_error(&err, this.ctx);
-                        return;
-                    }
-                };
+            let self_type_generic_args = match this.ty_hir_generic_args(self_ty, module_id) {
+                Ok(args) => args,
+                Err(err) => {
+                    emit_ty_from_hir_error(&err, this.ctx);
+                    return;
+                }
+            };
             let self_type = Ty::Adt(struct_def_id, self_type_generic_args);
             this.coherence
                 .impl_resolved_generic_args
@@ -281,19 +266,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let trait_sig_sub = substitute_self(&trait_sig.body, trait_def_id, &self_type);
                     let trait_sig_sub = substitute_ty_vars(&trait_sig_sub, &generic_subst);
                     let trait_sig_sub =
-                        instantiate_scheme_into_icx(&mut icx, trait_sig, &trait_sig_sub);
-                    let impl_sig_sub =
-                        instantiate_scheme_into_icx(&mut icx, impl_sig, &impl_sig.body.clone());
+                        instantiate_scheme_into_icx(&mut this.icx, trait_sig, &trait_sig_sub);
+                    let impl_sig_sub = instantiate_scheme_into_icx(
+                        &mut this.icx,
+                        impl_sig,
+                        &impl_sig.body.clone(),
+                    );
 
                     let method_span = this.resolver.def(*impl_method).span;
                     if this
-                        .unify(
-                            &mut icx,
-                            &trait_sig_sub,
-                            &impl_sig_sub,
-                            method_span,
-                            module_id,
-                        )
+                        .unify(&trait_sig_sub, &impl_sig_sub, method_span, module_id)
                         .is_err()
                     {
                         let method = this.ctx.interner.lookup(*name).to_string();
@@ -328,18 +310,15 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn resolve_default_generic_arg(
         &mut self,
-        icx: &mut InferCtx,
         default: &hir::Ty,
         module_id: ModuleId,
         subst: &FxHashMap<TyVarId, Ty>,
         self_subst: Option<(DefId, DefId)>,
     ) -> Ty {
-        let mut ty = self
-            .ty_from_hir(icx, default, module_id)
-            .unwrap_or_else(|err| {
-                emit_ty_from_hir_error(&err, self.ctx);
-                Ty::Error
-            });
+        let mut ty = self.ty_from_hir(default, module_id).unwrap_or_else(|err| {
+            emit_ty_from_hir_error(&err, self.ctx);
+            Ty::Error
+        });
         ty = self.normalize_assoc_projections(&ty);
         if !subst.is_empty() {
             ty = substitute_ty_vars(&ty, subst);

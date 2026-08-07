@@ -64,7 +64,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         args: &ThinVec<Expr>,
     ) -> Ty {
         let callee_ty = self.check_expr(callee);
-        let callee_ty = self.icx.resolve(&callee_ty);
+        let callee_ty = self.typeck.icx.resolve(&callee_ty);
         let callee_ty = self.typeck.normalize_assoc_projections(&callee_ty);
         self.node_types.insert(callee.hir_id, callee_ty.clone());
         match callee_ty {
@@ -138,8 +138,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             let expected_ty = &param_tys_without_self[i];
 
             self.typeck
-                .unify(self.icx, expected_ty, &arg_ty, arg_span, self.module_id)
-                .or_push_err(self.icx);
+                .unify(expected_ty, &arg_ty, arg_span, self.module_id)
+                .or_push_err(&mut self.typeck.icx);
         }
 
         true
@@ -205,14 +205,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             // so that e.g. Foo::<u32>::do_stuff(&foo) checks that foo: Foo<u32>
             let scheme = self.fold_recv_into_scheme(def_id, scheme, &recv_ty);
 
-            let snap = self.icx.snapshot();
+            let snap = self.typeck.icx.snapshot();
 
             // Silently skip arity-mismatched candidates during speculative probing;
             // diagnostics are deferred to the fallback path (all candidates failed).
             if let Some(args) = explicit_generic_args {
                 let mut completed = args.clone();
                 if !self.try_complete_generic_args(*def_id, &mut completed, scheme.vars.len()) {
-                    self.icx.rollback(snap);
+                    self.typeck.icx.rollback(snap);
                     continue;
                 }
             }
@@ -224,7 +224,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 callee_span,
                 true,
             ) else {
-                self.icx.rollback(snap);
+                self.typeck.icx.rollback(snap);
                 continue;
             };
             let Ty::Fn {
@@ -232,11 +232,11 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 ret,
             } = instantiated
             else {
-                self.icx.rollback(snap);
+                self.typeck.icx.rollback(snap);
                 continue;
             };
 
-            let before_errors = self.icx.errors.len();
+            let before_errors = self.typeck.icx.errors.len();
 
             if !self.try_match_method_args(
                 &recv_ty,
@@ -245,12 +245,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 is_method_call,
                 call_span,
             ) {
-                self.icx.rollback(snap);
+                self.typeck.icx.rollback(snap);
                 continue;
             }
 
-            if self.icx.errors.len() != before_errors {
-                self.icx.rollback(snap);
+            if self.typeck.icx.errors.len() != before_errors {
+                self.typeck.icx.rollback(snap);
                 continue;
             }
 
@@ -271,8 +271,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 },
             );
 
-            let ret = self.icx.resolve(&ret);
-            let ret = if let Ty::Adt(recv_id, Some(recv_args)) = self.icx.resolve(&recv_ty) {
+            let ret = self.typeck.icx.resolve(&ret);
+            let ret = if let Ty::Adt(recv_id, Some(recv_args)) = self.typeck.icx.resolve(&recv_ty) {
                 let recv_args = recv_args.clone();
                 fold_ty(&ret, &mut |ty| match ty {
                     Ty::Adt(id, None) if id == recv_id => Ty::Adt(id, Some(recv_args.clone())),
@@ -351,13 +351,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             if is_method_call && !param_tys.is_empty() {
                 let first = param_tys.first().expect("method has at least 1 param");
                 self.typeck
-                    .unify(self.icx, first, &recv_ty, call_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(first, &recv_ty, call_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
             }
             for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_without_self) {
                 self.typeck
-                    .unify(self.icx, param_ty, arg_ty, call_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(param_ty, arg_ty, call_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
             }
         }
         Ty::Error
@@ -425,8 +425,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         // Match receiver against first param
         if is_method_call && !param_tys.is_empty() {
             let first = param_tys.first().expect("method has at least 1 param");
-            let arg_r = self.icx.resolve(recv_ty);
-            let param_r = self.icx.resolve(first);
+            let arg_r = self.typeck.icx.resolve(recv_ty);
+            let param_r = self.typeck.icx.resolve(first);
             if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
                 && let Ty::Ptr(..) = &param_r
             {
@@ -435,14 +435,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 };
                 if self
                     .typeck
-                    .unify(self.icx, &inner, recv_ty, call_span, self.module_id)
+                    .unify(&inner, recv_ty, call_span, self.module_id)
                     .is_err()
                 {
                     return false;
                 }
             } else if self
                 .typeck
-                .unify(self.icx, first, recv_ty, call_span, self.module_id)
+                .unify(first, recv_ty, call_span, self.module_id)
                 .is_err()
             {
                 return false;
@@ -452,7 +452,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_withut_self) {
             if self
                 .typeck
-                .unify(self.icx, param_ty, arg_ty, call_span, self.module_id)
+                .unify(param_ty, arg_ty, call_span, self.module_id)
                 .is_err()
             {
                 return false;
@@ -463,7 +463,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     }
 
     fn resolve_method_candidates(&self, recv_ty: &Ty, member: Symbol) -> Vec<(DefId, MethodKind)> {
-        let recv_ty = self.icx.resolve(recv_ty);
+        let recv_ty = self.typeck.icx.resolve(recv_ty);
         let Ty::Adt(struct_id, _) = recv_ty else {
             return vec![];
         };
@@ -503,8 +503,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) {
         if is_method_call && !param_tys.is_empty() {
             let first = param_tys.first().expect("method has at least 1 param");
-            let arg_r = self.icx.resolve(recv_ty);
-            let param_r = self.icx.resolve(first);
+            let arg_r = self.typeck.icx.resolve(recv_ty);
+            let param_r = self.typeck.icx.resolve(first);
             if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
                 && let Ty::Ptr(..) = &param_r
             {
@@ -518,12 +518,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .push(Adjustment::AutoRef(mutability));
                 }
                 self.typeck
-                    .unify(self.icx, &inner, recv_ty, call_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(&inner, recv_ty, call_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
             } else {
                 self.typeck
-                    .unify(self.icx, first, recv_ty, call_span, self.module_id)
-                    .or_push_err(self.icx);
+                    .unify(first, recv_ty, call_span, self.module_id)
+                    .or_push_err(&mut self.typeck.icx);
             }
         }
     }
