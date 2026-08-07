@@ -1273,7 +1273,26 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 }
                 StructInitDef::Expanded(struct_def, args)
             }
-            Ty::Adt(struct_def, None) => StructInitDef::Expanded(struct_def, ThinVec::new()),
+            Ty::Adt(struct_def, None) => {
+                let struct_info = self
+                    .typeck
+                    .coherence
+                    .generic_params
+                    .get(&struct_def)
+                    .cloned();
+                let mut args: ThinVec<Ty> = ThinVec::new();
+                if let Some(info) = &struct_info {
+                    for i in 0..info.hir_ids.len() {
+                        let var = self.icx.next_ty_var();
+                        if let Some(Some(default_ty)) = info.defaults.get(i) {
+                            let default_ty = self.ty_from_hir_resolved(default_ty);
+                            self.icx.add_generic_default(var, default_ty);
+                        }
+                        args.push(Ty::Var(var));
+                    }
+                }
+                StructInitDef::Expanded(struct_def, args)
+            }
             _ => {
                 let name = self
                     .typeck
