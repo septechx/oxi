@@ -64,6 +64,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
+                        this.impl_self_types.insert(def_id, scheme.body.clone());
                         this.item_schemes.insert(def_id, scheme);
 
                         let entry = this.coherence.struct_fields.entry(def_id).or_default();
@@ -105,6 +106,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             .insert(def_id, GenericParamInfo { hir_ids, defaults });
 
                         let scheme = Self::adt_scheme(def_id, vars);
+                        this.impl_self_types.insert(def_id, scheme.body.clone());
                         this.item_schemes.insert(def_id, scheme);
 
                         let methods: Vec<(Symbol, DefId)> = items
