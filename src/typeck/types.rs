@@ -112,6 +112,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 generic_args,
                             }),
                             DefKind::Struct => Ok(Ty::Adt(def_id, generic_args)),
+                            DefKind::AssocType => Err(TyFromHirError::UnresolvedAssocType {
+                                span: path.span,
+                                module_id,
+                            }),
                             _ => Ok(Ty::Error),
                         }
                     }

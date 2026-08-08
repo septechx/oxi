@@ -44,6 +44,8 @@ enum StructInitDef {
     Error,
 }
 
+type ProjectionRecKey = (DefId, DefId, Ty, Option<ThinVec<Ty>>);
+
 fn tail_span(expr: &Expr) -> Span {
     match &expr.kind {
         ExprKind::Block(block) => block
@@ -282,18 +284,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     }
 
     pub(crate) fn normalize_type_alias(&mut self, ty: &Ty) -> Ty {
-        self.normalize_assoc_projections_inner(
-            ty,
-            &mut FxHashSet::default(),
-            &mut FxHashSet::default(),
-        )
+        self.normalize_assoc_projections_inner(ty, &mut FxHashSet::default(), &mut Vec::new())
     }
 
     fn normalize_assoc_projections_inner(
         &mut self,
         ty: &Ty,
         aliases_in_progress: &mut FxHashSet<DefId>,
-        projections_in_progress: &mut FxHashSet<(DefId, DefId, DefId)>,
+        projections_in_progress: &mut Vec<ProjectionRecKey>,
     ) -> Ty {
         fold_ty(ty, &mut |ty| match &ty {
             Ty::Alias {
@@ -340,8 +338,14 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     if let Some(impl_def_id) =
                         self.impl_matching_trait_args(&matching, trait_generic_args)
                     {
-                        let key = (*trait_def_id, *self_def_id, *assoc_def_id);
-                        if projections_in_progress.insert(key) {
+                        let key = (
+                            *trait_def_id,
+                            *assoc_def_id,
+                            self_ty.as_ref().clone(),
+                            trait_generic_args.clone(),
+                        );
+                        if !projections_in_progress.contains(&key) {
+                            projections_in_progress.push(key.clone());
                             let assoc_types = self.compute_assoc_types(impl_def_id);
                             let concrete = assoc_types.get(&(*trait_def_id, name));
                             if let Some(concrete) = concrete {
@@ -350,10 +354,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     aliases_in_progress,
                                     projections_in_progress,
                                 );
-                                projections_in_progress.remove(&key);
+                                projections_in_progress.retain(|k| k != &key);
                                 return normalized;
                             }
-                            projections_in_progress.remove(&key);
+                            projections_in_progress.retain(|k| k != &key);
                         }
                     }
                 }
@@ -476,13 +480,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         emit_ty_from_hir_error(&err, self.typeck.ctx);
     }
 
-    pub fn normalize_aliases(&mut self, ty: Ty, span: Span) -> TyFromHirResult<Ty> {
-        self.normalize_aliases_inner(
-            ty,
-            span,
-            &mut FxHashSet::default(),
-            &mut FxHashSet::default(),
-        )
+    fn normalize_aliases(&mut self, ty: Ty, span: Span) -> TyFromHirResult<Ty> {
+        self.normalize_aliases_inner(ty, span, &mut FxHashSet::default(), &mut Vec::new())
     }
 
     fn normalize_aliases_inner(
@@ -490,7 +489,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         ty: Ty,
         span: Span,
         in_progress: &mut FxHashSet<DefId>,
-        projections_in_progress: &mut FxHashSet<(DefId, Option<DefId>, DefId)>,
+        projections_in_progress: &mut Vec<ProjectionRecKey>,
     ) -> TyFromHirResult<Ty> {
         try_fold_ty(&ty, &mut |ty| match ty {
             Ty::Alias {
@@ -538,17 +537,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         module_id: self.module_id,
                     });
                 };
-                let self_def_id = match self_ty.as_ref() {
-                    Ty::Adt(id, _) => Some(*id),
-                    _ => None,
-                };
-                let key = (trait_def_id, self_def_id, assoc_def_id);
-                if !projections_in_progress.insert(key) {
+                let key = (
+                    trait_def_id,
+                    assoc_def_id,
+                    self_ty.as_ref().clone(),
+                    trait_generic_args.clone(),
+                );
+                if projections_in_progress.contains(&key) {
                     return Err(TyFromHirError::UnresolvedAssocType {
                         span,
                         module_id: self.module_id,
                     });
                 }
+                projections_in_progress.push(key.clone());
                 let resolved = if self
                     .typeck
                     .current_self_ty
@@ -604,7 +605,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         module_id: self.module_id,
                     })
                 };
-                projections_in_progress.remove(&key);
+                projections_in_progress.retain(|k| k != &key);
                 resolved
             }
             ty => Ok(ty),
@@ -922,8 +923,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 }
             }
         }
+        let mut completed_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
         for (hir_arg_ty, &v) in args.iter().zip(method_vars) {
-            let arg_ty = match self.try_ty_from_hir_resolved(hir_arg_ty) {
+            let mut arg_ty = match self.try_ty_from_hir_resolved(hir_arg_ty) {
                 Ok(ty) => ty,
                 Err(err) if suppress_errors => return Err(err),
                 Err(err) => {
@@ -931,11 +933,15 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     Ty::Error
                 }
             };
+            if !completed_subst.is_empty() {
+                arg_ty = substitute_ty_vars(&arg_ty, &completed_subst);
+            }
             self.node_types.insert(hir_arg_ty.hir_id, arg_ty.clone());
             let &fresh = mapping.get(&v).expect("fresh var exists");
             self.typeck
                 .unify(&Ty::Var(fresh), &arg_ty, span, self.module_id)
                 .or_push_err(&mut self.typeck.icx);
+            completed_subst.insert(v, arg_ty);
         }
         Ok(self.typeck.icx.instantiate_with(&scheme.body, &mapping))
     }
@@ -2007,7 +2013,7 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             assoc_def_id,
             self_ty,
             generic_args,
-            ..
+            trait_generic_args,
         } => {
             let name = resolver
                 .def(*trait_def_id)
@@ -2020,9 +2026,10 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
                 .map(|sym| interner.lookup(sym).to_string())
                 .unwrap_or_else(|| format!("Ty#{}", assoc_def_id.0));
             format!(
-                "<{} as {}>::{}{}",
+                "<{} as {}{}>::{}{}",
                 ty_display(self_ty, resolver, interner),
                 name,
+                generics_to_string(trait_generic_args.as_ref(), resolver, interner),
                 assoc_name,
                 generics_to_string(generic_args.as_ref(), resolver, interner)
             )

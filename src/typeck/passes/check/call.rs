@@ -351,8 +351,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         } else {
             if is_method_call && !param_tys.is_empty() {
                 let first = param_tys.first().expect("method has at least 1 param");
+                let (target, _) = self.receiver_auto_ref(&recv_ty, first);
                 self.typeck
-                    .unify(first, &recv_ty, call_span, self.module_id)
+                    .unify(&target, &recv_ty, call_span, self.module_id)
                     .or_push_err(&mut self.typeck.icx);
             }
             for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_without_self) {

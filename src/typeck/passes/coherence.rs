@@ -306,14 +306,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             emit_ty_from_hir_error(&err, self.ctx);
             Ty::Error
         });
-        ty = self.normalize_type_alias(&ty);
         if !subst.is_empty() {
             ty = substitute_ty_vars(&ty, subst);
         }
         if let Some((trait_def_id, struct_def_id)) = self_subst {
             ty = substitute_self(&ty, trait_def_id, &Ty::Adt(struct_def_id, None));
         }
-        ty
+        self.normalize_type_alias(&ty)
     }
 }
 

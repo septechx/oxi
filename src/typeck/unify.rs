@@ -150,6 +150,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             (Ty::Projection { .. }, _) => {
                 let a = self.normalize_type_alias(&a);
+                let b = self.normalize_type_alias(&b);
                 if matches!(&a, Ty::Projection { .. }) {
                     Err(mismatch(a, b, span, module_id))
                 } else {
@@ -157,6 +158,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
             (_, Ty::Projection { .. }) => {
+                let a = self.normalize_type_alias(&a);
                 let b = self.normalize_type_alias(&b);
                 if matches!(&b, Ty::Projection { .. }) {
                     Err(mismatch(a, b, span, module_id))
@@ -312,6 +314,7 @@ mod tests {
     use crate::context::Ctx;
     use crate::hir::{Crate, Def, DefId, DefKind, IntTy, PrimTy, UintTy};
     use crate::resolve::{PerModule, ResolverOutputs};
+    use crate::typeck::types::Scheme;
     use fxhash::FxHashMap;
     use thin_vec::thin_vec;
 
@@ -552,5 +555,54 @@ mod tests {
         let a = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int()]));
         let b = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int(), int()]));
         assert!(tc.unify(&a, &b, no_span(), NO_MODULE).is_err());
+    }
+
+    #[test]
+    fn unify_unexpandable_alias_fails_on_either_side() {
+        let mut tc = typeck();
+        let alias = Ty::Alias {
+            def_id: DefId(9),
+            generic_args: None,
+        };
+        assert!(tc.unify(&alias, &int(), no_span(), NO_MODULE).is_err());
+        assert!(tc.unify(&int(), &alias, no_span(), NO_MODULE).is_err());
+    }
+
+    #[test]
+    fn unify_alias_with_scheme_expands_to_concrete() {
+        let mut tc = typeck();
+        tc.item_schemes.insert(DefId(9), Scheme::monomorphic(int()));
+        let alias = Ty::Alias {
+            def_id: DefId(9),
+            generic_args: None,
+        };
+        assert!(tc.unify(&alias, &int(), no_span(), NO_MODULE).is_ok());
+        assert!(tc.unify(&int(), &alias, no_span(), NO_MODULE).is_ok());
+    }
+
+    #[test]
+    fn unify_projection_normalizes_alias_on_other_side_before_mismatch() {
+        let mut tc = typeck();
+        // The alias expands to `i32`; the projection stays unexpanded (its self
+        // type is a primitive here, so no impl applies), so both directions
+        // remain mismatches, but the alias operand is reported in expanded form.
+        tc.item_schemes.insert(DefId(9), Scheme::monomorphic(int()));
+        let alias = Ty::Alias {
+            def_id: DefId(9),
+            generic_args: None,
+        };
+        let proj = projection(DefId(0), DefId(1), None);
+        let err = tc
+            .unify(&alias, &proj, no_span(), NO_MODULE)
+            .expect_err("alias vs projection must mismatch");
+        assert!(
+            matches!(err, UnifyError::Mismatch { expected, found, .. } if expected == int() && matches!(found, Ty::Projection { .. }))
+        );
+        let err = tc
+            .unify(&proj, &alias, no_span(), NO_MODULE)
+            .expect_err("projection vs alias must mismatch");
+        assert!(
+            matches!(err, UnifyError::Mismatch { expected, found, .. } if matches!(expected, Ty::Projection { .. }) && found == int())
+        );
     }
 }
