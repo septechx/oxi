@@ -2,7 +2,8 @@ use oxic_diag::include_diagnostics;
 
 use crate::ast::visit::{VisitAction, Visitable, Visitor};
 use crate::ast::{
-    AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, Ident, Item, ItemKind, Stmt, StmtKind,
+    AssocItem, AssocItemKind, Ast, Block, Expr, ExprKind, Fn, GenericParams, Ident, Item, ItemKind,
+    Stmt, StmtKind,
 };
 use crate::context::with_ctx_mut;
 use crate::diag_params;
@@ -53,8 +54,31 @@ impl AstValidator {
         }
     }
 
+    fn validate_generic_param_order(&self, generic_params: &Option<GenericParams>) {
+        let Some(generic_params) = generic_params else {
+            return;
+        };
+        let mut seen_default = false;
+        for param in &generic_params.params {
+            if param.default.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                with_ctx_mut(|ctx| {
+                    builders::emit_at(
+                        ctx,
+                        param.name.span,
+                        self.module_id,
+                        diag::GenericDefaultBefore,
+                        diag_params! {},
+                    );
+                });
+            }
+        }
+    }
+
     fn validate_fn_decl(&mut self, f: &Fn) {
         self.check_duplicate_names(f.parameters.iter().map(|a| &a.0), "function parameters");
+        self.validate_generic_param_order(&f.generic_params);
 
         if f.is_extern {
             if f.body.is_some() {
@@ -165,7 +189,13 @@ impl Visitor for AstValidator {
                 self.is_top_level = old_top_level;
                 VisitAction::SkipChildren
             }
-            ItemKind::Struct { fields, items, .. } => {
+            ItemKind::Struct {
+                fields,
+                items,
+                generic_params,
+                ..
+            } => {
+                self.validate_generic_param_order(generic_params);
                 self.check_duplicate_names(fields.iter().map(|f| &f.0), "struct fields");
                 self.check_duplicate_names(
                     items.iter().map(|item| match &item.kind {
@@ -184,7 +214,12 @@ impl Visitor for AstValidator {
 
                 VisitAction::SkipChildren
             }
-            ItemKind::Trait { items, .. } => {
+            ItemKind::Trait {
+                items,
+                generic_params,
+                ..
+            } => {
+                self.validate_generic_param_order(generic_params);
                 self.check_duplicate_names(
                     items.iter().map(|item| match &item.kind {
                         AssocItemKind::Fn(f) => &f.name,
@@ -207,7 +242,10 @@ impl Visitor for AstValidator {
             }
             ItemKind::Const { .. } => VisitAction::Continue,
             ItemKind::Import(_) => VisitAction::Continue,
-            ItemKind::Type { .. } => VisitAction::Continue,
+            ItemKind::Type { generic_params, .. } => {
+                self.validate_generic_param_order(generic_params);
+                VisitAction::Continue
+            }
             ItemKind::Module { body, .. } => {
                 if let Some(items) = body {
                     let mut names = Vec::new();
