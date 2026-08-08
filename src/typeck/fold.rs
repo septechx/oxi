@@ -28,30 +28,13 @@ where
 {
     let ty = match ty {
         Ty::Var(_) | Ty::Prim(_) | Ty::Never | Ty::MethodCallee | Ty::Error => ty.clone(),
-        Ty::Adt(d, generics) => Ty::Adt(
-            *d,
-            generics
-                .as_ref()
-                .map(|args| {
-                    args.iter()
-                        .map(|ty| try_fold_ty(ty, f))
-                        .collect::<Result<ThinVec<_>, _>>()
-                })
-                .transpose()?,
-        ),
+        Ty::Adt(d, generics) => Ty::Adt(*d, try_fold_generics(generics, f)?),
         Ty::Alias {
             def_id,
             generic_args,
         } => Ty::Alias {
             def_id: *def_id,
-            generic_args: generic_args
-                .as_ref()
-                .map(|args| {
-                    args.iter()
-                        .map(|ty| try_fold_ty(ty, f))
-                        .collect::<Result<ThinVec<_>, _>>()
-                })
-                .transpose()?,
+            generic_args: try_fold_generics(generic_args, f)?,
         },
         Ty::Ptr(inner, m) => Ty::Ptr(try_fold_ty(inner, f)?.into_box(), *m),
         Ty::Slice(inner) => Ty::Slice(try_fold_ty(inner, f)?.into_box()),
@@ -74,22 +57,34 @@ where
             assoc_def_id,
             self_ty,
             generic_args,
+            trait_generic_args,
         } => Ty::Projection {
             self_ty: try_fold_ty(self_ty, f)?.into_box(),
-            generic_args: generic_args
-                .as_ref()
-                .map(|args| {
-                    args.iter()
-                        .map(|ty| try_fold_ty(ty, f))
-                        .collect::<Result<ThinVec<_>, _>>()
-                })
-                .transpose()?,
+            generic_args: try_fold_generics(generic_args, f)?,
+            trait_generic_args: try_fold_generics(trait_generic_args, f)?,
             trait_def_id: *trait_def_id,
             assoc_def_id: *assoc_def_id,
         },
     };
 
     f(ty)
+}
+
+fn try_fold_generics<F, E>(
+    generic_args: &Option<ThinVec<Ty>>,
+    f: &mut F,
+) -> Result<Option<ThinVec<Ty>>, E>
+where
+    F: FnMut(Ty) -> Result<Ty, E>,
+{
+    generic_args
+        .as_ref()
+        .map(|args| {
+            args.iter()
+                .map(|ty| try_fold_ty(ty, f))
+                .collect::<Result<ThinVec<_>, _>>()
+        })
+        .transpose()
 }
 
 pub fn substitute_ty_vars(ty: &Ty, mapping: &FxHashMap<TyVarId, Ty>) -> Ty {

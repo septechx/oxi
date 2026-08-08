@@ -61,6 +61,7 @@ pub enum Ty {
         assoc_def_id: DefId,
         self_ty: Box<Ty>,
         generic_args: Option<ThinVec<Ty>>,
+        trait_generic_args: Option<ThinVec<Ty>>,
     },
     Never,
     /// Dummy type for the synthetic `Path` callee created during THIR lowering
@@ -110,7 +111,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 def_id,
                                 generic_args,
                             }),
-                            _ => Ok(Ty::Adt(def_id, generic_args)),
+                            DefKind::Struct => Ok(Ty::Adt(def_id, generic_args)),
+                            _ => Ok(Ty::Error),
                         }
                     }
                     Res::SelfTyAlias { alias_to } => {
@@ -290,7 +292,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     };
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
-                            Some(assoc_def_id) => (def_id, assoc_def_id, self_ty, None),
+                            Some(assoc_def_id) => (
+                                def_id,
+                                assoc_def_id,
+                                self_ty,
+                                self.shorthand_trait_args(def_id, module_id),
+                            ),
                             None => {
                                 return Err(TyFromHirError::UnresolvedAssocType {
                                     span: segment.ident.span,
@@ -309,9 +316,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 return Ok(resolved);
                             }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
-                                TraitAssocTypeLookup::Found(trait_id, assoc_id) => {
-                                    (trait_id, assoc_id, self_ty, None)
-                                }
+                                TraitAssocTypeLookup::Found(trait_id, assoc_id) => (
+                                    trait_id,
+                                    assoc_id,
+                                    self_ty,
+                                    self.shorthand_trait_args(trait_id, module_id),
+                                ),
                                 TraitAssocTypeLookup::Ambiguous
                                 | TraitAssocTypeLookup::NotFound => {
                                     return Err(TyFromHirError::UnresolvedAssocType {
@@ -352,8 +362,26 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             trait_def_id,
             assoc_def_id,
             self_ty: Box::new(self_ty),
-            generic_args: segment_args.or(trait_path_args),
+            generic_args: segment_args,
+            trait_generic_args: trait_path_args,
         })
+    }
+
+    fn shorthand_trait_args(
+        &mut self,
+        trait_def_id: DefId,
+        module_id: ModuleId,
+    ) -> Option<ThinVec<Ty>> {
+        let info = self.coherence.generic_params.get(&trait_def_id)?;
+        if info.hir_ids.is_empty()
+            || info.hir_ids.len() != info.defaults.len()
+            || !info.defaults.iter().all(|d| d.is_some())
+        {
+            return None;
+        }
+        let mut args = Some(ThinVec::new());
+        self.fill_generic_defaults(trait_def_id, &mut args, module_id);
+        args
     }
 
     fn find_trait_assoc_type_for_struct(
@@ -453,7 +481,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     if !param_args.is_empty() {
                         ty = substitute_ty_vars(&ty, &param_args);
                     }
-                    ty = self.normalize_assoc_projections(&ty);
+                    ty = self.normalize_type_alias(&ty);
                     if let Some(&var) = self.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
                         param_args.insert(var, ty.clone());
                     }

@@ -4,6 +4,7 @@ use crate::span::Span;
 use crate::typeck::infctx::{InferCtx, TyVarId, TyVarSource};
 use crate::typeck::types::Ty;
 use crate::typeck::{TyVisitable, TyVisitor, Typeck};
+use thin_vec::ThinVec;
 
 #[derive(Debug, Clone)]
 pub enum UnifyError {
@@ -46,7 +47,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             (Ty::MethodCallee, _) | (_, Ty::MethodCallee) => Ok(()),
             (Ty::Var(v), t) | (t, Ty::Var(v)) => {
                 let t = match t {
-                    Ty::Projection { .. } => self.normalize_assoc_projections(t),
+                    Ty::Projection { .. } | Ty::Alias { .. } => self.normalize_type_alias(t),
                     _ => t.clone(),
                 };
                 bind(&mut self.icx, *v, &t, span, module_id)
@@ -116,37 +117,29 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 Ok(())
             }
             (Ty::Projection { .. }, Ty::Projection { .. }) => {
-                let a = self.normalize_assoc_projections(&a);
-                let b = self.normalize_assoc_projections(&b);
+                let a = self.normalize_type_alias(&a);
+                let b = self.normalize_type_alias(&b);
                 if let (
                     Ty::Projection {
                         trait_def_id: t1,
                         assoc_def_id: ad1,
                         self_ty: s1,
                         generic_args: g1,
+                        trait_generic_args: tg1,
                     },
                     Ty::Projection {
                         trait_def_id: t2,
                         assoc_def_id: ad2,
                         self_ty: s2,
                         generic_args: g2,
+                        trait_generic_args: tg2,
                     },
                 ) = (&a, &b)
                 {
                     if t1 == t2 && ad1 == ad2 {
                         self.unify(s1, s2, span, module_id)?;
-                        match (g1, g2) {
-                            (Some(g1), Some(g2)) => {
-                                if g1.len() != g2.len() {
-                                    return Err(mismatch(a, b, span, module_id));
-                                }
-                                for (x, y) in g1.iter().zip(g2) {
-                                    self.unify(x, y, span, module_id)?;
-                                }
-                            }
-                            (None, None) => {}
-                            _ => return Err(mismatch(a, b, span, module_id)),
-                        }
+                        self.unify_alias_args(g1, g2, &a, &b, span, module_id)?;
+                        self.unify_alias_args(tg1, tg2, &a, &b, span, module_id)?;
                         Ok(())
                     } else {
                         Err(mismatch(a, b, span, module_id))
@@ -156,7 +149,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
             (Ty::Projection { .. }, _) => {
-                let a = self.normalize_assoc_projections(&a);
+                let a = self.normalize_type_alias(&a);
                 if matches!(&a, Ty::Projection { .. }) {
                     Err(mismatch(a, b, span, module_id))
                 } else {
@@ -164,8 +157,24 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 }
             }
             (_, Ty::Projection { .. }) => {
-                let b = self.normalize_assoc_projections(&b);
+                let b = self.normalize_type_alias(&b);
                 if matches!(&b, Ty::Projection { .. }) {
+                    Err(mismatch(a, b, span, module_id))
+                } else {
+                    self.unify(&a, &b, span, module_id)
+                }
+            }
+            (Ty::Alias { .. }, _) => {
+                let a = self.normalize_type_alias(&a);
+                if matches!(&a, Ty::Alias { .. }) {
+                    Err(mismatch(a, b, span, module_id))
+                } else {
+                    self.unify(&a, &b, span, module_id)
+                }
+            }
+            (_, Ty::Alias { .. }) => {
+                let b = self.normalize_type_alias(&b);
+                if matches!(&b, Ty::Alias { .. }) {
                     Err(mismatch(a, b, span, module_id))
                 } else {
                     self.unify(&a, &b, span, module_id)
@@ -173,6 +182,30 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             _ => Err(mismatch(a, b, span, module_id)),
         }
+    }
+
+    fn unify_alias_args(
+        &mut self,
+        left: &Option<ThinVec<Ty>>,
+        right: &Option<ThinVec<Ty>>,
+        a: &Ty,
+        b: &Ty,
+        span: Span,
+        module_id: ModuleId,
+    ) -> UnifyResult<()> {
+        match (left, right) {
+            (Some(left), Some(right)) => {
+                if left.len() != right.len() {
+                    return Err(mismatch(a.clone(), b.clone(), span, module_id));
+                }
+                for (x, y) in left.iter().zip(right) {
+                    self.unify(x, y, span, module_id)?;
+                }
+            }
+            (None, None) => {}
+            _ => return Err(mismatch(a.clone(), b.clone(), span, module_id)),
+        }
+        Ok(())
     }
 }
 
@@ -311,6 +344,22 @@ mod tests {
             assoc_def_id,
             self_ty: Box::new(int()),
             generic_args,
+            trait_generic_args: None,
+        }
+    }
+
+    fn projection_with_trait_args(
+        trait_def_id: DefId,
+        assoc_def_id: DefId,
+        generic_args: Option<thin_vec::ThinVec<Ty>>,
+        trait_generic_args: Option<thin_vec::ThinVec<Ty>>,
+    ) -> Ty {
+        Ty::Projection {
+            trait_def_id,
+            assoc_def_id,
+            self_ty: Box::new(int()),
+            generic_args,
+            trait_generic_args,
         }
     }
 
@@ -478,6 +527,30 @@ mod tests {
         let mut tc = typeck();
         let a = projection(DefId(0), DefId(1), Some(thin_vec![int()]));
         let b = projection(DefId(0), DefId(1), None);
+        assert!(tc.unify(&a, &b, no_span(), NO_MODULE).is_err());
+    }
+
+    #[test]
+    fn unify_projection_trait_generic_args_presence_mismatch_fails() {
+        let mut tc = typeck();
+        let a = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int()]));
+        let b = projection_with_trait_args(DefId(0), DefId(1), None, None);
+        assert!(tc.unify(&a, &b, no_span(), NO_MODULE).is_err());
+    }
+
+    #[test]
+    fn unify_projection_matching_trait_generic_args_succeeds() {
+        let mut tc = typeck();
+        let a = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int()]));
+        let b = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int()]));
+        assert!(tc.unify(&a, &b, no_span(), NO_MODULE).is_ok());
+    }
+
+    #[test]
+    fn unify_projection_len_mismatched_trait_generic_args_fails() {
+        let mut tc = typeck();
+        let a = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int()]));
+        let b = projection_with_trait_args(DefId(0), DefId(1), None, Some(thin_vec![int(), int()]));
         assert!(tc.unify(&a, &b, no_span(), NO_MODULE).is_err());
     }
 }

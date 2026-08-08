@@ -113,10 +113,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                         subst.insert(var, arg.clone());
                                     }
                                 }
-                                for (i, default) in
-                                    info.defaults[full_args.len()..].iter().enumerate()
-                                {
-                                    let idx = full_args.len() + i;
+                                let base = full_args.len();
+                                for (i, default) in info.defaults[base..].iter().enumerate() {
+                                    let idx = base + i;
                                     let ty = this.resolve_default_generic_arg(
                                         default.as_ref().expect("default exists"),
                                         module_id,
@@ -176,7 +175,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 let others: Vec<_> = existing
                     .iter()
                     .copied()
-                    .filter(|&id| id != def_id)
+                    .filter(|&id| id.0 < def_id.0)
                     .collect();
                 if others.is_empty() {
                     false
@@ -215,15 +214,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     diag_params! { trait = trait_, struct = strct },
                 );
                 return;
-            }
-            if !this
-                .coherence
-                .impls
-                .get(&key)
-                .is_some_and(|existing| existing.contains(&def_id))
-            {
-                this.coherence.impls.entry(key).or_default().push(def_id);
-                this.coherence.impl_to_trait.insert(def_id, trait_def_id);
             }
 
             let mut generic_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
@@ -316,7 +306,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             emit_ty_from_hir_error(&err, self.ctx);
             Ty::Error
         });
-        ty = self.normalize_assoc_projections(&ty);
+        ty = self.normalize_type_alias(&ty);
         if !subst.is_empty() {
             ty = substitute_ty_vars(&ty, subst);
         }

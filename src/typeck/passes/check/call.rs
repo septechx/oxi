@@ -1,6 +1,7 @@
 use fxhash::FxHashMap;
 use thin_vec::ThinVec;
 
+use crate::ast::Mutability;
 use crate::errors::builders;
 use crate::hir::{DefId, Expr, ExprKind, HirId, QPath};
 use crate::interner::Symbol;
@@ -65,7 +66,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) -> Ty {
         let callee_ty = self.check_expr(callee);
         let callee_ty = self.typeck.icx.resolve(&callee_ty);
-        let callee_ty = self.typeck.normalize_assoc_projections(&callee_ty);
+        let callee_ty = self.typeck.normalize_type_alias(&callee_ty);
         self.node_types.insert(callee.hir_id, callee_ty.clone());
         match callee_ty {
             Ty::Fn {
@@ -160,7 +161,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         receiver_hir_id: Option<HirId>,
         explicit_generic_args: Option<&ThinVec<hir::Ty>>,
     ) -> Ty {
-        let recv_ty = self.typeck.normalize_assoc_projections(&recv_ty);
+        let recv_ty = self.typeck.normalize_type_alias(&recv_ty);
         let candidates = self.resolve_method_candidates(&recv_ty, member);
         if candidates.is_empty() {
             builders::emit_at(
@@ -281,7 +282,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             } else {
                 ret
             };
-            return self.typeck.normalize_assoc_projections(&ret);
+            return self.typeck.normalize_type_alias(&ret);
         }
 
         // All candidates failed
@@ -425,24 +426,10 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         // Match receiver against first param
         if is_method_call && !param_tys.is_empty() {
             let first = param_tys.first().expect("method has at least 1 param");
-            let arg_r = self.typeck.icx.resolve(recv_ty);
-            let param_r = self.typeck.icx.resolve(first);
-            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
-                && let Ty::Ptr(..) = &param_r
-            {
-                let Ty::Ptr(inner, _) = param_r else {
-                    unreachable!()
-                };
-                if self
-                    .typeck
-                    .unify(&inner, recv_ty, call_span, self.module_id)
-                    .is_err()
-                {
-                    return false;
-                }
-            } else if self
+            let (target, _) = self.receiver_auto_ref(recv_ty, first);
+            if self
                 .typeck
-                .unify(first, recv_ty, call_span, self.module_id)
+                .unify(&target, recv_ty, call_span, self.module_id)
                 .is_err()
             {
                 return false;
@@ -493,6 +480,21 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
     // Shared by direct and member calls
 
+    /// Decide whether the receiver should be auto-referenced to match a
+    /// `&Self` first parameter. Returns the type to unify against the
+    /// receiver and, when auto-reference applies, the pointer's mutability.
+    fn receiver_auto_ref(&self, recv_ty: &Ty, first_param: &Ty) -> (Ty, Option<Mutability>) {
+        let arg_r = self.typeck.icx.resolve(recv_ty);
+        let param_r = self.typeck.icx.resolve(first_param);
+        if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
+            && let Ty::Ptr(inner, mutability) = param_r
+        {
+            (*inner, Some(mutability))
+        } else {
+            (first_param.clone(), None)
+        }
+    }
+
     pub fn apply_auto_ref_adjustment(
         &mut self,
         recv_ty: &Ty,
@@ -503,28 +505,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
     ) {
         if is_method_call && !param_tys.is_empty() {
             let first = param_tys.first().expect("method has at least 1 param");
-            let arg_r = self.typeck.icx.resolve(recv_ty);
-            let param_r = self.typeck.icx.resolve(first);
-            if !matches!(arg_r, Ty::Ptr(..) | Ty::Var(_))
-                && let Ty::Ptr(..) = &param_r
-            {
-                let Ty::Ptr(inner, mutability) = param_r else {
-                    unreachable!()
-                };
-                if let Some(hir_id) = receiver_hir_id {
-                    self.adjustments
-                        .entry(hir_id)
-                        .or_default()
-                        .push(Adjustment::AutoRef(mutability));
-                }
-                self.typeck
-                    .unify(&inner, recv_ty, call_span, self.module_id)
-                    .or_push_err(&mut self.typeck.icx);
-            } else {
-                self.typeck
-                    .unify(first, recv_ty, call_span, self.module_id)
-                    .or_push_err(&mut self.typeck.icx);
+            let (target, auto_ref) = self.receiver_auto_ref(recv_ty, first);
+            if let (Some(hir_id), Some(mutability)) = (receiver_hir_id, auto_ref) {
+                self.adjustments
+                    .entry(hir_id)
+                    .or_default()
+                    .push(Adjustment::AutoRef(mutability));
             }
+            self.typeck
+                .unify(&target, recv_ty, call_span, self.module_id)
+                .or_push_err(&mut self.typeck.icx);
         }
     }
 }

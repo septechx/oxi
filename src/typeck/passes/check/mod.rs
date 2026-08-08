@@ -229,7 +229,12 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             args.push(default_ty);
                         }
                         if !args.iter().any(|t| t.is_error()) {
-                            ty = Ty::Adt(*def_id, Some(args));
+                            let mut unresolved = ThinVec::new();
+                            self.icx
+                                .vars_in(&Ty::Adt(*def_id, Some(args.clone())), &mut unresolved);
+                            if unresolved.is_empty() {
+                                ty = Ty::Adt(*def_id, Some(args));
+                            }
                         }
                     }
                 }
@@ -276,7 +281,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         assoc_types
     }
 
-    pub(crate) fn normalize_assoc_projections(&mut self, ty: &Ty) -> Ty {
+    pub(crate) fn normalize_type_alias(&mut self, ty: &Ty) -> Ty {
         self.normalize_assoc_projections_inner(
             ty,
             &mut FxHashSet::default(),
@@ -320,6 +325,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 trait_def_id,
                 assoc_def_id,
                 self_ty,
+                trait_generic_args,
                 ..
             } => {
                 if let Some(name) = self.resolver.def(*assoc_def_id).name
@@ -331,8 +337,8 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     let matching = self
                         .coherence
                         .impls_matching_self(impl_def_ids, &target_self_ty);
-                    if matching.len() == 1
-                        && let Some(&impl_def_id) = matching.first()
+                    if let Some(impl_def_id) =
+                        self.impl_matching_trait_args(&matching, trait_generic_args)
                     {
                         let key = (*trait_def_id, *self_def_id, *assoc_def_id);
                         if projections_in_progress.insert(key) {
@@ -355,6 +361,31 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             }
             ty => ty.clone(),
         })
+    }
+
+    fn impl_matching_trait_args(
+        &self,
+        matching: &[DefId],
+        trait_generic_args: &Option<ThinVec<Ty>>,
+    ) -> Option<DefId> {
+        match trait_generic_args {
+            Some(args) => {
+                let mut candidates = matching.iter().copied().filter(|impl_id| {
+                    self.coherence
+                        .impl_resolved_generic_args
+                        .get(impl_id)
+                        .cloned()
+                        .flatten()
+                        == Some(args.clone())
+                });
+                match (candidates.next(), candidates.next()) {
+                    (Some(first), None) => Some(first),
+                    _ => None,
+                }
+            }
+            None if matching.len() == 1 => Some(matching[0]),
+            None => None,
+        }
     }
 }
 
@@ -498,6 +529,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 trait_def_id,
                 assoc_def_id,
                 self_ty,
+                trait_generic_args,
                 ..
             } => {
                 let Some(name) = self.typeck.resolver.def(assoc_def_id).name else {
@@ -542,8 +574,9 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         .typeck
                         .coherence
                         .impls_matching_self(impl_def_ids, &target_self_ty);
-                    if matching.len() == 1
-                        && let Some(&impl_def_id) = matching.first()
+                    if let Some(impl_def_id) = self
+                        .typeck
+                        .impl_matching_trait_args(&matching, &trait_generic_args)
                     {
                         let assoc_types = self.typeck.compute_assoc_types(impl_def_id);
                         if let Some(concrete) = assoc_types.get(&(trait_def_id, name)) {
@@ -817,7 +850,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     self.report_ty_from_hir_error(err);
                     Ty::Error
                 });
-            let ty = self.typeck.normalize_assoc_projections(&ty);
+            let ty = self.typeck.normalize_type_alias(&ty);
             self.node_types.insert(hir_id, ty.clone());
             ty
         }
@@ -1668,7 +1701,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let member_span = Span::new(base.span.end() + 1, expr_span.end());
         let recv_ty = self.check_expr(base);
         let recv_ty = self.typeck.icx.resolve(&recv_ty);
-        let recv_ty = self.typeck.normalize_assoc_projections(&recv_ty);
+        let recv_ty = self.typeck.normalize_type_alias(&recv_ty);
 
         // TODO: Maybe run in a loop to dereference types like `&&T`
         let recv_ty = if let Ty::Ptr(inner, _) = &recv_ty {
@@ -1974,6 +2007,7 @@ fn ty_display(ty: &Ty, resolver: &ResolverOutputs, interner: &Interner) -> Strin
             assoc_def_id,
             self_ty,
             generic_args,
+            ..
         } => {
             let name = resolver
                 .def(*trait_def_id)
