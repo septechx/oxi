@@ -169,9 +169,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             this.coherence
                 .impl_resolved_generic_args
                 .insert(def_id, trait_generic_args.clone());
-            this.coherence
-                .impl_resolved_self_type
-                .insert(def_id, self_type.clone());
 
             let key = (trait_def_id, struct_def_id);
             // Check for conflicts against other existing impls (exclude self)

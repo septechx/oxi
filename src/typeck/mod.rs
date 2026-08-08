@@ -253,8 +253,6 @@ pub struct CoherenceTable {
     pub generic_params: FxHashMap<DefId, GenericParamInfo>,
     /// maps (impl def id) -> resolved trait generic args
     pub impl_resolved_generic_args: FxHashMap<DefId, Option<ThinVec<Ty>>>,
-    /// maps (impl def id) -> resolved self type
-    pub impl_resolved_self_type: FxHashMap<DefId, Ty>,
     /// maps (assoc item def id) -> (parent struct/trait def id)
     pub assoc_to_parent: FxHashMap<DefId, DefId>,
     /// maps (parent def id) -> (assoc item def ids)
@@ -293,7 +291,7 @@ impl CoherenceTable {
                 .get(&existing_def_id)
                 .is_some_and(|existing_args| existing_args == new_args)
                 && self
-                    .impl_resolved_self_type
+                    .impl_self_types
                     .get(&existing_def_id)
                     .is_some_and(|existing_self_ty| existing_self_ty == new_self_ty)
         })
@@ -302,7 +300,7 @@ impl CoherenceTable {
     pub fn impls_matching_self(&self, impl_def_ids: &[DefId], target_self_ty: &Ty) -> Vec<DefId> {
         let mut matching: Vec<DefId> = Vec::new();
         for &def_id in impl_def_ids {
-            if self.impl_resolved_self_type.get(&def_id) != Some(target_self_ty) {
+            if self.impl_self_types.get(&def_id) != Some(target_self_ty) {
                 continue;
             }
             let args = self.impl_resolved_generic_args.get(&def_id).cloned();
