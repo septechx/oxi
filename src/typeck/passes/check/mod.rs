@@ -1,7 +1,6 @@
 mod call;
 
 use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
 
 use thin_vec::ThinVec;
 
@@ -25,7 +24,7 @@ use crate::typeck::infctx::{InferCtx, TyVarSource};
 use crate::typeck::types::{Scheme, Ty, TyFromHirError, TyFromHirResult};
 use crate::typeck::unify::{OrPushErr, UnifyError};
 use crate::typeck::{Adjustment, AssocTypesMap, MemberRes, TyVarId, Typeck, diag};
-use fxhash::{FxHashMap, FxHashSet, FxHasher};
+use fxhash::{FxHashMap, FxHashSet};
 
 // Labels aren't supported yet, so early returns are only checked for loops. AST Validation should
 // catch uses of `break` outside of loops
@@ -45,8 +44,14 @@ enum StructInitDef {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ProjectionRecKey(u64);
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectionRecKey {
+    trait_def_id: DefId,
+    assoc_def_id: DefId,
+    self_ty: Ty,
+    trait_generic_args: Option<ThinVec<Ty>>,
+    generic_args: Option<ThinVec<Ty>>,
+}
 
 impl ProjectionRecKey {
     pub fn new(
@@ -56,13 +61,13 @@ impl ProjectionRecKey {
         trait_generic_args: &Option<ThinVec<Ty>>,
         generic_args: &Option<ThinVec<Ty>>,
     ) -> Self {
-        let mut hasher = FxHasher::default();
-        trait_def_id.hash(&mut hasher);
-        assoc_def_id.hash(&mut hasher);
-        self_ty.hash(&mut hasher);
-        trait_generic_args.hash(&mut hasher);
-        generic_args.hash(&mut hasher);
-        Self(hasher.finish())
+        Self {
+            trait_def_id,
+            assoc_def_id,
+            self_ty: self_ty.clone(),
+            trait_generic_args: trait_generic_args.clone(),
+            generic_args: generic_args.clone(),
+        }
     }
 }
 
@@ -371,7 +376,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                             generic_args,
                         );
                         if !projections_in_progress.contains(&key) {
-                            projections_in_progress.push(key);
+                            projections_in_progress.push(key.clone());
                             let assoc_types = self.compute_assoc_types(impl_def_id);
                             let concrete = assoc_types.get(&(*trait_def_id, name));
                             if let Some(concrete) = concrete {
@@ -380,10 +385,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                     aliases_in_progress,
                                     projections_in_progress,
                                 );
-                                projections_in_progress.retain(|k| *k != key);
+                                projections_in_progress.retain(|k| k != &key);
                                 return normalized;
                             }
-                            projections_in_progress.retain(|k| *k != key);
+                            projections_in_progress.retain(|k| k != &key);
                         }
                     }
                 }
@@ -586,7 +591,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         module_id: self.module_id,
                     });
                 }
-                projections_in_progress.push(key);
+                projections_in_progress.push(key.clone());
                 let resolved = if self
                     .typeck
                     .current_self_ty
@@ -642,7 +647,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         module_id: self.module_id,
                     })
                 };
-                projections_in_progress.retain(|k| *k != key);
+                projections_in_progress.retain(|k| k != &key);
                 resolved
             }
             ty => Ok(ty),

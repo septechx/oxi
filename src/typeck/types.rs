@@ -39,7 +39,7 @@ enum TraitAssocTypeLookup {
     NotFound,
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     Var(TyVarId),
     Prim(PrimTy),
