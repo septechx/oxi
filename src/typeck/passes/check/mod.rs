@@ -1220,14 +1220,20 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                         );
                         return Ty::Error;
                     }
-                    let args: ThinVec<Ty> = hir_args
-                        .iter()
-                        .map(|arg| {
-                            let arg_ty = self.ty_from_hir_resolved(arg);
-                            self.node_types.insert(arg.hir_id, arg_ty.clone());
-                            arg_ty
-                        })
-                        .collect();
+                    let mut completed_subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                    let mut args: ThinVec<Ty> = ThinVec::new();
+                    for (i, arg) in hir_args.iter().enumerate() {
+                        let mut arg_ty = self.ty_from_hir_resolved(arg);
+                        if i >= provided && !completed_subst.is_empty() {
+                            arg_ty = substitute_ty_vars(&arg_ty, &completed_subst);
+                        }
+                        self.node_types.insert(arg.hir_id, arg_ty.clone());
+                        if let Some(&var) = self.typeck.icx.hir_id_to_ty_var.get(&param_hir_ids[i])
+                        {
+                            completed_subst.insert(var, arg_ty.clone());
+                        }
+                        args.push(arg_ty);
+                    }
                     for (arg, hir_id) in args.iter().zip(param_hir_ids.iter()) {
                         if let Some(&fresh) = fresh_var_map.get(hir_id) {
                             self.typeck
@@ -1275,19 +1281,32 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
         let alias_args: ThinVec<Ty> = match generic_args {
             Some(args) => {
-                let mut resolved: ThinVec<Ty> = args
-                    .iter()
-                    .map(|arg| {
-                        let arg_ty = self.ty_from_hir_resolved(arg);
-                        self.node_types.insert(arg.hir_id, arg_ty.clone());
-                        arg_ty
-                    })
-                    .collect();
+                let mut resolved: ThinVec<Ty> = ThinVec::new();
+                let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_ty = self.ty_from_hir_resolved(arg);
+                    self.node_types.insert(arg.hir_id, arg_ty.clone());
+                    if let Some(info) = &alias_info
+                        && let Some(&var) = self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                    {
+                        subst.insert(var, arg_ty.clone());
+                    }
+                    resolved.push(arg_ty);
+                }
                 if let Some(info) = alias_info {
                     for i in resolved.len()..info.hir_ids.len() {
                         match info.defaults.get(i).and_then(|d| d.as_ref()) {
                             Some(default_ty) => {
-                                resolved.push(self.ty_from_hir_resolved(default_ty))
+                                let mut default_ty = self.ty_from_hir_resolved(default_ty);
+                                if !subst.is_empty() {
+                                    default_ty = substitute_ty_vars(&default_ty, &subst);
+                                }
+                                if let Some(&var) =
+                                    self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                                {
+                                    subst.insert(var, default_ty.clone());
+                                }
+                                resolved.push(default_ty);
                             }
                             None => break,
                         }
@@ -1350,10 +1369,19 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .get(&struct_def)
                     .cloned();
                 if let Some(info) = &struct_info {
+                    let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
+                    for (i, arg) in args.iter().enumerate() {
+                        if let Some(&var) = self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
+                            subst.insert(var, arg.clone());
+                        }
+                    }
                     for i in args.len()..info.hir_ids.len() {
                         let var = self.typeck.icx.next_ty_var();
                         if let Some(Some(default_ty)) = info.defaults.get(i) {
-                            let default_ty = self.ty_from_hir_resolved(default_ty);
+                            let mut default_ty = self.ty_from_hir_resolved(default_ty);
+                            if !subst.is_empty() {
+                                default_ty = substitute_ty_vars(&default_ty, &subst);
+                            }
                             self.typeck.icx.add_generic_default(var, default_ty);
                         }
                         args.push(Ty::Var(var));
@@ -1370,13 +1398,29 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .cloned();
                 let mut args: ThinVec<Ty> = ThinVec::new();
                 if let Some(info) = &struct_info {
-                    for i in 0..info.hir_ids.len() {
-                        let var = self.typeck.icx.next_ty_var();
+                    let fresh_vars: ThinVec<TyVarId> = (0..info.hir_ids.len())
+                        .map(|_| self.typeck.icx.next_ty_var())
+                        .collect();
+                    let subst: FxHashMap<TyVarId, Ty> = fresh_vars
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, &fresh)| {
+                            self.typeck
+                                .icx
+                                .hir_id_to_ty_var
+                                .get(&info.hir_ids[i])
+                                .map(|&var| (var, Ty::Var(fresh)))
+                        })
+                        .collect();
+                    for (i, &fresh) in fresh_vars.iter().enumerate() {
                         if let Some(Some(default_ty)) = info.defaults.get(i) {
-                            let default_ty = self.ty_from_hir_resolved(default_ty);
-                            self.typeck.icx.add_generic_default(var, default_ty);
+                            let mut default_ty = self.ty_from_hir_resolved(default_ty);
+                            if !subst.is_empty() {
+                                default_ty = substitute_ty_vars(&default_ty, &subst);
+                            }
+                            self.typeck.icx.add_generic_default(fresh, default_ty);
                         }
-                        args.push(Ty::Var(var));
+                        args.push(Ty::Var(fresh));
                     }
                 }
                 StructInitDef::Expanded(struct_def, args)
