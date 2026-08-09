@@ -39,7 +39,7 @@ enum TraitAssocTypeLookup {
     NotFound,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Ty {
     Var(TyVarId),
     Prim(PrimTy),
@@ -249,6 +249,16 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
     ) -> TyFromHirResult<Ty> {
         let assoc_name = segment.ident.value;
 
+        let segment_args = segment
+            .generic_args
+            .as_ref()
+            .map(|args| {
+                args.iter()
+                    .map(|ty| self.ty_from_hir(ty, module_id))
+                    .collect::<TyFromHirResult<ThinVec<_>>>()
+            })
+            .transpose()?;
+
         let (trait_def_id, assoc_def_id, self_ty, trait_path_args) = match qself {
             // <Struct as Trait>::AssocType: explicit trait ref
             QPath::Resolved(Some(self_ty), path) => {
@@ -314,6 +324,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 def_id,
                                 assoc_name,
                                 &generic_args,
+                                &segment_args,
                                 path.span,
                                 module_id,
                             )? {
@@ -351,16 +362,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             },
             QPath::TypeRelative { .. } => return Ok(Ty::Error),
         };
-
-        let segment_args = segment
-            .generic_args
-            .as_ref()
-            .map(|args| {
-                args.iter()
-                    .map(|ty| self.ty_from_hir(ty, module_id))
-                    .collect::<TyFromHirResult<ThinVec<_>>>()
-            })
-            .transpose()?;
 
         Ok(Ty::Projection {
             trait_def_id,
@@ -432,6 +433,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         def_id: DefId,
         assoc_name: Symbol,
         generic_args: &Option<ThinVec<Ty>>,
+        assoc_generic_args: &Option<ThinVec<Ty>>,
         span: Span,
         module_id: ModuleId,
     ) -> TyFromHirResult<Option<Ty>> {
@@ -441,6 +443,19 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
         let Some(scheme) = self.item_schemes.get(&assoc_def_id) else {
             return Ok(Some(Ty::Error));
         };
+        // Associated types have no generic parameters yet, so any generic args on
+        // the projection segment (e.g. `Foo::Bar::<u32>`) are invalid
+        let assoc_arity = 0;
+        if let Some(args) = assoc_generic_args
+            && args.len() != assoc_arity
+        {
+            return Err(TyFromHirError::UnexpectedGenericArgs {
+                span,
+                module_id,
+                expected: assoc_arity,
+                found: args.len(),
+            });
+        }
         if let Some(args) = &generic_args {
             if let Some(resolved) = resolve_scheme_with_args(scheme, generic_args) {
                 return Ok(Some(resolved));

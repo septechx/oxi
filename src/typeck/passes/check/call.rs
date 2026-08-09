@@ -357,10 +357,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .unify(&target, &recv_ty, call_span, self.module_id)
                     .or_push_err(&mut self.typeck.icx);
             }
-            for ((arg, arg_ty), param_ty) in args
-                .iter()
-                .zip(arg_tys.iter())
-                .zip(param_tys_without_self)
+            for ((arg, arg_ty), param_ty) in
+                args.iter().zip(arg_tys.iter()).zip(param_tys_without_self)
             {
                 self.typeck
                     .unify(param_ty, arg_ty, arg.span, self.module_id)

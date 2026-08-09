@@ -49,7 +49,7 @@ impl ItemLocalId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntTy {
     Isize,
     I8,
@@ -59,7 +59,7 @@ pub enum IntTy {
     I128,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UintTy {
     Usize,
     U8,
@@ -69,7 +69,7 @@ pub enum UintTy {
     U128,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatTy {
     F16,
     F32,
@@ -77,7 +77,7 @@ pub enum FloatTy {
     F128,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimTy {
     Int(IntTy),
     Uint(UintTy),
