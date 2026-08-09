@@ -1281,6 +1281,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
 
         let alias_args: ThinVec<Ty> = match generic_args {
             Some(args) => {
+                if args.len() > scheme.vars.len() {
+                    emit_unexpected_generic_args(
+                        self.typeck.ctx,
+                        span,
+                        self.module_id,
+                        scheme.vars.len(),
+                        args.len(),
+                    );
+                    return StructInitDef::Error;
+                }
                 let mut resolved: ThinVec<Ty> = ThinVec::new();
                 let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                 for (i, arg) in args.iter().enumerate() {
@@ -1377,6 +1387,11 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     }
                     for i in args.len()..info.hir_ids.len() {
                         let var = self.typeck.icx.next_ty_var();
+                        if let Some(&declared) =
+                            self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i])
+                        {
+                            subst.insert(declared, Ty::Var(var));
+                        }
                         if let Some(Some(default_ty)) = info.defaults.get(i) {
                             let mut default_ty = self.ty_from_hir_resolved(default_ty);
                             if !subst.is_empty() {
