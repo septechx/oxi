@@ -857,6 +857,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         }
     }
 
+    fn parent_var_count(&self, def_id: DefId) -> usize {
+        self.typeck
+            .coherence
+            .assoc_to_parent
+            .get(&def_id)
+            .and_then(|parent_def_id| self.typeck.coherence.generic_params.get(parent_def_id))
+            .map(|parent_info| parent_info.hir_ids.len())
+            .unwrap_or(0)
+    }
+
     fn try_complete_generic_args(
         &self,
         def_id: DefId,
@@ -890,12 +900,14 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         suppress_errors: bool,
     ) -> TyFromHirResult<Ty> {
         let provided = explicit_args.len();
+        let parent_var_count = self.parent_var_count(def_id);
+        let method_vars = &scheme.vars[parent_var_count..];
         let mut args = explicit_args.clone();
-        if !self.try_complete_generic_args(def_id, &mut args, scheme.vars.len()) {
+        if !self.try_complete_generic_args(def_id, &mut args, method_vars.len()) {
             return Err(TyFromHirError::UnexpectedGenericArgs {
                 span,
                 module_id: self.module_id,
-                expected: scheme.vars.len(),
+                expected: method_vars.len(),
                 found: provided,
             });
         }
@@ -903,15 +915,6 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         for &v in &scheme.vars {
             mapping.insert(v, self.typeck.icx.next_ty_var());
         }
-        let parent_var_count = self
-            .typeck
-            .coherence
-            .assoc_to_parent
-            .get(&def_id)
-            .and_then(|parent_def_id| self.typeck.coherence.generic_params.get(parent_def_id))
-            .map(|parent_info| parent_info.hir_ids.len())
-            .unwrap_or(0);
-        let method_vars = &scheme.vars[parent_var_count..];
         if let Some(info) = self.typeck.coherence.generic_params.get(&def_id) {
             for (hir_id, &v) in info.hir_ids.iter().zip(method_vars) {
                 if let Some(&fresh) = mapping.get(&v) {

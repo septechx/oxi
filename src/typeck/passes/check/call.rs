@@ -212,7 +212,8 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             // diagnostics are deferred to the fallback path (all candidates failed).
             if let Some(args) = explicit_generic_args {
                 let mut completed = args.clone();
-                if !self.try_complete_generic_args(*def_id, &mut completed, scheme.vars.len()) {
+                let method_var_len = scheme.vars.len() - self.parent_var_count(*def_id);
+                if !self.try_complete_generic_args(*def_id, &mut completed, method_var_len) {
                     self.typeck.icx.rollback(snap);
                     continue;
                 }
@@ -356,9 +357,13 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .unify(&target, &recv_ty, call_span, self.module_id)
                     .or_push_err(&mut self.typeck.icx);
             }
-            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys_without_self) {
+            for ((arg, arg_ty), param_ty) in args
+                .iter()
+                .zip(arg_tys.iter())
+                .zip(param_tys_without_self)
+            {
                 self.typeck
-                    .unify(param_ty, arg_ty, call_span, self.module_id)
+                    .unify(param_ty, arg_ty, arg.span, self.module_id)
                     .or_push_err(&mut self.typeck.icx);
             }
         }
