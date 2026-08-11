@@ -1379,6 +1379,16 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .get(&struct_def)
                     .cloned();
                 if let Some(info) = &struct_info {
+                    if args.len() > info.hir_ids.len() {
+                        emit_unexpected_generic_args(
+                            self.typeck.ctx,
+                            span,
+                            self.module_id,
+                            info.hir_ids.len(),
+                            args.len(),
+                        );
+                        return StructInitDef::Error;
+                    }
                     let mut subst: FxHashMap<TyVarId, Ty> = FxHashMap::default();
                     for (i, arg) in args.iter().enumerate() {
                         if let Some(&var) = self.typeck.icx.hir_id_to_ty_var.get(&info.hir_ids[i]) {
