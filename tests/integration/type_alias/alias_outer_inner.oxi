@@ -1,0 +1,8 @@
+type Outer<T> = (T, i32);
+type Inner = Outer::<u32>;
+
+pub fn main() void {
+    let x: Inner = (1, 2);
+    let y: Outer::<u32> = x;
+    let _ = y;
+}

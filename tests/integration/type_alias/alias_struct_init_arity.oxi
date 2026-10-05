@@ -1,0 +1,12 @@
+// @expect-error unexpected_generic_args
+
+struct Pair<T, U> {
+    first: T,
+    second: U,
+}
+
+type A<T> = Pair::<T, T>;
+
+pub fn main() void {
+    let p = A::<i32, u32> { first: 1, second: 2 };
+}

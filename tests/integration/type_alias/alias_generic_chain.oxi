@@ -1,0 +1,8 @@
+type A<T> = (T, T);
+type B<T> = A::<T>;
+
+pub fn main() void {
+    let x: B::<i32> = (1, 2);
+    let y: A::<i32> = x;
+    let _ = y;
+}

@@ -1,0 +1,6 @@
+type MyInt = i32;
+
+pub fn main() f32 {
+    let a: i32 = 10;
+    a as MyInt as f32
+}

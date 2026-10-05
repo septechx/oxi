@@ -1,0 +1,9 @@
+type M = &mut i32;
+
+fn deref(x: M) i32 {
+    x@
+}
+
+pub fn main() void {
+    let _ = deref;
+}

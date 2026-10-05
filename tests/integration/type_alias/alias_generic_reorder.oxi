@@ -1,0 +1,8 @@
+type Pair<T, U> = (T, U);
+type Swap<T, U> = Pair::<U, T>;
+
+pub fn main() void {
+    let x: Swap::<i32, u32> = (1, 2);
+    let y: Pair::<u32, i32> = x;
+    let _ = y;
+}

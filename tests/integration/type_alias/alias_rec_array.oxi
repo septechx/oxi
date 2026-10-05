@@ -1,0 +1,5 @@
+// @expect-error recursive_type
+
+type A = [A; 3];
+
+pub fn main() void {}

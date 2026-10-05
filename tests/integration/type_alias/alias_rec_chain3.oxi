@@ -1,0 +1,7 @@
+// @expect-error recursive_type
+
+type A = B;
+type B = Cc;
+type Cc = A;
+
+pub fn main() void {}

@@ -1,0 +1,5 @@
+// @expect-error recursive_type
+
+type A = &mut A;
+
+pub fn main() void {}

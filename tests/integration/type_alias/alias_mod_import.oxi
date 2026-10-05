@@ -1,0 +1,10 @@
+mod m {
+    pub type MyInt = i32;
+}
+
+import m::MyInt;
+
+pub fn main() void {
+    let x: MyInt = 1;
+    let _ = x;
+}

@@ -1,0 +1,7 @@
+type Unused<T> = i32;
+
+pub fn main() void {
+    let x: Unused::<u32> = 1;
+    let y: i32 = x;
+    let _ = y + 1;
+}

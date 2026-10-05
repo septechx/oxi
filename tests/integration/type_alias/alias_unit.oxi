@@ -1,0 +1,6 @@
+type Unit = ();
+
+pub fn main() void {
+    let x: Unit = ();
+    let _ = x;
+}

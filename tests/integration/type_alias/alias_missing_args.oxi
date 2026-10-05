@@ -1,0 +1,8 @@
+// @expect-error unexpected_generic_args
+
+type Id<T> = T;
+
+pub fn main() void {
+    let x: Id = 1;
+    let _ = x;
+}

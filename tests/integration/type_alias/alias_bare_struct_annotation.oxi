@@ -1,0 +1,11 @@
+struct Bar<T = i32> {
+    x: T,
+}
+
+type B = Bar;
+
+pub fn main() void {
+    let b: B = Bar { x: 5 };
+    let v: i32 = b.x;
+    let _ = v;
+}

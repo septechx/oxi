@@ -1,0 +1,12 @@
+struct S {
+    x: i32,
+}
+
+type A = S;
+type B = A;
+
+pub fn main() void {
+    let s = B { x: 1 };
+    let v: i32 = s.x;
+    let _ = v;
+}

@@ -1,0 +1,7 @@
+// @expect-error type_alias_not_struct
+
+type Pair<T> = (T, T);
+
+pub fn main() void {
+    let p = Pair { x: 1 };
+}

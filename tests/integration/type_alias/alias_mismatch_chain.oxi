@@ -1,0 +1,8 @@
+// @expect-error type_mismatch
+
+type A = i32;
+type B = A;
+
+pub fn main() void {
+    let x: B = "hello";
+}

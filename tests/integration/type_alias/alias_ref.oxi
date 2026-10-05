@@ -1,0 +1,8 @@
+type R = &i32;
+
+pub fn main() void {
+    let x = 42;
+    let y: R = &x;
+    let z: i32 = y@;
+    let _ = z;
+}

@@ -1,0 +1,13 @@
+struct Pair<T, U> {
+    first: T,
+    second: U,
+}
+
+type Alias<T> = Pair::<T, T>;
+
+pub fn main() void {
+    let p = Alias::<i32> { first: 1, second: 2 };
+    let x: i32 = p.first;
+    let y: i32 = p.second;
+    let _ = x + y;
+}

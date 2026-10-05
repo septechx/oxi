@@ -1,0 +1,8 @@
+type S = [i32];
+
+pub fn main() void {
+    let a = [1, 2, 3];
+    let b: S = a;
+    let x = b[0];
+    let _ = x;
+}

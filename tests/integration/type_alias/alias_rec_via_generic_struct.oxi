@@ -1,0 +1,9 @@
+// @expect-error recursive_type
+
+struct Box<T> {
+    inner: T,
+}
+
+type B = Box::<B>;
+
+pub fn main() void {}

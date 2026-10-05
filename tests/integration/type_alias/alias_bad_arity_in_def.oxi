@@ -1,0 +1,6 @@
+// @expect-error unexpected_generic_args
+
+type Pair<T> = (T, T);
+type Bad = Pair::<i32, i32, i32>;
+
+pub fn main() void {}

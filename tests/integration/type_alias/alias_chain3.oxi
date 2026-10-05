@@ -1,0 +1,10 @@
+type A = i32;
+type B = A;
+type Cc = B;
+
+pub fn main() void {
+    let x: Cc = 1;
+    let y: A = x;
+    let z: B = y;
+    let _ = z + 1;
+}

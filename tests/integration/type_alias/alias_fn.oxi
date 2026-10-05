@@ -1,0 +1,14 @@
+type Cb = (i32) -> i32;
+
+fn apply(f: Cb, x: i32) i32 {
+    f(x)
+}
+
+fn inc(x: i32) i32 {
+    x + 1
+}
+
+pub fn main() void {
+    let y = apply(inc, 41);
+    let _ = y;
+}
