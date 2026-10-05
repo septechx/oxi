@@ -78,11 +78,7 @@ pub fn parse_const_item(
 
     let span = Span::new(start_span.start(), end_span.end());
 
-    let visibility = if is_public {
-        Visibility::Public
-    } else {
-        Visibility::Private
-    };
+    let visibility = Visibility::from_public(is_public);
 
     Ok(Item {
         kind: ItemKind::Const { name, ty, value },
@@ -117,11 +113,7 @@ pub fn parse_struct_decl_item(
             parser.advance();
         }
 
-        let visibility = if is_public {
-            Visibility::Public
-        } else {
-            Visibility::Private
-        };
+        let visibility = Visibility::from_public(is_public);
 
         match parser.current_token().kind {
             TokenKind::Fn => {
@@ -204,11 +196,7 @@ pub fn parse_struct_decl_item(
 
     let span = Span::new(start_span.start(), end_span.end());
 
-    let visibility = if is_public {
-        Visibility::Public
-    } else {
-        Visibility::Private
-    };
+    let visibility = Visibility::from_public(is_public);
 
     Ok(Item {
         kind: ItemKind::Struct {
@@ -253,11 +241,7 @@ pub fn parse_type_decl_item(
 
     let span = Span::new(start_span.start(), end_span.end());
 
-    let visibility = if is_public {
-        Visibility::Public
-    } else {
-        Visibility::Private
-    };
+    let visibility = Visibility::from_public(is_public);
 
     Ok(Item {
         kind: ItemKind::Type {
@@ -301,7 +285,7 @@ pub fn parse_trait_decl_item(
                         diag_params! {},
                     );
                 }
-                assoc.visibility = Visibility::Private;
+                assoc.visibility = Visibility::Public;
                 items.push(assoc);
             }
             TokenKind::Fn => {
@@ -319,7 +303,7 @@ pub fn parse_trait_decl_item(
 
                     items.push(AssocItem {
                         kind: AssocItemKind::Fn(fn_decl),
-                        visibility: Visibility::Private,
+                        visibility: Visibility::Public,
                         span: stmt.span,
                         node_id: NodeId::default(),
                     });
@@ -343,11 +327,7 @@ pub fn parse_trait_decl_item(
 
     let span = Span::new(start_span.start(), end_span.end());
 
-    let visibility = if is_public {
-        Visibility::Public
-    } else {
-        Visibility::Private
-    };
+    let visibility = Visibility::from_public(is_public);
 
     Ok(Item {
         kind: ItemKind::Trait {

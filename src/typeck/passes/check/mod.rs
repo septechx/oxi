@@ -112,11 +112,13 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 env: ScopeEnv::new(),
                 module_id: ModuleId(0),
                 current_assoc_types: FxHashMap::default(),
+                current_impl: None,
             };
 
             for (def_id, owner, module_id) in owners.iter() {
                 checker.module_id = *module_id;
                 checker.typeck.current_self_ty = None;
+                checker.current_impl = None;
 
                 let Some(info) = owner.as_owner() else {
                     continue;
@@ -153,6 +155,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
+                            checker.current_impl =
+                                (checker.typeck.resolver.def(parent_def_id).kind == DefKind::Impl)
+                                    .then_some(parent_def_id);
                             checker.set_self_ty_for_parent(parent_def_id);
                             if let Some(body_id) = fun.body_id
                                 && let Some(body) = info.nodes.body(body_id)
@@ -170,6 +175,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 .expect("assoc item has parent");
                             checker.current_assoc_types =
                                 checker.typeck.compute_assoc_types(parent_def_id);
+                            checker.current_impl =
+                                (checker.typeck.resolver.def(parent_def_id).kind == DefKind::Impl)
+                                    .then_some(parent_def_id);
                             checker.set_self_ty_for_parent(parent_def_id);
                         }
                     },
@@ -435,6 +443,7 @@ struct BodyChecker<'a, 'ctx, 'hir, 'res> {
     adjustments: &'a mut FxHashMap<HirId, Vec<Adjustment>>,
     env: ScopeEnv,
     current_assoc_types: FxHashMap<(DefId, Symbol), Ty>,
+    current_impl: Option<DefId>,
 }
 
 impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
@@ -489,6 +498,24 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                 .impl_self_types
                 .get(&parent_def_id)
                 .cloned(),
+        }
+    }
+
+    fn current_impl_trait_args_match(&self, trait_generic_args: &Option<ThinVec<Ty>>) -> bool {
+        let Some(impl_id) = self.current_impl else {
+            return trait_generic_args.is_none();
+        };
+        if trait_generic_args.is_none() {
+            return true;
+        }
+        match self
+            .typeck
+            .coherence
+            .impl_resolved_generic_args
+            .get(&impl_id)
+        {
+            Some(impl_args) => impl_args == trait_generic_args,
+            None => false,
         }
     }
 
@@ -597,6 +624,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                     .current_self_ty
                     .as_ref()
                     .is_some_and(|current| current == self_ty.as_ref())
+                    && self.current_impl_trait_args_match(&trait_generic_args)
                     && let Some(concrete) = self.current_assoc_types.get(&(trait_def_id, name))
                 {
                     self.normalize_aliases_inner(
@@ -1030,12 +1058,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
                                     return None;
                                 }
                             }
+                        } else if self.typeck.resolver.def(*def_id).kind == DefKind::Struct
+                            && matches!(scheme.body, Ty::Adt(_, _))
+                        {
+                            Ty::Adt(*def_id, None)
                         } else {
-                            if matches!(scheme.body, Ty::Adt(_, _)) {
-                                Ty::Adt(*def_id, None)
-                            } else {
-                                self.typeck.icx.instantiate(&scheme)
-                            }
+                            self.typeck.icx.instantiate(&scheme)
                         }
                     }
                     None => Ty::Error,
@@ -1049,6 +1077,7 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
             QPath::TypeRelative { qself, .. } => return self.qpath_recv_ty(qself),
         };
         let base = self.typeck.icx.resolve(&base);
+        let base = self.typeck.normalize_type_alias(&base);
         if matches!(base, Ty::Adt(_, _)) {
             Some(base)
         } else {
@@ -1363,8 +1392,12 @@ impl<'a, 'ctx, 'hir, 'res> BodyChecker<'a, 'ctx, 'hir, 'res> {
         let Some(body) = resolve_scheme_with_args(&scheme, &Some(alias_args)) else {
             return StructInitDef::Error;
         };
-        let Ok(body) = self.normalize_aliases(body, span) else {
-            return StructInitDef::Error;
+        let body = match self.normalize_aliases(body, span) {
+            Ok(body) => body,
+            Err(err) => {
+                self.report_ty_from_hir_error(err);
+                return StructInitDef::Error;
+            }
         };
         if body.is_error() {
             return StructInitDef::Error;
@@ -1982,6 +2015,15 @@ pub(super) fn emit_ty_from_hir_error(err: &TyFromHirError, ctx: &mut Ctx) {
             found,
         } => {
             emit_unexpected_generic_args(ctx, *span, *module_id, *expected, *found);
+        }
+        TyFromHirError::InvalidTypePath { span, module_id } => {
+            builders::emit_at(
+                ctx,
+                *span,
+                *module_id,
+                diag::InvalidTypePath,
+                diag_params! {},
+            );
         }
     }
 }

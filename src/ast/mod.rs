@@ -350,6 +350,16 @@ pub enum Visibility {
     Private,
 }
 
+impl Visibility {
+    pub fn from_public(is_public: bool) -> Self {
+        if is_public {
+            Self::Public
+        } else {
+            Self::Private
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mutability {
     Constant,

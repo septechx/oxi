@@ -1,0 +1,27 @@
+// @expect-error type_mismatch
+
+struct S {}
+
+trait A<T> {
+    type Assoc;
+}
+
+impl A::<i8> for S {
+    type Assoc = i8;
+
+    fn get(self: Self) Self::Assoc {
+        // Explicit `<S as A::<u8> >` must not hit the current `A::<i8>`
+        // impl via the fast path.
+        let x: <S as A::<u8> >::Assoc = 1;
+        x
+    }
+}
+
+impl A::<u8> for S {
+    type Assoc = u8;
+}
+
+pub fn main() void {
+    let s = S {};
+    let _ = s.get();
+}

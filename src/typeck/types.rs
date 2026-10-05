@@ -22,6 +22,8 @@ pub enum TyFromHirError {
     },
     /// An associated type could not be resolved
     UnresolvedAssocType { span: Span, module_id: ModuleId },
+    /// A path in type position resolved to a definition that is not a type
+    InvalidTypePath { span: Span, module_id: ModuleId },
     /// The wrong number of generic arguments were provided to a generic type
     UnexpectedGenericArgs {
         span: Span,
@@ -116,7 +118,10 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 span: path.span,
                                 module_id,
                             }),
-                            _ => Ok(Ty::Error),
+                            _ => Err(TyFromHirError::InvalidTypePath {
+                                span: path.span,
+                                module_id,
+                            }),
                         }
                     }
                     Res::SelfTyAlias { alias_to } => {
@@ -166,6 +171,20 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                 expected,
                 found,
             });
+        }
+        // declaration cannot produce a short `Ty::Adt` downstream.
+        let mut seen_default = false;
+        for default in info.defaults.iter() {
+            if default.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                return Err(TyFromHirError::UnexpectedGenericArgs {
+                    span,
+                    module_id,
+                    expected,
+                    found,
+                });
+            }
         }
         let required = info
             .defaults
@@ -306,12 +325,7 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                     };
                     match self.resolver.def(def_id).kind {
                         DefKind::Trait => match self.find_assoc_type(def_id, assoc_name) {
-                            Some(assoc_def_id) => (
-                                def_id,
-                                assoc_def_id,
-                                self_ty,
-                                self.shorthand_trait_args(def_id, module_id),
-                            ),
+                            Some(assoc_def_id) => (def_id, assoc_def_id, self_ty, None),
                             None => {
                                 return Err(TyFromHirError::UnresolvedAssocType {
                                     span: segment.ident.span,
@@ -331,12 +345,9 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 return Ok(resolved);
                             }
                             match self.find_trait_assoc_type_for_struct(def_id, assoc_name) {
-                                TraitAssocTypeLookup::Found(trait_id, assoc_id) => (
-                                    trait_id,
-                                    assoc_id,
-                                    self_ty,
-                                    self.shorthand_trait_args(trait_id, module_id),
-                                ),
+                                TraitAssocTypeLookup::Found(trait_id, assoc_id) => {
+                                    (trait_id, assoc_id, self_ty, None)
+                                }
                                 TraitAssocTypeLookup::Ambiguous
                                 | TraitAssocTypeLookup::NotFound => {
                                     return Err(TyFromHirError::UnresolvedAssocType {
@@ -346,21 +357,39 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
                                 }
                             }
                         }
-                        _ => return Ok(Ty::Error),
+                        _ => {
+                            return Err(TyFromHirError::InvalidTypePath {
+                                span: path.span,
+                                module_id,
+                            });
+                        }
                     }
                 }
                 Res::GenericParam(hir_id) => {
                     if !self.icx.hir_id_to_ty_var.contains_key(&hir_id) {
-                        return Ok(Ty::Error);
+                        return Err(TyFromHirError::InvalidTypePath {
+                            span: segment.ident.span,
+                            module_id,
+                        });
                     }
                     return Err(TyFromHirError::UnresolvedAssocType {
                         span: segment.ident.span,
                         module_id,
                     });
                 }
-                _ => return Ok(Ty::Error),
+                _ => {
+                    return Err(TyFromHirError::InvalidTypePath {
+                        span: segment.ident.span,
+                        module_id,
+                    });
+                }
             },
-            QPath::TypeRelative { .. } => return Ok(Ty::Error),
+            QPath::TypeRelative { .. } => {
+                return Err(TyFromHirError::UnresolvedAssocType {
+                    span: segment.ident.span,
+                    module_id,
+                });
+            }
         };
 
         Ok(Ty::Projection {
@@ -370,23 +399,6 @@ impl<'ctx, 'hir, 'res> Typeck<'ctx, 'hir, 'res> {
             generic_args: segment_args,
             trait_generic_args: trait_path_args,
         })
-    }
-
-    fn shorthand_trait_args(
-        &mut self,
-        trait_def_id: DefId,
-        module_id: ModuleId,
-    ) -> Option<ThinVec<Ty>> {
-        let info = self.coherence.generic_params.get(&trait_def_id)?;
-        if info.hir_ids.is_empty()
-            || info.hir_ids.len() != info.defaults.len()
-            || !info.defaults.iter().all(|d| d.is_some())
-        {
-            return None;
-        }
-        let mut args = Some(ThinVec::new());
-        self.fill_generic_defaults(trait_def_id, &mut args, module_id);
-        args
     }
 
     fn find_trait_assoc_type_for_struct(

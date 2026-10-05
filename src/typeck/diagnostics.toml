@@ -85,3 +85,7 @@ message = "Could not resolve expression"
 [unresolved_assoc_type]
 level = "Error"
 message = "Could not resolve associated type"
+
+[invalid_type_path]
+level = "Error"
+message = "Expected type, found invalid path"

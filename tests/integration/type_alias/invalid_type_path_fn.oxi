@@ -1,0 +1,8 @@
+// @expect-error invalid_type_path
+
+fn my_fn() void {}
+
+pub fn main() void {
+    let x: my_fn = 1;
+    let _ = x;
+}

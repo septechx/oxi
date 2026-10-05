@@ -1,0 +1,19 @@
+struct Counter {
+    n: u32,
+
+    fn get(self: Self) u32 {
+        self.n
+    }
+
+    fn make(n: u32) Self {
+        Self { n: n }
+    }
+}
+
+type C = Counter;
+
+pub fn main() void {
+    let c = C::make(42);
+    let n: u32 = C::get(c);
+    let _ = n;
+}
