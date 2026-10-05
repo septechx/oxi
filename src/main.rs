@@ -1,8 +1,6 @@
 #![deny(clippy::unwrap_used)]
 
 pub mod ast;
-pub mod backend;
-pub mod bindings;
 pub mod cli;
 pub mod context;
 pub mod driver;
