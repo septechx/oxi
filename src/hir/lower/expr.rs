@@ -204,8 +204,14 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 new_body.push(cond_check);
                 new_body.extend(body.stmts.iter().map(|stmt| self.lower_stmt(stmt)));
 
+                let tail = body
+                    .tail
+                    .as_ref()
+                    .map(|tail| self.lower_expr(tail).into_box());
+
                 ExprKind::Loop(Block {
                     stmts: new_body,
+                    tail,
                     span: body.span,
                     hir_id: self.next_hir_id(),
                 })
@@ -232,8 +238,13 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
             .iter()
             .map(|stmt| self.lower_stmt(stmt))
             .collect();
+        let tail = block
+            .tail
+            .as_ref()
+            .map(|tail| self.lower_expr(tail).into_box());
         Block {
             stmts,
+            tail,
             span: block.span,
             hir_id: self.next_hir_id(),
         }
@@ -270,11 +281,11 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
         let span = cond.span;
         let cond = cond.into_box();
         Stmt {
-            kind: StmtKind::Semi(Expr {
+            kind: StmtKind::Expr(Expr {
                 kind: ExprKind::If {
                     then_branch: Block {
                         stmts: thin_vec![Stmt {
-                            kind: StmtKind::Semi(Expr {
+                            kind: StmtKind::Expr(Expr {
                                 kind: ExprKind::Break(None),
                                 hir_id: self.next_hir_id(),
                                 span,
@@ -282,6 +293,7 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                             hir_id: self.next_hir_id(),
                             span,
                         }],
+                        tail: None,
                         hir_id: self.next_hir_id(),
                         span,
                     },
