@@ -203,15 +203,18 @@ impl<'a, 'ctx> AstLoweringContext<'a, 'ctx> {
                 let mut new_body = ThinVec::with_capacity(body.stmts.len() + 1);
                 new_body.push(cond_check);
                 new_body.extend(body.stmts.iter().map(|stmt| self.lower_stmt(stmt)));
-
-                let tail = body
-                    .tail
-                    .as_ref()
-                    .map(|tail| self.lower_expr(tail).into_box());
+                if let Some(tail) = body.tail.as_ref() {
+                    let tail = self.lower_expr(tail);
+                    new_body.push(Stmt {
+                        hir_id: self.next_hir_id(),
+                        span: tail.span,
+                        kind: StmtKind::Expr(tail),
+                    });
+                }
 
                 ExprKind::Loop(Block {
                     stmts: new_body,
-                    tail,
+                    tail: None,
                     span: body.span,
                     hir_id: self.next_hir_id(),
                 })
